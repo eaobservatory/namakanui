@@ -1,0 +1,28 @@
+# Editor swap/backup files
+*~
+.*.swp
+.~*#
+
+# Build/output files
+O.*
+CONFIG.Defs
+setup.cfg
+version.py
+*.pyc
+
+# Log files
+*.log
+
+# Packages
+# it's better to unpack and commit,
+# since git has built-in compression.
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+
+
