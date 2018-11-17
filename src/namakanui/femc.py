@@ -305,7 +305,7 @@ class FEMC(object):
         if pa_channel < 0 or pa_channel > 1:
             raise ValueError("pa_channel outside [0,1] range")
         if cartridge_temp < 0 or cartridge_temp > 5:
-            raise ValueError("cartridge_temp outside [0,1] range")
+            raise ValueError("cartridge_temp outside [0,5] range")
         if pd_module < 0 or pd_module > 9:
             raise ValueError("pd_module outside [0,9] range")
         if pd_channel < 0 or pd_channel > 5:
@@ -1312,7 +1312,7 @@ class FEMC(object):
             1: On (power up state)'''
         return self.get_standard_ubyte(_cryostat_vacuum_controller_enable)
     
-    def get_cryostat_vacuum_gague_state(self):
+    def get_cryostat_vacuum_gauge_state(self):
         '''Get current error state for the vacuum controller.
              0: OK
              1: Error

@@ -4,6 +4,10 @@ Ryan Berthold 20181010
 TCP/IP socket interface to the Agilent N5173B signal generator,
 using SCPI command language.
 
+20181030 NOTE: The design board shows an Agilent 8257D.
+Is its command set substantially the same?  Or will I need to create
+a separate class?  Also if ASIAA uses a different signal generator
+for the GLT, need to develop a new control class (with same interface).
 '''
 
 import socket
@@ -72,6 +76,19 @@ class Agilent(object):
         '''Set RF output on (1) or off (0).'''
         on = int(on)
         self.set_cmd(':output', on, '%d')
+    
+    def get_hz(self):
+        '''Get output frequency in Hz.'''
+        return float(self.cmd(':freq?'))
+    
+    def get_dbm(self):
+        '''Get output amplitude in dBm.'''
+        return float(self.cmd(':power?'))
+    
+    def get_output(self):
+        '''Get output on (1) or off (0).'''
+        return int(self.cmd(':output?'))
+    
     
     
         
