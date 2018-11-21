@@ -10,19 +10,21 @@ import namakanui  # for sleep, publish
 class Cryo(object):
     '''Monitor and control the Namakanui cryostat.'''
     
-    def __init__(self):
+    def __init__(self, femc):
         # TODO simulate config from somewhere, for now sim everything.
         # TODO simulate granularity? unsure what bits we'll have included.
+        self.femc = femc
         self.simulate = set(['all'])
         self.name = 'CRYO'
         self.state = {}
     
     
-    def update_0(self, femc):
+    def update_0(self):
         '''
         Update state for those parameters that are not hardware readbacks,
         after which we keep track of state as the commands are given.
         '''
+        femc = self.femc
         self.state['number'] = 0
         self.state['simulate'] = ' '.join(self.simulate)
         if femc and not self.simulate:
@@ -37,10 +39,11 @@ class Cryo(object):
         # Cryo.update_0
             
     
-    def update_a(self, femc):
+    def update_a(self):
         '''
         Update cryostat parameters.  Expect this to take ~21ms.
-        '''        
+        '''
+        femc = self.femc
         if femc and self.state['backpump_enable'] and not self.simulate:
             self.state['turbopump_state'] = femc.get_cryostat_turbo_pump_state()
             self.state['turbopump_speed'] = femc.get_cryostat_turbo_pump_speed()

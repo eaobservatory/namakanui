@@ -53,14 +53,7 @@ class Namakanui(object):
                 config[section] = {}
             config[section].update(values)
         
-        interface = config['connection']['interface']
-        node_id = int(config['connection']['nodeAddress'],0)
-        # TODO check if simulating femc first; this might be 'none'.
-        self.femc = FEMC(interface, node_id)  # TODO verbose, timeout
-        log.info('femc.get_ppcomm_time: %.6fs', self.femc.get_ppcomm_time())
-        esns = self.femc.get_esns()
-        esns = [bytes(reversed(e)).hex().upper() for e in esns]  # ini format
-        log.info('ESNs: %s', esns)
+        
         
         # TODO might simulate agilent too
         self.agilent = Agilent(config['agilent']['ip'])
@@ -83,13 +76,26 @@ class Namakanui(object):
         # set of shared resources to simulate, e.g. 'femc', 'load'.
         sim = config[frontend_name]['Simulate'].replace(',',' ')
         self.simulate = set(sim.split())
+        
+        self.femc = None
+        esns = []
+        if 'femc' not in self.simulate:
+            interface = config['connection']['interface']
+            node_id = int(config['connection']['nodeAddress'],0)
+            # TODO check if simulating femc first; this might be 'none'.
+            self.femc = FEMC(interface, node_id)  # TODO verbose, timeout
+            log.info('femc.get_ppcomm_time: %.6fs', self.femc.get_ppcomm_time())
+            esns = self.femc.get_esns()
+            esns = [bytes(reversed(e)).hex().upper() for e in esns]  # ini format
+            log.info('ESNs: %s', esns)
+        
         fnames = 'port, band, CCProvider, CCId, WCAProvider, WCAID'
         carts = self.read_table(config[frontend_name], 'Cart', int, fnames)
         self.cart = {}  # dict of Cart instances, indexed by band number
         for c in carts:
             cc_name = '~ColdCart%s-%s' % (c.CCProvider, c.CCId)
             wca_name = '~WCA%s-%s' % (c.WCAProvider, c.WCAID)
-            cart = Cart(config[cc_name], config[wca_name])
+            cart = Cart(self.femc, config[cc_name], config[wca_name])
             if cart.warm_esn not in esns:
                 cart.simulate.add('warm')
             if cart.cold_esn not in esns:
@@ -98,7 +104,7 @@ class Namakanui(object):
             self.cart[cart.band] = cart
         
         # TODO more init params for cryo (config section)
-        self.cryo = Cryo()
+        self.cryo = Cryo(self.femc)
         
         # TODO: Troubleshooting mode.
         # Newer FEMC firmware allows setting PA params (for instance)
@@ -151,10 +157,10 @@ class Namakanui(object):
         self.update_funcs += [cart.update_a for cart in self.cart.values()]
         self.update_funcs += [cart.update_b for cart in self.cart.values()]
         self.update_funcs += [cart.update_c for cart in self.cart.values()]
-        self.update_0(self.femc)
-        self.cryo.update_0(self.femc)
+        self.update_0()
+        self.cryo.update_0()
         for cart in self.cart.values():
-            cart.update_0(self.femc)
+            cart.update_0()
         for f in self.update_funcs:
             self.update()
         
@@ -217,12 +223,12 @@ class Namakanui(object):
         At each call we increment a counter and call the next function
         in the list; at 2Hz we get through the whole state in about 5s.
         '''
-        self.update_funcs[self.update_index](self.femc)
+        self.update_funcs[self.update_index]()
         self.update_index = (self.update_index + 1) % len(self.update_funcs)
         # Namakanui.update
     
     
-    def update_0(self, femc):
+    def update_0(self):
         '''
         Set and publish shared state for relatively static parameters.
         This function is called once during __init__.
@@ -244,12 +250,12 @@ class Namakanui(object):
         # Namakanui.update_0
     
     
-    def update_a(self, femc):
+    def update_a(self):
         '''
         Update the shared state.
         '''
-        if femc:
-            self.state['ppcomm_time'] = femc.get_ppcomm_time()  # expect ~1ms, TODO warn if long
+        if self.femc:
+            self.state['ppcomm_time'] = self.femc.get_ppcomm_time()  # expect ~1ms, TODO warn if long
         else:
             self.state['ppcomm_time'] = 0.0
         self.state['number'] += 1

@@ -75,10 +75,11 @@ class Cart(object):
     TODO: should instances own a reference to the FEMC, vs passing in?
     '''
     
-    def __init__(self, cc, wca):
+    def __init__(self, femc, cc, wca):
         '''
         Create a Cart instance from given sections of the config file.
         '''
+        self.femc = femc
         cc_band = int(cc['Band'])
         wca_band = int(wca['Band'])
         if cc_band != wca_band:
@@ -131,12 +132,12 @@ class Cart(object):
         # Cart.__init__
     
     
-    def update_0(self, femc):
+    def update_0(self):
         '''
         Get initial state of the parameters that are not read back from hardware.
         Future updates to these parameters are done immediately when commands are sent.
-        TODO accomodate single-sideband carts, e.g. band 3.
         '''
+        femc = self.femc
         self.state['number'] = 0
         self.state['simulate'] = ' '.join(self.simulate)
         
@@ -187,11 +188,11 @@ class Cart(object):
         # Cart.update_0
     
     
-    def update_a(self, femc):
+    def update_a(self):
         '''
         Update LNA parameters. Expect this to take ~36ms.
-        TODO accomodate single-sideband carts, e.g. band 3.
         '''
+        femc = self.femc
         if femc and self.state['pd_enable'] and 'cold' not in self.simulate:
             dv = []
             dc = []
@@ -215,11 +216,11 @@ class Cart(object):
         # Cart.update_a
     
     
-    def update_b(self, femc):
+    def update_b(self):
         '''
         Update params for PLL lock, PA, SIS mixers. Expect this to take ~25ms.
-        TODO accomodate single-sideband carts and those without SIS magnets (band3).
         '''
+        femc = self.femc
         if femc and self.state['pd_enable'] and 'warm' not in self.simulate:
             self.state['pll_lock_v'] = femc.get_cartridge_lo_pll_lock_detect_voltage(self.ca)
             self.state['pll_corr_v'] = femc.get_cartridge_lo_pll_correction_voltage(self.ca)
@@ -268,11 +269,12 @@ class Cart(object):
         # Cart.update_b
     
     
-    def update_c(self, femc):
+    def update_c(self):
         '''
         Update params for AMC, temperatures, misc. Expect this to take ~24ms.
         TODO could probably bundle into fewer top-level state params.
         '''
+        femc = self.femc
         if femc and self.state['pd_enable'] and 'warm' not in self.simulate:
             self.state['amc_gate_a_v'] = femc.get_cartridge_lo_amc_gate_a_voltage(self.ca)
             self.state['amc_drain_a_v'] = femc.get_cartridge_lo_amc_drain_a_voltage(self.ca)
@@ -326,7 +328,7 @@ class Cart(object):
         # Cart.update_c
 
     
-    def tune(self, femc, lo_ghz, voltage):
+    def tune(self, lo_ghz, voltage):
         '''
         Lock the PLL to produce the given LO frequency.
         The reference signal generator must already be set properly.
@@ -335,12 +337,12 @@ class Cart(object):
         '''
         try:
             self.state['lo_ghz'] = lo_ghz
-            self._lock_pll(femc, lo_ghz)
-            self._optimize_fm(femc, voltage)
+            self._lock_pll(lo_ghz)
+            self._optimize_fm(voltage)
             # TODO order of the following?
-            self._optimize_pa(femc, lo_ghz)
-            self._optimize_lna(femc, lo_ghz)
-            self._optimize_sis(femc, lo_ghz)
+            self._optimize_pa(lo_ghz)
+            self._optimize_lna(lo_ghz)
+            self._optimize_sis(lo_ghz)
         except:
             # TODO: on any failure we should probably zero the PA
             # and set sis/lna to safe values.
@@ -351,7 +353,7 @@ class Cart(object):
         # Cart.tune
         
         
-    def _lock_pll(self, femc, lo_ghz):
+    def _lock_pll(self, lo_ghz):
         '''
         Internal function only, does not publish state.
         Lock the PLL to produce the given LO frequency.
@@ -369,6 +371,7 @@ class Cart(object):
         self.state['yig_ghz'] = yig_ghz
         
         # if simulating, pretend we are locked and return.
+        femc = self.femc
         if not femc or 'warm' in self.simulate:
             self.state['pll_lock_v'] = 5.0
             self.state['pll_corr_v'] = 0.0
@@ -439,7 +442,7 @@ class Cart(object):
         raise RuntimeError(self.name + ' failed to lock at lo_ghz=%.9f' % (lo_ghz))
         # Cart._lock_pll
     
-    def _optimize_fm(self, femc, voltage):
+    def _optimize_fm(self, voltage):
         '''
         Internal function only, does not publish state.
         Adjust YTO to get PLL FM (control) voltage near given value.
@@ -450,9 +453,13 @@ class Cart(object):
         if voltage is None:
             return
         
+        femc = self.femc
         if not femc or 'warm' in self.simulate:
             self.state['pll_corr_v'] = voltage
             return
+        
+        if not self.state['pd_enable']:
+            raise RuntimeError(self.name + ' power disabled')
         
         # TODO: FEND-40.00.00.00-089-D-MAN gives the FM tuning slope
         # as 2.5 MHz/Volt, but it might vary by cartridge.  Make configurable.
@@ -498,17 +505,176 @@ class Cart(object):
         # Cart._optimize_fm
   
   
-    def _optimize_pa(self, femc, lo_ghz):
+    def _optimize_pa(self, lo_ghz):
         pass
         
-    def _optimize_lna(self, femc, lo_ghz):
+    def _optimize_lna(self, lo_ghz):
         pass
         
-    def _optimize_sis(self, femc, lo_ghz):
+    def _optimize_sis(self, lo_ghz):
         pass
 
+
+    def _estimate_fm_slope(self):
+        '''
+        Testing function.  Does not publish state.
+        Cartridge should already be tuned.
+        Returns estimated FM tuning (control voltage) slope in GHz/Volt.
+        Raises RuntimeError if lock is lost during this operation.
+        
+        This function may take a few seconds to complete, since it
+        waits 0.05s between single steps of the YTO.
+        '''
+        femc = self.femc
+        if not femc or 'warm' in self.simulate:
+            return 0.0
+        
+        if not self.state['pd_enable']:
+            raise RuntimeError(self.name + ' power disabled')
+        
+        coarse_counts = self.state['yto_coarse']
+        old_counts = coarse_counts
+        n = 10
+        cv = 0.0
+        for i in range(n):
+            cv += femc.get_cartridge_lo_pll_correction_voltage(self.ca)
+        cv /= n
+        old_cv = cv
+        voltage = sign(cv) * -8.0
+        relv = cv - voltage
+        step = sign(relv)
+        try_counts = max(0,min(4095, coarse_counts + step))
+        ll = femc.get_cartridge_lo_pll_unlock_detect_latch(self.ca)
+        while ll == 0 and try_counts != coarse_counts and step == sign(relv):
+            coarse_counts = try_counts
+            femc.set_cartridge_lo_yto_coarse_tune(self.ca, coarse_counts)
+            namakanui.sleep(0.05)
+            cv = femc.get_cartridge_lo_pll_correction_voltage(self.ca)
+            ll = femc.get_cartridge_lo_pll_unlock_detect_latch(self.ca)
+            relv = cv - voltage
+            try_counts = max(0,min(4095, coarse_counts + step))
+        
+        self.state['yto_coarse'] = coarse_counts
+        self.state['pll_unlock'] = ll
+        if ll:
+            lo_ghz = self.state['lo_ghz']
+            raise RuntimeError(self.name + ' lost lock in estimate_fm_slope at lo_ghz=%.9f' % (lo_ghz))
+        
+        cv = 0.0
+        for i in range(n):
+            cv += femc.get_cartridge_lo_pll_correction_voltage(self.ca)
+        cv /= n
+        
+        # TODO: counts_per_volt is what we want anyway, maybe just return it
+        counts_per_volt = abs((coarse_counts - old_counts) / (cv - old_cv))
+        yig_slope = (self.yig_hi - self.yig_lo) / 4095  # GHz/count
+        fm_slope = counts_per_volt * yig_slope  # GHz/Volt
+        return fm_slope
+        # Cart._estimate_fm_slope
+
+
+    def power(self, enable):
+        '''
+        Enable or disable power to the cartridge (state['pd_enable']).
+        On power down, sets PA, LNA, SIS to safe values.
+        On power up, hella
+        '''
+        pass
+    
+    def _calc_sis_bias_error(self):
+        '''
+        Calculate SIS bias voltage setting error
+        according to section 10.3.2 of FEND-40.00.00.00-089-D-MAN.
+        
+        TODO: Make sure the PAs are disabled before we do this?
+        Band3 doesn't even have any mixer params in INI,
+        Band7 SIS setting for error measurement is close to nominal,
+        Band6 error setting is about DOUBLE the nominal INI params.
+          basically, is it safe?
+        '''
+        self.bias_error = [0.0]*4
+        if not self.femc or 'cold' in self.simulate:
+            return
+        nominal_magnet_current = interp_table(self.magnet_table, self.state['lo_ghz'])
+        if nominal_magnet_current:
+            self._ramp_sis_magnet_currents(nominal_magnet_current)
+        sis_setting = [0,0,0, 10.0, 4.8, 2.3, 9.0, 2.2, 2.2, 2.3, 2.2][self.band]
+        self._ramp_sis_bias_voltages([sis_setting]*4)  # note bias_error=0 here
+        namakanui.sleep(0.01)
+        sbv = [0.0]*4
+        n = 100
+        for i in range(n):
+            for po in range(2):
+                for sb in range(2):
+                    sbv[po*2 + sb] += self.femc.get_sis_voltage(self.ca, po, sb)
+        for i in range(4):
+            sbv[i] = sbv[i]/n
+            self.bias_error[i] = sbv[i] - sis_setting[i]
+        self._ramp_sis_bias_voltages([0.0]*4)
+        # Cart._calc_sis_bias_error
+        
+    
+    def _ramp_sis(self, values, key, step, f):
+        '''
+        Internal function, does not publish state or check femc/simulate.
+        Used by _ramp_sis_magnet_currents and _ramp_sis_bias_voltages.
+        Assumes self.state[key] is up-to-date.
+        '''
+        i = 0
+        for po in range(2):
+            for sb in range(2):
+                val = self.state[key][i]
+                end = ma[i]
+                inc = step * sign(end-val)
+                while abs(end-val) > step:
+                    val += inc
+                    f(self.ca, po, sb, val)
+                f(self.ca, po, sb, end)
+                self.state[key][i] = end  # in case _ramp called before next update
+                i += 1
+                namakanui.sleep(0.01)  # these ramps might take 300ms each!
+        # Cart._ramp_sis
+    
+    def _ramp_sis_magnet_currents(self, ma):
+        '''
+        Internal function, does not publish state.
+        Ramp magnet currents to desired values in 0.1mA steps.
+        Order of current array ma is pol/sis [01, 02, 11, 12].
+        '''
+        if not self.femc or 'cold' in self.simulate:
+            self.state['sis_mag_c'] = ma
+            return
+        self._ramp_sis(ma, 'sis_mag_c', 0.1, self.femc.set_sis_magnet_current)
+        # Cart._ramp_sis_magnet_currents
+    
+    def _ramp_sis_bias_voltages(self, mv):
+        '''
+        Internal function, does not publish state.
+        Ramp bias voltages to desired values in 0.05mV steps.
+        Order of voltage array mv is pol/sis [01, 02, 11, 12].
+        Subtracts self.bias_error from given mv.
+        
+        NOTE use of special get_sis_voltage_cmd, TODO NEEDS TESTING ON STARTUP.
+        '''
+        if not self.femc or 'cold' in self.simulate:
+            self.state['sis_v'] = mv
+            return
+        bmv = [0.0]*4
+        for i in range(4):
+            bmv[i] = mv[i] - self.bias_error[i]
+            self.state['sis_v'][i] = self.femc.get_sis_voltage_cmd(self.ca, i//2, i%2)
+        self.log.debug(self.name + ' _ramp_sis_bias_voltages mv:  %s', mv)
+        self.log.debug(self.name + ' _ramp_sis_bias_voltages bmv: %s', bmv)
+        self.log.debug(self.name + ' _ramp_sis_bias_voltages cmd: %s', self.state['sis_v'])
+        self._ramp_sis(bmv, 'sis_v', 0.05, self.femc.set_sis_voltage)
+        # Cart._ramp_sis_bias_voltages
+
 '''
-TODO power on/off, demag, deflux, tune, adjust corrv
+TODO power on/off, demag, deflux
+
+MYSTERIES:
+ - band3 lists 2po, 2sb mixers, but drawing only shows USB for LHC & RHC.
+ - band6 has SIS magnets for each polarization, but no params given in INI.
 
 '''
 

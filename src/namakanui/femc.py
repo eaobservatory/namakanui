@@ -682,6 +682,15 @@ class FEMC(object):
         rca_offset = self.make_rca(cartridge=ca, polarization=po, sideband=sb) | _sis_voltage
         return self.get_standard_float(rca_offset)
     
+    def get_sis_voltage_cmd(self, ca, po, sb):
+        '''HACK: Get last commanded SIS mixer voltage in mV for cart, pol, sideband.
+           Since SIS bias voltage must be ramped, and also has a setting error,
+           a function like this is the only way to avoid a jump (and potential
+           trapped flux) when taking over an already-running cartridge.'''
+        rca_offset = self.make_rca(cartridge=ca, polarization=po, sideband=sb) | _sis_voltage
+        rca_offset |= 0x10000  # 'set' mask; luckily 'get' mask is all 0s
+        return self.get_standard_float(rca_offset)
+    
     def get_sis_current(self, ca, po, sb):
         '''Get SIS mixer current in mA for cartridge, polarization, sideband.
            Suggested interval: 5s'''
