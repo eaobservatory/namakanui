@@ -2,10 +2,19 @@
 Ryan Berthold 20181105
 Cart: Warm and Cold Cartridge monitoring and control class.
 Also helper functions for dealing with tables in INI files.
+
+MYSTERIES:
+ - band3 lists 2po, 2sb mixers, but drawing only shows USB for LHC & RHC.
+     might not be getting "alma hardware".  so long as FEMC doesn't complain,
+     it should be okay to set params for all 4 mixers.
+ - band6 has SIS magnets for each polarization, but no params given in INI.
+     maybe set as hardware defaults?  maybe unused?
+     needs some special testing once we have a cold cartridge.
 '''
 
 import namakanui  # for sleep, publish
 import logging
+import time
 
 def sign(x):
     '''
@@ -20,7 +29,7 @@ def sign(x):
     return 0
 
 
-def read_table(self, config_section, name, dtype, fnames):
+def read_table(config_section, name, dtype, fnames):
     '''
     Return a table from a section of the config file.
     The table will be a list of namedtuples holding values of dtype.
@@ -46,7 +55,7 @@ def read_table(self, config_section, name, dtype, fnames):
     return table
 
 
-def interp_table(self, table, freqLO):
+def interp_table(table, freqLO):
     '''
     Return a linearly-interpolated row in table at given freqLO GHz.
     Assumes freqLO is the first column in the table.
@@ -127,8 +136,21 @@ class Cart(object):
             self.simulate.add('warm')
         if cc.getboolean('Simulate'):
             self.simulate.add('cold')
+        self.log.info('simulate = %s', self.simulate)
         
-        self.log.info('__init__ done, simulate=%s', self.simulate)
+        # get (and publish) the current state of the cartridge
+        for f in [self.update_0, self.update_a, self.update_b, self.update_c]:
+            f()
+            namakanui.sleep(.01)
+        
+        # if the cart is already powered, measure SIS bias error.
+        # sets PA gate/drain voltages to 0 as a side effect.
+        # this may take a few seconds.
+        self.bias_error = [0.0]*4
+        if self.state['pd_enable']:
+            self._calc_sis_bias_error()
+        
+        self.log.info('__init__ done')
         # Cart.__init__
     
     
@@ -187,6 +209,8 @@ class Cart(object):
         namakanui.publish(self.name, self.state)
         # Cart.update_0
     
+    # TODO: it might make more logical sense to break up updates into
+    # warm and cold cartridges.  warm would take ~27ms, cold would take ~60ms.
     
     def update_a(self):
         '''
@@ -344,8 +368,7 @@ class Cart(object):
             self._optimize_lna(lo_ghz)
             self._optimize_sis(lo_ghz)
         except:
-            # TODO: on any failure we should probably zero the PA
-            # and set sis/lna to safe values.
+            # TODO: zero PA on failure?
             raise
         finally:
             self.state['number'] += 1
@@ -576,28 +599,144 @@ class Cart(object):
     def power(self, enable):
         '''
         Enable or disable power to the cartridge (state['pd_enable']).
-        On power down, sets PA, LNA, SIS to safe values.
-        On power up, hella
+        This will take some time.  Power-off needs to ramp SIS bias voltage
+        and magnet current to zero, which may take a few seconds.
+        Power-on needs to demagnetize and deflux the SIS mixers, which may
+        take several MINUTES.  In practice, the cartridges will be left
+        powered on most of the time.
         '''
+        enable = int(bool(enable))
+        if enable and not self.state['pd_enable']:  # power-on
+            self.log.info('power-on...')
+            if self.femc:
+                self.femc.set_pd_enable(self.ca, 1)
+                namakanui.sleep(1)  # cartridge needs a second to wake up
+            self.state['pd_enable'] = 1
+            self._set_pa([0.0]*4)
+            self.demagnetize_and_deflux()
+            self._calc_sis_bias_error()
+            # "standard biasing sequence" will wait for first tune cmd.
+            self.state['number'] += 1
+            namakanui.publish(self.name, self.state)
+            self.log.info('power-on complete.')
+        elif self.state['pd_enable'] and not enable:  # power-off
+            self.log.info('power-off...')
+            self._set_pa([0.0]*4)
+            self._ramp_sis_bias_voltages([0.0]*4)
+            self._ramp_sis_magnet_currents([0.0]*4)
+            if self.femc:
+                self.femc.set_pd_enable(self.ca, 0)
+            self.state['pd_enable'] = 0
+            self.state['number'] += 1
+            namakanui.publish(self.name, self.state)
+            self.log.info('power-off complete.')
+        # Cart.power
+    
+    
+    def demagnetize_and_deflux(self):
+        '''
+        This could take a while.
+        Described in section 10.1.1 of FEND-40.00.00.00-089-D-MAN.
+        
+        TODO: Our mixers may not match the documented configuration.
+        Should add a section to the config file describing setup.
+        For instance, our INI doesn't have any magnet config for band 6.
+        The final steps refer to 'nominal' magnet current, but without
+        config what is that?  Does our band 6 lack SIS magnets?
+        '''
+        if not self.femc or 'cold' in self.simulate:
+            return
+        if not self.state['pd_enable']:
+            raise RuntimeError(self.name + ' power disabled')
+        if self.band < 3:
+            return
+        # Preliminary Steps
+        self._set_pa([0.0]*4)
+        self._ramp_sis_bias_voltages([0.0]*4)
+        # Demagnetizing, for bands with SIS magnets
+        if self.band >= 5:
+            self._ramp_sis_magnet_currents([0.0]*4)
+            self._demagnetize(0,0)  # po,sb
+            if self.band <= 8:
+                self._demagnetize(0,1)
+            self._demagnetize(1,0)
+            if self.band <= 8:
+                self._demagnetize(1,1)
+        # Mixer Heating
+        self._mixer_heating()
+        # Final Steps
+        # NOTE: we leave everything at zero until next tune cmd.
+        nom_i_mag = interp_table(self.magnet_table, self.state['lo_ghz'])
+        if nom_i_mag:
+            nom_i_mag = [1.1*x for x in nom_i_mag[1:]]
+            self._ramp_sis_magnet_currents(nom_i_mag)
+            self._ramp_sis_magnet_currents([0.0]*4)
+        # Cart.demagnetize_and_deflux
+    
+    def _demagnetize(self, po, sb):
+        '''
+        Internal function.
+        Demagnetize a SIS mixer.
+        Assumes magnet current has already been ramped to zero.
+        For band 6/7, takes 50 x 4 x 100ms = 20s.
+        
+        NOTE: We want to keep the timing consistent between current settings,
+        but an event loop may be calling Cart.update_X functions taking 36ms
+        or more.  Thus most of the sleeping in this function is done using
+        regular time.sleep(), with only a brief namakanui.sleep where the
+        event loop can run.
+        '''
+        i_mag = [0,0,0,0,0, 30, 50, 50, 20, 50, 100][self.band]
+        sleep_secs = 0.1
+        i_mag_dec = 1
+        if self.band == 10:
+            sleep_secs = 0.2
+            i_mag_dec = 2
+        i = 0
+        while i_mag > 0:
+            i_set = [i_mag, 0, -i_mag, 0][i]
+            i = (i+1) % 4
+            if i==0:
+                i_mag -= i_mag_dec
+            self.femc.set_sis_magnet_current(self.ca, po, sb, i_set)
+            now = time.time()
+            midpoint = now + sleep_secs*0.5
+            endpoint = now + sleep_secs
+            namakanui.sleep(0.01)  # 10ms for the event loop
+            s = midpoint - time.time()
+            if s > 0.001:
+                time.sleep(s)
+            self.state['sis_mag_c'][po*2 + sb] = self.femc.get_sis_magnet_current(self.ca, po, sb)
+            # TODO: log magnet current.  probably too fast to justify publishing.
+            s = endpoint - time.time()
+            if s > 0.001:
+                time.sleep(s)
+        # Cart._demagnetize
+    
+    def _mixer_heating(self):
+        '''
+        Heat SIS mixers to 12K and wait for them to cool back down.
+        '''
+        # TODO
         pass
+        # Cart._mixer_heating
     
     def _calc_sis_bias_error(self):
         '''
-        Calculate SIS bias voltage setting error
+        Internal function, does not publish state.
+        Set PAs to 0, then calculate SIS bias voltage setting error
         according to section 10.3.2 of FEND-40.00.00.00-089-D-MAN.
-        
-        TODO: Make sure the PAs are disabled before we do this?
-        Band3 doesn't even have any mixer params in INI,
-        Band7 SIS setting for error measurement is close to nominal,
-        Band6 error setting is about DOUBLE the nominal INI params.
-          basically, is it safe?
         '''
         self.bias_error = [0.0]*4
         if not self.femc or 'cold' in self.simulate:
             return
+        if not self.state['pd_enable']:
+            raise RuntimeError(self.name + ' power disabled')
+        self.log.info('calculating SIS bias voltage setting error')
+        self._set_pa([0.0]*4)
         nominal_magnet_current = interp_table(self.magnet_table, self.state['lo_ghz'])
         if nominal_magnet_current:
-            self._ramp_sis_magnet_currents(nominal_magnet_current)
+            self._ramp_sis_magnet_currents(nominal_magnet_current[1:])
         sis_setting = [0,0,0, 10.0, 4.8, 2.3, 9.0, 2.2, 2.2, 2.3, 2.2][self.band]
         self._ramp_sis_bias_voltages([sis_setting]*4)  # note bias_error=0 here
         namakanui.sleep(0.01)
@@ -607,9 +746,12 @@ class Cart(object):
             for po in range(2):
                 for sb in range(2):
                     sbv[po*2 + sb] += self.femc.get_sis_voltage(self.ca, po, sb)
+            if (i+1)%20 == 0:  # every ~80ms
+                namakanui.sleep(.01)
         for i in range(4):
             sbv[i] = sbv[i]/n
             self.bias_error[i] = sbv[i] - sis_setting[i]
+        self.log.info('SIS bias voltage setting error: %s', self.bias_error)
         self._ramp_sis_bias_voltages([0.0]*4)
         # Cart._calc_sis_bias_error
         
@@ -626,11 +768,15 @@ class Cart(object):
                 val = self.state[key][i]
                 end = ma[i]
                 inc = step * sign(end-val)
+                j = 0
                 while abs(end-val) > step:
                     val += inc
                     f(self.ca, po, sb, val)
+                    j += 1
+                    if j%80 == 0:
+                        namakanui.sleep(0.01)
                 f(self.ca, po, sb, end)
-                self.state[key][i] = end  # in case _ramp called before next update
+                self.state[key][i] = end  # in case _ramp called again before next update
                 i += 1
                 namakanui.sleep(0.01)  # these ramps might take 300ms each!
         # Cart._ramp_sis
@@ -644,6 +790,7 @@ class Cart(object):
         if not self.femc or 'cold' in self.simulate:
             self.state['sis_mag_c'] = ma
             return
+        self.log.debug('ramping SIS magnet current to %s', ma)
         self._ramp_sis(ma, 'sis_mag_c', 0.1, self.femc.set_sis_magnet_current)
         # Cart._ramp_sis_magnet_currents
     
@@ -659,22 +806,44 @@ class Cart(object):
         if not self.femc or 'cold' in self.simulate:
             self.state['sis_v'] = mv
             return
-        bmv = [0.0]*4
+        set_mv = [0.0]*4
+        get_mv = [0.0]*4
         for i in range(4):
-            bmv[i] = mv[i] - self.bias_error[i]
+            set_mv[i] = mv[i] - self.bias_error[i]
+            get_mv[i] = self.femc.get_sis_voltage(self.ca, i//2, i%2)
             self.state['sis_v'][i] = self.femc.get_sis_voltage_cmd(self.ca, i//2, i%2)
-        self.log.debug(self.name + ' _ramp_sis_bias_voltages mv:  %s', mv)
-        self.log.debug(self.name + ' _ramp_sis_bias_voltages bmv: %s', bmv)
-        self.log.debug(self.name + ' _ramp_sis_bias_voltages cmd: %s', self.state['sis_v'])
-        self._ramp_sis(bmv, 'sis_v', 0.05, self.femc.set_sis_voltage)
+        self.log.debug('_ramp_sis_bias_voltages arg mv:  %s', mv)
+        self.log.debug('_ramp_sis_bias_voltages set mv: %s', set_mv)
+        self.log.debug('_ramp_sis_bias_voltages get mv: %s', get_mv)
+        self.log.debug('_ramp_sis_bias_voltages cmd mv: %s', self.state['sis_v'])
+        self._ramp_sis(set_mv, 'sis_v', 0.05, self.femc.set_sis_voltage)
         # Cart._ramp_sis_bias_voltages
+    
+    def _set_pa(self, pa):
+        '''
+        Internal function, does not publish state.
+        Given pa is [VDA, VDB, VGA, VGB] (same as table row),
+        where (I assume) A is pol0 and B is pol1.
+        
+        TODO: Setting these without a cold cartridge (even to zero)
+        might require putting the FEMC into TROUBLESHOOTING mode.
+        
+        TODO: Is there a disconnect between set (scale) and get (voltage)?
+        Do the INI file parameters account for scale correctly?
+        '''
+        if not self.femc or 'warm' in self.simulate:
+            self.state['pa_drain_v'] = pa[0:2]
+            self.state['pa_gate_v'] = pa[2:4]
+            return
+        self.log.debug('setting PA to %s', pa)
+        for po in range(2):
+            self.femc.set_cartridge_lo_pa_pol_drain_voltage_scale(self.ca, po, pa[po])
+            self.femc.set_cartridge_lo_pa_pol_gate_voltage(self.ca, po, pa[po+2])
+        # Cart._set_pa
 
 '''
 TODO power on/off, demag, deflux
 
-MYSTERIES:
- - band3 lists 2po, 2sb mixers, but drawing only shows USB for LHC & RHC.
- - band6 has SIS magnets for each polarization, but no params given in INI.
 
 '''
 
