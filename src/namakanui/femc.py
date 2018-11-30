@@ -261,29 +261,21 @@ class FEMC(object):
         self.s.bind((interface,))
         self.s.settimeout(timeout)
         self.node = (node_id+1) << 18
-        b = self.clear()
-        if self.verbose:
-            print('cleared %d bytes: 0x%s' % (len(b), b.hex()), file=sys.stderr)
         setup = self.get_setup_info()
         if setup != 0 and setup != 5:
-            b = self.clear()
             estr = _setup_errors.get(setup, "unknown error")
-            raise RuntimeError("get_setup_info error: %d: %s; cleared %d bytes: 0x%s" % (setup, estr, len(b), b.hex()))
+            raise RuntimeError("get_setup_info error: %d: %s" % (setup, estr))
         # TODO: other setup/init
         
     def __del__(self):
         self.s.close()
     
     def clear(self):
-        '''Read out and return all bytes in the socket buffer.
-           Used to recover after an IO error; 100ms timeout.'''
-        b = b''
-        r = True
+        '''Empty the socket buffer.  Used before sending a command.'''
+        r,w,x = select.select([self.s], [], [], 0)
         while r:
-            r,w,x = select.select([self.s], [], [], 0.1)
-            if r:
-                b += self.s.recv(16)
-        return b
+            self.s.recv(65536)  # minimize loops
+            r,w,x = select.select([self.s], [], [], 0)
         
     def make_rca(self, cartridge=0, polarization=0, sideband=0, lna_stage=0,
                  dac=0, pa_channel=0, cartridge_temp=0, pd_module=0, pd_channel=0,
@@ -329,28 +321,52 @@ class FEMC(object):
         
     
     def set_rca(self, rca, data):
-        '''Send SocketCAN packet to RCA with packed data bytes.'''
+        '''Send SocketCAN packet to RCA with packed data bytes.
+           Before sending, empties the socket of any waiting data --
+           these are commands/replies of any concurrent clients.
+           The transmit queue is very shallow, so we select() until
+           the socket is writable, then try to send until timeout.
+           '''
         packet = _IB3x8s.pack(socket.CAN_EFF_FLAG | self.node | rca, len(data), data)
         if self.verbose:
             print('set_rca send %d bytes: 0x%s' % (len(packet), packet.hex()), file=sys.stderr)
-        num = self.s.send(packet)
-        if num != 16:
-            raise RuntimeError("only sent %d bytes" % (num))
-    
+        self.clear()  # empty socket buffer of any nonrelated traffic
+        timeout = self.s.gettimeout() or 0
+        wall_timeout = time.time() + timeout
+        while timeout >= 0:
+            r,w,x = select.select([], [self.s], [], timeout)
+            try:
+                num = self.s.send(packet)
+                if num != 16:
+                    raise RuntimeError("only sent %d bytes" % (num))
+                return
+            except OSError as e:
+                if e.errno == 105:  # No buffer space available
+                    timeout = wall_timeout - time.time()
+                    continue
+                else:
+                    raise
+        raise RuntimeError("timeout waiting to send")
+        
     def get_rca(self, rca):
         '''Send SocketCAN packet to RCA and return reply data bytes.
            For resilience to other traffic on bus (or misread commands),
-           keep looking for a matching reply id until timeout expires.'''
+           keep looking for a matching reply id until timeout expires.
+           20181128: The matching reply id must have data bytes, otherwise
+                     we assume it's an outgoing command and ignore it.'''
         s_can_id = self.node | rca
         self.set_rca(rca, b'')
         r_can_id = None
+        data_len = 0
         timeout = time.time() + (self.s.gettimeout() or 0)
         badreps = []
-        while (r_can_id is None) or (r_can_id != s_can_id and time.time() < timeout):
-            reply = self.s.recv(16)
+        while (r_can_id is None) or ((r_can_id != s_can_id or not data_len) and time.time() < timeout):
+            try:
+                reply = self.s.recv(16)
+            except socket.timeout:
+                break
             if len(reply) != 16:
-                b = self.clear()
-                raise RuntimeError("only received %d bytes: 0x%s; cleared %d bytes: 0x%s" % (len(reply), reply.hex(), len(b), b.hex()))
+                raise RuntimeError("only received %d bytes: 0x%s" % (len(reply), reply.hex()))
             if self.verbose:
                 print('get_rca recv %d bytes: 0x%s' % (len(reply), reply.hex()), file=sys.stderr)
             r_can_id, data_len, data = _IB3x8s.unpack(reply)
@@ -359,9 +375,12 @@ class FEMC(object):
                 badreps.append(reply.hex())
                 if self.verbose:
                     print('get_data %x unexpected reply id %x' % (s_can_id, r_can_id))
-        if r_can_id != s_can_id:
-            b = self.clear()
-            raise RuntimeError("timeout after %d bad replies: %s; cleared %d bytes: 0x%s" % (len(badreps), badreps, len(b), b.hex()))
+            elif not data_len:
+                badreps.append(reply.hex())
+                if self.verbose:
+                    print('get_data %x got reply with no data' % (s_can_id))
+        if r_can_id != s_can_id or not data_len:
+            raise RuntimeError("timeout after %d bad replies: %s" % (len(badreps), badreps))
         data = data[:data_len]
         return data
     
@@ -382,13 +401,11 @@ class FEMC(object):
         # TODO: certain operations might require action for specific errors,
         # so it'd be better to raise an exception that's easier to check.
         if r_data[-1] != 0:
-            b = self.clear()
             code = _b.unpack(r_data[-1:])[0]  # overkill, could just use r_data[-1]
             estr = _errors.get(code, "unrecognized error code")
-            raise RuntimeError("error code from set 0x%08x: %d: %s; cleared %d bytes: 0x%s" % (self.node|rca, code, estr, len(b), b.hex()))
+            raise RuntimeError("error code from set 0x%08x: %d: %s" % (self.node|rca, code, estr))
         if len(r_data) != len(data) + 1 or r_data[:-1] != data:
-            b = self.clear()
-            raise RuntimeError("bad reply from set 0x%08x: expected 0x%s, got 0x%s; cleared %d bytes: 0x%s" % (self.node|rca, data.hex(), r_data.hex(), len(b), b.hex()))
+            raise RuntimeError("bad reply from set 0x%08x: expected 0x%s, got 0x%s" % (self.node|rca, data.hex(), r_data.hex()))
     
     # NOTE: The functions below could automatically infer data types,
     # but explicit typing might help catch some obscure errors.
@@ -409,39 +426,33 @@ class FEMC(object):
         '''Send a STANDARD monitor command, base 0x00000; return ubyte value.'''
         d = self.get_rca(0x00000 | rca_offset)
         if len(d) != 2:
-            b = self.clear()
-            raise RuntimeError("reply len from get 0x%08x not 2: 0x%s; cleared %d bytes: 0x%s" % (self.node|rca_offset, d.hex(), len(b), b.hex()))
+            raise RuntimeError("reply len from get 0x%08x not 2: 0x%s" % (self.node|rca_offset, d.hex()))
         v,e = _Bb.unpack(d)
         if e != 0:
-            b = self.clear()
             estr = _errors.get(e, "unrecognized error code")
-            raise RuntimeError("error code from get 0x%08x: %d: %s; cleared %d bytes: 0x%s" % (self.node|rca_offset, e, estr, len(b), b.hex()))
+            raise RuntimeError("error code from get 0x%08x: %d: %s" % (self.node|rca_offset, e, estr))
         return v
     
     def get_standard_ushort(self, rca_offset):
         '''Send a STANDARD monitor command, base 0x00000; return ushort value.'''
         d = self.get_rca(0x00000 | rca_offset)
         if len(d) != 3:
-            b = self.clear()
-            raise RuntimeError("reply len from get 0x%08x not 3: 0x%s; cleared %d bytes: 0x%s" % (self.node|rca_offset, d.hex(), len(b), b.hex()))
+            raise RuntimeError("reply len from get 0x%08x not 3: 0x%s" % (self.node|rca_offset, d.hex()))
         v,e = _Hb.unpack(d)
         if e != 0:
-            b = self.clear()
             estr = _errors.get(e, "unrecognized error code")
-            raise RuntimeError("error code from get 0x%08x: %d: %s; cleared %d bytes: 0x%s" % (self.node|rca_offset, e, estr, len(b), b.hex()))
+            raise RuntimeError("error code from get 0x%08x: %d: %s" % (self.node|rca_offset, e, estr))
         return v
     
     def get_standard_float(self, rca_offset):
         '''Send a STANDARD monitor command, base 0x00000; return float value.'''
         d = self.get_rca(0x00000 | rca_offset)
         if len(d) != 5:
-            b = self.clear()
-            raise RuntimeError("reply len from get 0x%08x not 5: 0x%s; cleared %d bytes: 0x%s" % (self.node|rca_offset, d.hex(), len(b), b.hex()))
+            raise RuntimeError("reply len from get 0x%08x not 5: 0x%s" % (self.node|rca_offset, d.hex()))
         v,e = _fb.unpack(d)
         if e != 0:
-            b = self.clear()
             estr = _errors.get(e, "unrecognized error code")
-            raise RuntimeError("error code from get 0x%08x: %d: %s; cleared %d bytes: 0x%s" % (self.node|rca_offset, e, estr, len(b), b.hex()))
+            raise RuntimeError("error code from get 0x%08x: %d: %s" % (self.node|rca_offset, e, estr))
         return v
     
     ########### special SET commands ###########
@@ -534,8 +545,7 @@ class FEMC(object):
         payload = self.get_special(0x07)
         t1 = time.time()
         if payload != b'\xff\xff\xff\xff\xff\xff\xff\xff':
-            b = self.clear()
-            raise RuntimeError('bad payload, expected 8x 0xff, received 0x%s; cleared %d bytes: 0x%s' % (payload.hex(), len(b), b.hex()))
+            raise RuntimeError('bad payload, expected 8x 0xff, received 0x%s' % (payload.hex()))
         return t1-t0
     
     def get_fpga_version_info(self):
@@ -551,20 +561,22 @@ class FEMC(object):
         return self.get_special(0x09)[0]
     
     def get_esns(self):
-        '''Return a list of electronic serial numbers found.'''
+        '''Return a list of electronic serial numbers found.
+           Any errors usually indicate that another client is
+           trying to get the ESN list at the same time we are.'''
         n = self.get_special(0x0a)[0]
         esns = []
         while len(esns) < n:
             esn = self.get_special(0x0b)
             if esn == b'\x00'*8 or esn == b'\xff'*8:
-                b = self.clear()
-                raise RuntimeError('expected %d esns, but only found %d: %s; cleared %d bytes: 0x%s' % (n, len(esns), esns, len(b), b.hex()))
+                raise RuntimeError('expected %d esns, but only found %d: %s' % (n, len(esns), esns))
             esns.append(esn)
         esn = self.get_special(0x0b)
         if esn != b'\x00'*8 and esn != b'\xff'*8:
             esns.append(esn)
-            b = self.clear()
-            raise RuntimeError('extra esn found: %s; cleared %d bytes: 0x%s' % (esns, len(b), b.hex()))
+            raise RuntimeError('extra esn found: %s' % (esns))
+        if len(set(esns)) != n:
+            raise RuntimeError('duplicate esns found: %s' % (esns))
         return esns
     
     def get_errors_number(self):
@@ -1455,3 +1467,48 @@ class FEMC(object):
         return self.get_standard_ubyte(_lpr_edfa_driver_state)
 
     
+
+def test_threaded_esns(num_threads=10):
+    '''
+    This test spawns multiple threads, each creating a separate FEMC instance
+    (with a separate SocketCAN socket), and attempts to get the ESN list
+    from each.  The ESN list is one of the few overlapping RCAs if the
+    cartridge monitoring/control is divided up into separate processes.
+    
+    After making the following changes to the FEMC class,
+    this function succeeds even for many (100+) threads:
+     - get_rca ignores reads with no data (outgoing 'get' commands)
+     - set_rca retries send to account for small transmit queue
+     - clear socket buffer before send, vs after recv error
+    '''
+    import threading
+    import traceback
+    def threadfunc(thread_number):
+        try:
+            f = FEMC()
+            tries = 10
+            for i in range(tries):
+                try:
+                    esns = f.get_esns()
+                    break
+                except RuntimeError:
+                    if i+1 == tries:
+                        raise
+                    sleep_secs = 0.001*(thread_number)
+                    print("thread %d sleeping %gs to try again..." % (thread_number, sleep_secs))
+                    time.sleep(sleep_secs)
+            print("%d esns: %s" % (thread_number, esns))
+        except:
+            e = traceback.format_exc()
+            print("thread %d: %s" % (thread_number, e), file=sys.stderr)
+    print("creating %d threads..." % (num_threads))
+    threads = [threading.Thread(target=threadfunc, args=(i,)) for i in range(num_threads)]
+    print("starting threads...")
+    for t in threads:
+        t.start()
+    print("joining threads...")
+    for t in threads:
+        t.join()
+    print("test_threaded_esns done.")
+    
+
