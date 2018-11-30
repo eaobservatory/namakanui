@@ -4,19 +4,36 @@ Monitoring and control for the Namakanui cryostat.
 Valves, pumps, pressures, temperatures, power supply.
 '''
 
-import namakanui  # for sleep, publish
-
+import time
 
 class Cryo(object):
     '''Monitor and control the Namakanui cryostat.'''
     
-    def __init__(self, femc):
+    def __init__(self, femc, sleep, publish):
         # TODO simulate config from somewhere, for now sim everything.
         # TODO simulate granularity? unsure what bits we'll have included.
         self.femc = femc
         self.simulate = set(['all'])
         self.name = 'CRYO'
         self.state = {}
+        # NOTE we go through a full update cycle to init state before publish.
+        self.sleep = time.sleep  # event loop might not be ready yet
+        self.publish = lambda: None  # nop
+        self.update_0()
+        self.update_all()
+        self.sleep = sleep
+        self.publish = publish
+        self.publish(self.name, self.state)
+    
+    
+    def update_one(self):
+        '''Cycle through update_X functions.  Call at 0.2 Hz.'''
+        self.update_a()
+    
+    
+    def update_all(self):
+        '''Call all update_X functions to perform a full update.'''
+        self.update_a()
     
     
     def update_0(self):
@@ -35,7 +52,7 @@ class Cryo(object):
             self.state['backpump_enable'] = 0
             self.state['turbopump_enable'] = 0
             self.state['vacgauge_enable'] = 0
-        namakanui.publish(self.name, self.state)
+        self.publish(self.name, self.state)
         # Cryo.update_0
             
     
@@ -73,7 +90,7 @@ class Cryo(object):
             self.state['cryostat_temp'] = [0.0]*13
         
         self.state['number'] += 1
-        namakanui.publish(self.name, self.state)
+        self.publish(self.name, self.state)
         # Cryo.update_a
 
 # TODO control funcs
