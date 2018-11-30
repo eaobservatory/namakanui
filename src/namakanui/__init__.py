@@ -297,3 +297,9 @@ class Namakanui(object):
 
 # TODO power up/down functions per cart.
 
+
+
+
+
+
+
