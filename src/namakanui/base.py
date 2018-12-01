@@ -51,6 +51,7 @@ class Base(object):
             # roll back and re-update (in case we failed on a partial update)
             self._simulate = save_simulate
             self.initialise()
+            raise
         finally:
             self.publish = save_publish
             self.sleep = save_sleep
