@@ -6,7 +6,7 @@ Valves, pumps, pressures, temperatures, power supply.
 
 from namakanui.base import Base
 from namakanui.femc import FEMC
-import time
+import logging
 
 class Cryo(Base):
     '''
@@ -15,18 +15,17 @@ class Cryo(Base):
     NOTE: There is only one update function, so call update_one() at 0.2Hz.
     '''
     
-    def __init__(self, sleep, publish):
-        # TODO simulate config from somewhere, for now sim everything.
+    def __init__(self, inifilename, sleep, publish):
         # TODO simulate granularity? unsure what bits we'll have included.
-        #self.femc = femc
-        Base.__init__(self)  # should probably use magic super().__init__()
+        # TODO: does the cryostat have ESNs we need to check?
+        Base.__init__(self, inifilename)  # should probably use magic super().__init__()
         self.sleep = sleep
         self.publish = publish
-        self._simulate = set(['femc', 'all'])  # note underscore
-        self.name = 'CRYO'
+        self._simulate = set(self.config['cryo']['simulate'].split())  # note underscore
+        self.name = self.config['cryo']['pubname']
         self.state = {'number':0}
         self.update_functions = [self.update_a]
-        # TODO configurable simulate params
+        self.log = logging.getLogger(self.config['cryo']['logname'])
         self.simulate = self._simulate  # assignment invokes initialise()
     
     
@@ -41,7 +40,9 @@ class Cryo(Base):
             self._simulate = set(['femc', 'all'])  # note underscore
         
         if 'femc' not in self.simulate:
-            self.femc = FEMC()  # todo config params
+            interface = self.config['femc']['interface']
+            node = int(self.config['femc']['node'], 0)
+            self.femc = FEMC(interface, node)
         elif hasattr(self, 'femc'):
             del self.femc
         

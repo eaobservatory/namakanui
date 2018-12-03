@@ -3,7 +3,10 @@ RMB 20181130
 This module provides a base class for Namakanui monitor and control classes.
 '''
 
+import sys
+import os
 import time
+import configparser
 
 class Base(object):
     '''
@@ -12,6 +15,7 @@ class Base(object):
       - sleep and publish functions that can tie into an event loop
       - update functions, called periodically to update/publish a state dict
       - simulate set (property) for testing or disabling functionality
+      - configuration from an INI file
     
     Derived classes must provide the following members:
         _simulate: set of strings for simulated components.
@@ -60,8 +64,31 @@ class Base(object):
     simulate = property(get_simulate, set_simulate, del_simulate,
                         doc="set of strings for simulated components")
 
-    def __init__(self):
+    def __init__(self, inifilename):
         self._update_index = -1
+        
+        # the config parsing below also pulls in all [include] files.
+        self.config = None
+        if inifilename:
+            self.config = configparser.ConfigParser()
+            inifile = os.path.realpath(inifilename.strip())
+            inidir = os.path.dirname(inifile) + '/'
+            inidone = set()
+            include = {inifile}
+            while inidone < include:
+                fname = next(iter(include - inidone))
+                inistr = open(fname).read()
+                self.config.read_string(inistr, source='<%s>'%(fname))
+                inidone.add(fname)
+                if 'include' in self.config:
+                    for fname self.config['include']:
+                        fname = fname.strip()
+                        if fname.startswith('/'):
+                            fname = os.path.realpath(fname)
+                        else:
+                            fname = os.path.realpath(inidir + fname)
+                        include.add(fname)
+        # Base.__init__
     
     def initialise(self):
         '''
