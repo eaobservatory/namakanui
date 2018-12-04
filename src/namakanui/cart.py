@@ -379,7 +379,7 @@ class Cart(Base):
         try:
             self.state['lo_ghz'] = lo_ghz
             self._lock_pll(lo_ghz)
-            self._optimize_fm(voltage)
+            self._adjust_fm(voltage)
             # TODO order of the following?
             self._optimize_pa(lo_ghz)
             self._optimize_lna(lo_ghz)
@@ -483,11 +483,11 @@ class Cart(Base):
         raise RuntimeError(self.logname + ' failed to lock at lo_ghz=%.9f' % (lo_ghz))
         # Cart._lock_pll
     
-    def _optimize_fm(self, voltage):
+    def _adjust_fm(self, voltage):
         '''
         Internal function only, does not publish state.
         Adjust YTO to get PLL FM (control) voltage near given value.
-        If voltage is None, skip optimization.
+        If voltage is None, skip adjustment.
         
         Raises RuntimeError if lock lost during this operation.
         '''
@@ -543,7 +543,7 @@ class Cart(Base):
         self.state['pll_if_power']  = femc.get_cartridge_lo_pll_if_total_power(self.ca)
         if ll:
             lo_ghz = self.state['lo_ghz']
-            raise RuntimeError(self.logname + ' lost lock while optimizing control voltage to %.2f at lo_ghz=%.9f' % (voltage, lo_ghz))
+            raise RuntimeError(self.logname + ' lost lock while adjusting control voltage to %.2f at lo_ghz=%.9f' % (voltage, lo_ghz))
         # Cart._optimize_fm
   
   
