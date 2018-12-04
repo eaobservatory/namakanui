@@ -12,7 +12,8 @@ MYSTERIES:
      needs some special testing once we have a cold cartridge.
 '''
 
-import namakanui  # for sleep, publish
+from namakanui.base import Base
+from namakanui.femc import FEMC
 import logging
 import time
 
@@ -77,27 +78,39 @@ def interp_table(table, freqLO):
     return ttype(x + f*(y-x) for x,y in zip(table[i], table[j]))
 
 
-class Cart(object):
+class Cart(Base):
     '''
     Monitor and control a given band (warm and cold cartridges).
     
-    TODO: should instances own a reference to the FEMC, vs passing in?
+    NOTE: There are three update functions, so call update_one() at 0.6 Hz.
     '''
     
-    def __init__(self, femc, cc, wca):
+    def __init__(self, band, inifilename, sleep, publish):
         '''
-        Create a Cart instance from given sections of the config file.
+        Create a Cart instance from given config file.
         '''
-        self.femc = femc
+        Base.__init__(self, inifilename)  # todo use super
+        self.band = band
+        self.ca = self.band-1  # cartridge index for FEMC
+        self.sleep = sleep
+        self.publish = publish
+        
+        b = str(self.band)
+        self.logname = self.config[b]['logname']
+        self.log = logging.getLogger(self.logname)
+        self.name = self.config[b]['pubname']
+        self._simulate = set(self.config[b]['simulate'].split())  # note underscore
+        self.state = {'number':0}
+        self.update_functions = [self.update_a, self.update_b, self.update_c]
+        
+        cc = self.config[self.config[b]['cold']]
+        wca = self.config[self.config[b]['warm']]
         cc_band = int(cc['Band'])
         wca_band = int(wca['Band'])
         if cc_band != wca_band:
             raise RuntimeError('%s Band %d != %s Band %d' % (cc.name, cc_band, wca.name, wca_band))
-        self.band = cc_band
-        self.ca = self.band-1  # cartridge index for FEMC
-        self.name = 'BAND%d' % (self.band)  # TODO configurable
-        
-        self.log = logging.getLogger(__name__ + '.' + self.name)
+        if self.band != cc_band:
+            raise RuntimeError('%s Band %d != given band %d' % (cc.name, cc_band, self.band))
         
         self.cold_esn = cc['ESN'].strip()
         self.warm_esn = wca['ESN'].strip()
@@ -127,21 +140,8 @@ class Cart(object):
         self.lna_table_11 = [ttype([r[0]] + list(r[3:])) for r in lna_table if r.Pol==1 and r.SIS==1]
         self.lna_table_12 = [ttype([r[0]] + list(r[3:])) for r in lna_table if r.Pol==1 and r.SIS==2]
         
-        # hold state in a dict, for ease of DRAMA parameter publishing later
-        self.state = {}
-        
-        # use a set of simulated components (strings) rather than a bitmask
-        self.simulate = set()
-        if wca.getboolean('Simulate'):
-            self.simulate.add('warm')
-        if cc.getboolean('Simulate'):
-            self.simulate.add('cold')
-        self.log.info('simulate = %s', self.simulate)
-        
-        # get (and publish) the current state of the cartridge
-        for f in [self.update_0, self.update_a, self.update_b, self.update_c]:
-            f()
-            namakanui.sleep(.01)
+        # assigning to simulate will invoke initialise()
+        self.simulate = self._simulate
         
         # if the cart is already powered, measure SIS bias error.
         # sets PA gate/drain voltages to 0 as a side effect.
@@ -154,17 +154,37 @@ class Cart(object):
         # Cart.__init__
     
     
-    def update_0(self):
+    def initialise(self):
         '''
         Get initial state of the parameters that are not read back from hardware.
         Future updates to these parameters are done immediately when commands are sent.
         '''
-        femc = self.femc
-        self.state['number'] = 0
+        # fix simulate set; simulated FEMC means simulated warm and cold carts.
+        if 'femc' in self._simulate:
+            self._simulate |= {'warm', 'cold'}
+        
+        self.log.info('initialise: simulate = %s', self.simulate)
+        
+        # connect to FEMC if not simulated, otherwise delete
+        if 'femc' not in self.simulate:
+            interface = self.config['femc']['interface']
+            node = int(self.config['femc']['node'], 0)
+            self.femc = FEMC(interface, node)
+        elif hasattr(self, 'femc'):
+            del self.femc
+        
         self.state['simulate'] = ' '.join(self.simulate)
         
-        # before receiving a tune command,
-        # we have no way to know these parameters unless the IF switch
+        if not ('warm' in self.simulate and 'cold' in self.simulate):
+            esns = self.femc.retry_esns(10, .01*self.band)
+            esns = [bytes(reversed(e)).hex().upper() for e in esns]  # ini format?
+            if 'warm' not in self.simulate and self.warm_esn not in esns:
+                raise RuntimeError(self.logname + ' warm cartridge ESN %s not found in list: %s' % (self.warm_esn, esns))
+            if 'cold' not in self.simulate and self.cold_esn not in esns:
+                raise RuntimeError(self.logname + ' cold cartridge ESN %s not found in list: %s' % (self.cold_esn, esns))
+        
+        # before receiving a tune command, we have no way
+        # to know these parameters unless the IF switch
         # is pointing to this cartridge and it is actually locked.
         # not worth the effort.
         self.state['lo_ghz'] = 0.0
@@ -172,20 +192,20 @@ class Cart(object):
         self.state['cold_mult'] = self.cold_mult
         self.state['warm_mult'] = self.warm_mult
         
-        if femc:  # else simulated
-            self.state['pd_enable'] = femc.get_pd_enable(self.ca)
+        if 'femc' not in self.simulate:
+            self.state['pd_enable'] = self.femc.get_pd_enable(self.ca)
         else:
             self.state['pd_enable'] = 0
         
-        if femc and self.state['pd_enable'] and 'cold' not in self.simulate:
+        if self.state['pd_enable'] and 'cold' not in self.simulate:
             sis_open_loop = []
             lna_enable = []
             lna_led_enable = []
             for po in range(2):
                 for sb in range(2):
-                    sis_open_loop.append(femc.get_sis_open_loop(self.ca, po, sb))
-                    lna_enable.append(femc.get_lna_enable(self.ca, po, sb))
-                    lna_led_enable.append(femc.get_lna_led_enable(self.ca, po, sb))
+                    sis_open_loop.append(self.femc.get_sis_open_loop(self.ca, po, sb))
+                    lna_enable.append(self.femc.get_lna_enable(self.ca, po, sb))
+                    lna_led_enable.append(self.femc.get_lna_led_enable(self.ca, po, sb))
             self.state['sis_open_loop'] = sis_open_loop
             self.state['lna_enable'] = lna_enable
             self.state['lna_led_enable'] = lna_led_enable
@@ -194,20 +214,20 @@ class Cart(object):
             self.state['lna_enable'] = [0]*4
             self.state['lna_led_enable'] = [0]*4
         
-        if femc and self.state['pd_enable'] and 'warm' not in self.simulate:
-            self.state['yto_coarse'] = femc.get_cartridge_lo_yto_coarse_tune(self.ca)
+        if self.state['pd_enable'] and 'warm' not in self.simulate:
+            self.state['yto_coarse'] = self.femc.get_cartridge_lo_yto_coarse_tune(self.ca)
             #self.state[''] = femc.get_cartridge_lo_photomixer_enable(self.ca)
-            self.state['pll_loop_bw'] = femc.get_cartridge_lo_pll_loop_bandwidth_select(self.ca)
-            self.state['pll_sb_lock'] = femc.get_cartridge_lo_pll_sb_lock_polarity_select(self.ca)
-            self.state['pll_null_int'] = femc.get_cartridge_lo_pll_null_loop_integrator(self.ca)
+            self.state['pll_loop_bw'] = self.femc.get_cartridge_lo_pll_loop_bandwidth_select(self.ca)
+            self.state['pll_sb_lock'] = self.femc.get_cartridge_lo_pll_sb_lock_polarity_select(self.ca)
+            self.state['pll_null_int'] = self.femc.get_cartridge_lo_pll_null_loop_integrator(self.ca)
         else:
             self.state['yto_coarse'] = 0
             self.state['pll_loop_bw'] = 0
             self.state['pll_sb_lock'] = 0
             self.state['pll_null_int'] = 0
         
-        namakanui.publish(self.name, self.state)
-        # Cart.update_0
+        self.update_all()  # fill out rest of state dict
+        # Cart.initialise
     
     # TODO: it might make more logical sense to break up updates into
     # warm and cold cartridges.  warm would take ~27ms, cold would take ~60ms.
@@ -216,17 +236,16 @@ class Cart(object):
         '''
         Update LNA parameters. Expect this to take ~36ms.
         '''
-        femc = self.femc
-        if femc and self.state['pd_enable'] and 'cold' not in self.simulate:
+        if self.state['pd_enable'] and 'cold' not in self.simulate:
             dv = []
             dc = []
             gv = []
             for po in range(2):  # polarization
                 for sb in range(2):  # sideband
                     for st in range(3):  # LNA stage
-                        dv.append(femc.get_lna_drain_voltage(self.ca, po, sb, st))
-                        dc.append(femc.get_lna_drain_current(self.ca, po, sb, st))
-                        gv.append(femc.get_lna_gate_voltage(self.ca, po, sb, st))
+                        dv.append(self.femc.get_lna_drain_voltage(self.ca, po, sb, st))
+                        dc.append(self.femc.get_lna_drain_current(self.ca, po, sb, st))
+                        gv.append(self.femc.get_lna_gate_voltage(self.ca, po, sb, st))
             self.state['lna_drain_v'] = dv;
             self.state['lna_drain_c'] = dc;
             self.state['lna_gate_v'] = gv;
@@ -236,7 +255,7 @@ class Cart(object):
             self.state['lna_gate_v'] = [0.0]*12;
             
         self.state['number'] += 1
-        namakanui.publish(self.name, self.state)
+        self.publish(self.name, self.state)
         # Cart.update_a
     
     
@@ -244,18 +263,17 @@ class Cart(object):
         '''
         Update params for PLL lock, PA, SIS mixers. Expect this to take ~25ms.
         '''
-        femc = self.femc
-        if femc and self.state['pd_enable'] and 'warm' not in self.simulate:
-            self.state['pll_lock_v'] = femc.get_cartridge_lo_pll_lock_detect_voltage(self.ca)
-            self.state['pll_corr_v'] = femc.get_cartridge_lo_pll_correction_voltage(self.ca)
-            self.state['pll_unlock'] = femc.get_cartridge_lo_pll_unlock_detect_latch(self.ca)
+        if self.state['pd_enable'] and 'warm' not in self.simulate:
+            self.state['pll_lock_v'] = self.femc.get_cartridge_lo_pll_lock_detect_voltage(self.ca)
+            self.state['pll_corr_v'] = self.femc.get_cartridge_lo_pll_correction_voltage(self.ca)
+            self.state['pll_unlock'] = self.femc.get_cartridge_lo_pll_unlock_detect_latch(self.ca)
             pa_gv = []
             pa_dv = []
             pa_dc = []
             for po in range(2):  # polarization
-                pa_gv.append(femc.get_cartridge_lo_pa_gate_voltage(self.ca, po))
-                pa_dv.append(femc.get_cartridge_lo_pa_drain_voltage(self.ca, po))
-                pa_dc.append(femc.get_cartridge_lo_pa_drain_current(self.ca, po))
+                pa_gv.append(self.femc.get_cartridge_lo_pa_gate_voltage(self.ca, po))
+                pa_dv.append(self.femc.get_cartridge_lo_pa_drain_voltage(self.ca, po))
+                pa_dc.append(self.femc.get_cartridge_lo_pa_drain_current(self.ca, po))
             self.state['pa_gate_v'] = pa_gv
             self.state['pa_drain_v'] = pa_dv
             self.state['pa_drain_c'] = pa_dc
@@ -267,17 +285,17 @@ class Cart(object):
             self.state['pa_drain_v'] = [0.0]*2
             self.state['pa_drain_c'] = [0.0]*2
         
-        if femc and self.state['pd_enable'] and 'cold' not in self.simulate:
+        if self.state['pd_enable'] and 'cold' not in self.simulate:
             sis_v = []
             sis_c = []
             sis_mag_v = []
             sis_mag_c = []
             for po in range(2):  # polarization
                 for sb in range(2):  # sideband
-                    sis_v.append(femc.get_sis_voltage(self.ca, po, sb))
-                    sis_c.append(femc.get_sis_current(self.ca, po, sb))
-                    sis_mag_v.append(femc.get_sis_magnet_voltage(self.ca, po, sb))
-                    sis_mag_c.append(femc.get_sis_magnet_current(self.ca, po, sb))
+                    sis_v.append(self.femc.get_sis_voltage(self.ca, po, sb))
+                    sis_c.append(self.femc.get_sis_current(self.ca, po, sb))
+                    sis_mag_v.append(self.femc.get_sis_magnet_voltage(self.ca, po, sb))
+                    sis_mag_c.append(self.femc.get_sis_magnet_current(self.ca, po, sb))
             self.state['sis_v'] = sis_v
             self.state['sis_c'] = sis_c
             self.state['sis_mag_v'] = sis_mag_v
@@ -289,7 +307,7 @@ class Cart(object):
             self.state['sis_mag_c'] = [0.0]*4
         
         self.state['number'] += 1
-        namakanui.publish(self.name, self.state)
+        self.publish(self.name, self.state)
         # Cart.update_b
     
     
@@ -298,27 +316,26 @@ class Cart(object):
         Update params for AMC, temperatures, misc. Expect this to take ~24ms.
         TODO could probably bundle into fewer top-level state params.
         '''
-        femc = self.femc
-        if femc and self.state['pd_enable'] and 'warm' not in self.simulate:
-            self.state['amc_gate_a_v'] = femc.get_cartridge_lo_amc_gate_a_voltage(self.ca)
-            self.state['amc_drain_a_v'] = femc.get_cartridge_lo_amc_drain_a_voltage(self.ca)
-            self.state['amc_drain_a_c'] = femc.get_cartridge_lo_amc_drain_a_current(self.ca)
-            self.state['amc_gate_b_v'] = femc.get_cartridge_lo_amc_gate_b_voltage(self.ca)
-            self.state['amc_drain_b_v'] = femc.get_cartridge_lo_amc_drain_b_voltage(self.ca)
-            self.state['amc_drain_b_c'] = femc.get_cartridge_lo_amc_drain_b_current(self.ca)
+        if self.state['pd_enable'] and 'warm' not in self.simulate:
+            self.state['amc_gate_a_v'] = self.femc.get_cartridge_lo_amc_gate_a_voltage(self.ca)
+            self.state['amc_drain_a_v'] = self.femc.get_cartridge_lo_amc_drain_a_voltage(self.ca)
+            self.state['amc_drain_a_c'] = self.femc.get_cartridge_lo_amc_drain_a_current(self.ca)
+            self.state['amc_gate_b_v'] = self.femc.get_cartridge_lo_amc_gate_b_voltage(self.ca)
+            self.state['amc_drain_b_v'] = self.femc.get_cartridge_lo_amc_drain_b_voltage(self.ca)
+            self.state['amc_drain_b_c'] = self.femc.get_cartridge_lo_amc_drain_b_current(self.ca)
             # TODO convert to volts?
-            self.state['amc_mult_d_v'] = femc.get_cartridge_lo_amc_multiplier_d_voltage_counts(self.ca)
-            self.state['amc_mult_d_c'] = femc.get_cartridge_lo_amc_multiplier_d_current(self.ca)
-            self.state['amc_gate_e_v'] = femc.get_cartridge_lo_amc_gate_e_voltage(self.ca)
-            self.state['amc_drain_e_v'] = femc.get_cartridge_lo_amc_drain_e_voltage(self.ca)
-            self.state['amc_drain_e_c'] = femc.get_cartridge_lo_amc_drain_e_current(self.ca)
-            self.state['amc_5v'] = femc.get_cartridge_lo_amc_supply_voltage_5v(self.ca)
-            self.state['pa_3v'] = femc.get_cartridge_lo_pa_supply_voltage_3v(self.ca)
-            self.state['pa_5v'] = femc.get_cartridge_lo_pa_supply_voltage_5v(self.ca)
-            self.state['pll_temp'] = femc.get_cartridge_lo_pll_assembly_temp(self.ca)
-            self.state['yig_heater_c'] = femc.get_cartridge_lo_yig_heater_current(self.ca) 
-            self.state['pll_ref_power'] = femc.get_cartridge_lo_pll_ref_total_power(self.ca)
-            self.state['pll_if_power'] = femc.get_cartridge_lo_pll_if_total_power(self.ca)
+            self.state['amc_mult_d_v'] = self.femc.get_cartridge_lo_amc_multiplier_d_voltage_counts(self.ca)
+            self.state['amc_mult_d_c'] = self.femc.get_cartridge_lo_amc_multiplier_d_current(self.ca)
+            self.state['amc_gate_e_v'] = self.femc.get_cartridge_lo_amc_gate_e_voltage(self.ca)
+            self.state['amc_drain_e_v'] = self.femc.get_cartridge_lo_amc_drain_e_voltage(self.ca)
+            self.state['amc_drain_e_c'] = self.femc.get_cartridge_lo_amc_drain_e_current(self.ca)
+            self.state['amc_5v'] = self.femc.get_cartridge_lo_amc_supply_voltage_5v(self.ca)
+            self.state['pa_3v'] = self.femc.get_cartridge_lo_pa_supply_voltage_3v(self.ca)
+            self.state['pa_5v'] = self.femc.get_cartridge_lo_pa_supply_voltage_5v(self.ca)
+            self.state['pll_temp'] = self.femc.get_cartridge_lo_pll_assembly_temp(self.ca)
+            self.state['yig_heater_c'] = self.femc.get_cartridge_lo_yig_heater_current(self.ca) 
+            self.state['pll_ref_power'] = self.femc.get_cartridge_lo_pll_ref_total_power(self.ca)
+            self.state['pll_if_power'] = self.femc.get_cartridge_lo_pll_if_total_power(self.ca)
         else:
             self.state['amc_gate_a_v'] = 0.0
             self.state['amc_drain_a_v'] = 0.0
@@ -339,16 +356,16 @@ class Cart(object):
             self.state['pll_ref_power'] = 0.0
             self.state['pll_if_power'] = 0.0
             
-        if femc and self.state['pd_enable'] and 'cold' not in self.simulate:
+        if self.state['pd_enable'] and 'cold' not in self.simulate:
             t = []
             for te in range(6):
-                t.append(femc.get_cartridge_lo_cartridge_temp(self.ca, te))
+                t.append(self.femc.get_cartridge_lo_cartridge_temp(self.ca, te))
             self.state['cart_temp'] = t
         else:
             self.state['cart_temp'] = [0.0]*6
         
         self.state['number'] += 1
-        namakanui.publish(self.name, self.state)
+        self.publish(self.name, self.state)
         # Cart.update_c
 
     
@@ -372,7 +389,7 @@ class Cart(object):
             raise
         finally:
             self.state['number'] += 1
-            namakanui.publish(self.name, self.state)
+            self.publish(self.name, self.state)
         # Cart.tune
         
         
@@ -394,8 +411,7 @@ class Cart(object):
         self.state['yig_ghz'] = yig_ghz
         
         # if simulating, pretend we are locked and return.
-        femc = self.femc
-        if not femc or 'warm' in self.simulate:
+        if 'warm' in self.simulate:
             self.state['pll_lock_v'] = 5.0
             self.state['pll_corr_v'] = 0.0
             self.state['pll_unlock'] = 0
@@ -403,10 +419,12 @@ class Cart(object):
             self.state['pll_ref_power'] = -2.0
             return
         
+        # TODO move this before sim check?  enforce simulated power-on.
         if not self.state['pd_enable']:
-            raise RuntimeError(self.name + ' power disabled')
+            raise RuntimeError(self.logname + ' power disabled')
         
         # for small changes we might hold the lock without adjustment.
+        femc = self.femc
         ldv = femc.get_cartridge_lo_pll_lock_detect_voltage(self.ca)
         rfp = femc.get_cartridge_lo_pll_ref_total_power(self.ca)
         ifp = femc.get_cartridge_lo_pll_if_total_power(self.ca)
@@ -422,7 +440,7 @@ class Cart(object):
         
         femc.set_cartridge_lo_pll_null_loop_integrator(self.ca, 1)
         femc.set_cartridge_lo_yto_coarse_tune(self.ca, coarse_counts)
-        namakanui.sleep(0.05)  # first step might be large
+        self.sleep(0.05)  # first step might be large
         
         step = 0
         while True:
@@ -431,7 +449,7 @@ class Cart(object):
                 femc.set_cartridge_lo_pll_null_loop_integrator(self.ca, 1)
                 femc.set_cartridge_lo_yto_coarse_tune(self.ca, try_counts)
                 femc.set_cartridge_lo_pll_null_loop_integrator(self.ca, 0)
-                namakanui.sleep(0.012)  # set YTO 10ms, lock PLL 2ms
+                self.sleep(0.012)  # set YTO 10ms, lock PLL 2ms
                 ldv = femc.get_cartridge_lo_pll_lock_detect_voltage(self.ca)
                 if ldv > 3.0:
                     coarse_counts = try_counts
@@ -447,7 +465,7 @@ class Cart(object):
         self.state['yto_coarse'] = coarse_counts
         
         # allow power readings a little time to settle
-        namakanui.sleep(0.05)
+        self.sleep(0.05)
         ldv = femc.get_cartridge_lo_pll_lock_detect_voltage(self.ca)
         rfp = femc.get_cartridge_lo_pll_ref_total_power(self.ca)
         ifp = femc.get_cartridge_lo_pll_if_total_power(self.ca)
@@ -462,7 +480,7 @@ class Cart(object):
             return
         
         self.state['pll_unlock'] = 1
-        raise RuntimeError(self.name + ' failed to lock at lo_ghz=%.9f' % (lo_ghz))
+        raise RuntimeError(self.logname + ' failed to lock at lo_ghz=%.9f' % (lo_ghz))
         # Cart._lock_pll
     
     def _optimize_fm(self, voltage):
@@ -476,13 +494,14 @@ class Cart(object):
         if voltage is None:
             return
         
-        femc = self.femc
-        if not femc or 'warm' in self.simulate:
+        if 'warm' in self.simulate:
             self.state['pll_corr_v'] = voltage
             return
         
         if not self.state['pd_enable']:
-            raise RuntimeError(self.name + ' power disabled')
+            raise RuntimeError(self.logname + ' power disabled')
+        
+        femc = self.femc
         
         # TODO: FEND-40.00.00.00-089-D-MAN gives the FM tuning slope
         # as 2.5 MHz/Volt, but it might vary by cartridge.  Make configurable.
@@ -499,7 +518,7 @@ class Cart(object):
         if try_counts != coarse_counts
             coarse_counts = try_counts
             femc.set_cartridge_lo_yto_coarse_tune(self.ca, coarse_counts)
-            namakanui.sleep(0.05)
+            self.sleep(0.05)
         
         # single-step toward target voltage until sign changes
         cv = femc.get_cartridge_lo_pll_correction_voltage(self.ca)
@@ -510,7 +529,7 @@ class Cart(object):
         while ll == 0 and try_counts != coarse_counts and step == sign(relv):
             coarse_counts = try_counts
             femc.set_cartridge_lo_yto_coarse_tune(self.ca, coarse_counts)
-            namakanui.sleep(0.05)
+            self.sleep(0.05)
             cv = femc.get_cartridge_lo_pll_correction_voltage(self.ca)
             ll = femc.get_cartridge_lo_pll_unlock_detect_latch(self.ca)
             relv = cv - voltage
@@ -524,7 +543,7 @@ class Cart(object):
         self.state['pll_if_power']  = femc.get_cartridge_lo_pll_if_total_power(self.ca)
         if ll:
             lo_ghz = self.state['lo_ghz']
-            raise RuntimeError(self.name + ' lost lock while optimizing control voltage to %.2f at lo_ghz=%.9f' % (voltage, lo_ghz))
+            raise RuntimeError(self.logname + ' lost lock while optimizing control voltage to %.2f at lo_ghz=%.9f' % (voltage, lo_ghz))
         # Cart._optimize_fm
   
   
@@ -548,12 +567,13 @@ class Cart(object):
         This function may take a few seconds to complete, since it
         waits 0.05s between single steps of the YTO.
         '''
-        femc = self.femc
-        if not femc or 'warm' in self.simulate:
+        if 'warm' in self.simulate:
             return 0.0
         
         if not self.state['pd_enable']:
-            raise RuntimeError(self.name + ' power disabled')
+            raise RuntimeError(self.logname + ' power disabled')
+        
+        femc = self.femc
         
         coarse_counts = self.state['yto_coarse']
         old_counts = coarse_counts
@@ -571,7 +591,7 @@ class Cart(object):
         while ll == 0 and try_counts != coarse_counts and step == sign(relv):
             coarse_counts = try_counts
             femc.set_cartridge_lo_yto_coarse_tune(self.ca, coarse_counts)
-            namakanui.sleep(0.05)
+            self.sleep(0.05)
             cv = femc.get_cartridge_lo_pll_correction_voltage(self.ca)
             ll = femc.get_cartridge_lo_pll_unlock_detect_latch(self.ca)
             relv = cv - voltage
@@ -581,7 +601,7 @@ class Cart(object):
         self.state['pll_unlock'] = ll
         if ll:
             lo_ghz = self.state['lo_ghz']
-            raise RuntimeError(self.name + ' lost lock in estimate_fm_slope at lo_ghz=%.9f' % (lo_ghz))
+            raise RuntimeError(self.logname + ' lost lock in estimate_fm_slope at lo_ghz=%.9f' % (lo_ghz))
         
         cv = 0.0
         for i in range(n):
@@ -608,27 +628,28 @@ class Cart(object):
         enable = int(bool(enable))
         if enable and not self.state['pd_enable']:  # power-on
             self.log.info('power-on...')
-            if self.femc:
+            if 'femc' not in self.simulate:
                 self.femc.set_pd_enable(self.ca, 1)
-                namakanui.sleep(1)  # cartridge needs a second to wake up
+                self.sleep(1)  # cartridge needs a second to wake up
             self.state['pd_enable'] = 1
             self._set_pa([0.0]*4)
             self.demagnetize_and_deflux()
             self._calc_sis_bias_error()
-            # "standard biasing sequence" will wait for first tune cmd.
+            # NOTE: we skip the "standard biasing sequence",
+            # instead waiting for first tune cmd.
             self.state['number'] += 1
-            namakanui.publish(self.name, self.state)
+            self.publish(self.name, self.state)
             self.log.info('power-on complete.')
         elif self.state['pd_enable'] and not enable:  # power-off
             self.log.info('power-off...')
             self._set_pa([0.0]*4)
             self._ramp_sis_bias_voltages([0.0]*4)
             self._ramp_sis_magnet_currents([0.0]*4)
-            if self.femc:
+            if 'femc' not in self.simulate:
                 self.femc.set_pd_enable(self.ca, 0)
             self.state['pd_enable'] = 0
             self.state['number'] += 1
-            namakanui.publish(self.name, self.state)
+            self.publish(self.name, self.state)
             self.log.info('power-off complete.')
         # Cart.power
     
@@ -644,10 +665,10 @@ class Cart(object):
         The final steps refer to 'nominal' magnet current, but without
         config what is that?  Does our band 6 lack SIS magnets?
         '''
-        if not self.femc or 'cold' in self.simulate:
+        if 'cold' in self.simulate:
             return
         if not self.state['pd_enable']:
-            raise RuntimeError(self.name + ' power disabled')
+            raise RuntimeError(self.logname + ' power disabled')
         if self.band < 3:
             return
         # Preliminary Steps
@@ -666,6 +687,7 @@ class Cart(object):
         self._mixer_heating()
         # Final Steps
         # NOTE: we leave everything at zero until next tune cmd.
+        # TODO: band 6 nominal magnet current?
         nom_i_mag = interp_table(self.magnet_table, self.state['lo_ghz'])
         if nom_i_mag:
             nom_i_mag = [1.1*x for x in nom_i_mag[1:]]
@@ -683,7 +705,7 @@ class Cart(object):
         NOTE: We want to keep the timing consistent between current settings,
         but an event loop may be calling Cart.update_X functions taking 36ms
         or more.  Thus most of the sleeping in this function is done using
-        regular time.sleep(), with only a brief namakanui.sleep where the
+        regular time.sleep(), with only a brief custom sleep where the
         event loop can run.
         '''
         i_mag = [0,0,0,0,0, 30, 50, 50, 20, 50, 100][self.band]
@@ -702,7 +724,7 @@ class Cart(object):
             now = time.time()
             midpoint = now + sleep_secs*0.5
             endpoint = now + sleep_secs
-            namakanui.sleep(0.01)  # 10ms for the event loop
+            self.sleep(0.01)  # 10ms for the event loop
             s = midpoint - time.time()
             if s > 0.001:
                 time.sleep(s)
@@ -716,9 +738,73 @@ class Cart(object):
     def _mixer_heating(self):
         '''
         Heat SIS mixers to 12K and wait for them to cool back down.
+        Note that the heaters automatically shut off after 1s,
+        so we have to keep toggling them during the loop.
         '''
-        # TODO
-        pass
+        if 'cold' in self.simulate:
+            return
+        if self.band < 3:
+            return
+        if self.band >= 5:
+            self._ramp_sis_magnet_currents([0.0]*4)
+        # measure baseline pol0/1 heater current and mixer temp, 10x 50ms = 0.5s
+        self.log('_mixer_heating: measuring baseline heater currents and mixer temps.')
+        base_heater_current_0 = 0.0
+        base_heater_current_1 = 0.0
+        base_mixer_temp_0 = 0.0
+        base_mixer_temp_1 = 0.0
+        n = 10
+        for i in range(n):
+            base_heater_current_0 += self.femc.get_sis_heater_current(self.ca, 0)
+            base_heater_current_1 += self.femc.get_sis_heater_current(self.ca, 1)
+            base_mixer_temp_0 += self.femc.get_cartridge_lo_cartridge_temp(self.ca, 2)
+            base_mixer_temp_1 += self.femc.get_cartridge_lo_cartridge_temp(self.ca, 5)
+            self.sleep(0.05)
+        base_heater_current_0 = (base_heater_current_0 / n) + 1.0
+        base_heater_current_1 = (base_heater_current_1 / n) + 1.0
+        base_mixer_temp_0 = (base_mixer_temp_0 / n) + 0.2
+        base_mixer_temp_1 = (base_mixer_temp_1 / n) + 0.2
+        self.log('_mixer_heating: current thresholds: %g %g', base_heater_current_0, base_heater_current_1)
+        self.log('_mixer_heating: kelvin thresholds: %g %g', base_mixer_temp_0, base_mixer_temp_1)
+        target_temp = 12.0  # kelvin
+        timeout = 30
+        if self.band == 9:
+            timeout = 3
+        timeout += time.time()  # wall time
+        self.log('_mixer_heating: heating loop.')
+        while time.time() < timeout:
+            # TODO: publish state during this loop?  or otherwise log currents/temps?
+            heater_current_0 = self.femc.get_sis_heater_current(self.ca, 0)
+            heater_current_1 = self.femc.get_sis_heater_current(self.ca, 1)
+            if heater_current_0 < base_heater_current_0 or heater_current_1 < base_heater_current_1:
+                self.log('mixer_heating: toggling heaters')
+                # heaters must be disabled, then enabled.
+                self.femc.set_sis_heater_enable(self.ca, 0, 0)
+                self.femc.set_sis_heater_enable(self.ca, 1, 0)
+                self.femc.set_sis_heater_enable(self.ca, 0, 1)
+                self.femc.set_sis_heater_enable(self.ca, 1, 1)
+            self.sleep(0.02)
+            mixer_temp_0 = self.femc.get_cartridge_lo_cartridge_temp(self.ca, 2)
+            mixer_temp_1 = self.femc.get_cartridge_lo_cartridge_temp(self.ca, 5)
+            if mixer_temp_0 >= target_temp and mixer_temp_1 >= target_temp:
+                break
+        # disable heaters
+        self.femc.set_sis_heater_enable(self.ca, 0, 0)
+        self.femc.set_sis_heater_enable(self.ca, 1, 0)
+        self.log('_mixer_heating: hot kelvins: %g %g', mixer_temp_0, mixer_temp_1)
+        # TODO: complain if mixer temps are lower than target?
+        timeout = time.time() + 300  # 5min
+        self.log('_mixer_heating: cooldown loop.')
+        while time.time() < timeout:
+            # TODO publish state during loop or otherwise log temps?
+            self.sleep(1)
+            mixer_temp_0 = self.femc.get_cartridge_lo_cartridge_temp(self.ca, 2)
+            mixer_temp_1 = self.femc.get_cartridge_lo_cartridge_temp(self.ca, 5)
+            if mixer_temp_0 < base_mixer_temp_0 and mixer_temp_1 < base_mixer_temp_1:
+                break
+        self.log('_mixer_heating: cold kelvins: %g %g', mixer_temp_0, mixer_temp_1)
+        if mixer_temp_0 >= base_mixer_temp_0 or mixer_temp_1 >= base_mixer_temp_1:
+            raise RuntimeError(self.logname + ' _mixer_heating cooldown failed, (%g, %g) >= (%g, %g) K' % (mixer_temp_0, mixer_temp_1, base_mixer_temp_0, base_mixer_temp_1))
         # Cart._mixer_heating
     
     def _calc_sis_bias_error(self):
@@ -728,10 +814,10 @@ class Cart(object):
         according to section 10.3.2 of FEND-40.00.00.00-089-D-MAN.
         '''
         self.bias_error = [0.0]*4
-        if not self.femc or 'cold' in self.simulate:
+        if 'cold' in self.simulate:
             return
         if not self.state['pd_enable']:
-            raise RuntimeError(self.name + ' power disabled')
+            raise RuntimeError(self.logname + ' power disabled')
         self.log.info('calculating SIS bias voltage setting error')
         self._set_pa([0.0]*4)
         nominal_magnet_current = interp_table(self.magnet_table, self.state['lo_ghz'])
@@ -739,15 +825,15 @@ class Cart(object):
             self._ramp_sis_magnet_currents(nominal_magnet_current[1:])
         sis_setting = [0,0,0, 10.0, 4.8, 2.3, 9.0, 2.2, 2.2, 2.3, 2.2][self.band]
         self._ramp_sis_bias_voltages([sis_setting]*4)  # note bias_error=0 here
-        namakanui.sleep(0.01)
-        sbv = [0.0]*4
+        self.sleep(0.01)
+        sbv = [0.0]*4  # avg sis bias voltage reading
         n = 100
         for i in range(n):
             for po in range(2):
                 for sb in range(2):
                     sbv[po*2 + sb] += self.femc.get_sis_voltage(self.ca, po, sb)
             if (i+1)%20 == 0:  # every ~80ms
-                namakanui.sleep(.01)
+                self.sleep(.01)
         for i in range(4):
             sbv[i] = sbv[i]/n
             self.bias_error[i] = sbv[i] - sis_setting[i]
@@ -774,11 +860,11 @@ class Cart(object):
                     f(self.ca, po, sb, val)
                     j += 1
                     if j%80 == 0:
-                        namakanui.sleep(0.01)
+                        self.sleep(0.01)
                 f(self.ca, po, sb, end)
                 self.state[key][i] = end  # in case _ramp called again before next update
                 i += 1
-                namakanui.sleep(0.01)  # these ramps might take 300ms each!
+                self.sleep(0.01)  # these ramps might take 300ms each!
         # Cart._ramp_sis
     
     def _ramp_sis_magnet_currents(self, ma):
@@ -787,7 +873,7 @@ class Cart(object):
         Ramp magnet currents to desired values in 0.1mA steps.
         Order of current array ma is pol/sis [01, 02, 11, 12].
         '''
-        if not self.femc or 'cold' in self.simulate:
+        if 'cold' in self.simulate:
             self.state['sis_mag_c'] = ma
             return
         self.log.debug('ramping SIS magnet current to %s', ma)
@@ -803,7 +889,7 @@ class Cart(object):
         
         NOTE use of special get_sis_voltage_cmd, TODO NEEDS TESTING ON STARTUP.
         '''
-        if not self.femc or 'cold' in self.simulate:
+        if 'cold' in self.simulate:
             self.state['sis_v'] = mv
             return
         set_mv = [0.0]*4
@@ -831,7 +917,7 @@ class Cart(object):
         TODO: Is there a disconnect between set (scale) and get (voltage)?
         Do the INI file parameters account for scale correctly?
         '''
-        if not self.femc or 'warm' in self.simulate:
+        if 'warm' in self.simulate:
             self.state['pa_drain_v'] = pa[0:2]
             self.state['pa_gate_v'] = pa[2:4]
             return
