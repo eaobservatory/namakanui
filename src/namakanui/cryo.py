@@ -25,7 +25,8 @@ class Cryo(Base):
         self.name = self.config['cryo']['pubname']
         self.state = {'number':0}
         self.update_functions = [self.update_a]
-        self.log = logging.getLogger(self.config['cryo']['logname'])
+        self.logname = self.config['cryo']['logname']
+        self.log = logging.getLogger(self.logname)
         self.simulate = self._simulate  # assignment invokes initialise()
     
     
@@ -47,6 +48,9 @@ class Cryo(Base):
             del self.femc
         
         self.state['simulate'] = ' '.join(self.simulate)
+        
+        # TODO: check ESNs?        
+        
         if not self.simulate:
             self.state['backpump_enable'] = self.femc.get_cryostat_backing_pump_enable()
             self.state['turbopump_enable'] = self.femc.get_cryostat_turbo_pump_enable()
