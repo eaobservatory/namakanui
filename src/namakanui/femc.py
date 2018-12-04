@@ -579,6 +579,20 @@ class FEMC(object):
             raise RuntimeError('duplicate esns found: %s' % (esns))
         return esns
     
+    def retry_esns(self, tries, sleep_seconds):
+        '''Since concurrence is an issue for get_esns(), retry for the given
+           number of tries, sleeping sleep_seconds in between.'''
+        for i in range(tries):
+            try:
+                esns = self.get_esns()
+                break
+            except RuntimeError:
+                if (i+1) == tries:
+                    raise
+                time.sleep(sleep_seconds)
+        return esns
+        
+    
     def get_errors_number(self):
         '''Return number of errors not read in the error buffer.
            Suggested interval: 10s'''
