@@ -373,17 +373,40 @@ class Cart(Base):
         '''
         Lock the PLL to produce the given LO frequency.
         The reference signal generator must already be set properly.
-        Attempt to set control voltage near given value, if not None.
-        Set the proper PA, SIS, and LNA parameters.
+        Attempt to set PLL control voltage near given value, if not None.
+        Set the proper SIS, PA, and LNA parameters.
         '''
         try:
-            self.state['lo_ghz'] = lo_ghz
             self._lock_pll(lo_ghz)
             self._adjust_fm(voltage)
-            # TODO order of the following?
-            self._optimize_pa(lo_ghz)
-            self._optimize_lna(lo_ghz)
-            self._optimize_sis(lo_ghz)
+            
+            nom_magnet = interp_table(self.magnet_table, lo_ghz)
+            nom_mixer = interp_table(self.mixer_table, lo_ghz)
+            nom_pa = interp_table(self.pa_table, lo_ghz)
+            nom_lna_01 = interp_table(self.lna_table_01, lo_ghz)
+            nom_lna_02 = interp_table(self.lna_table_02, lo_ghz)
+            nom_lna_11 = interp_table(self.lna_table_11, lo_ghz)
+            nom_lna_12 = interp_table(self.lna_table_12, lo_ghz)
+            if nom_magnet:
+                self._ramp_sis_magnet_currents(nom_magnet[1:])
+            if nom_mixer:
+                self._ramp_sis_bias_voltages(nom_mixer[1:5])
+            if nom_pa:
+                self._set_pa(nom_pa[1:])
+            for i, lna in enumerate([nom_lna_01, nom_lna_02, nom_lna_11, nom_lna_12]):
+                if lna:
+                    self._set_lna(i//2, i%2, lna[1:])
+            # servo each PA[po] drain voltage to adjust SIS1 (sb=0) current to nom_mixer[5],[7]
+            # increased voltage generally produces increased mixer current,
+            # but it might not be as simple as that.
+            # TODO:
+            #   test sweeps of PA to see what typical current vs drain curves look like
+            #   test repeated mixer current reads; do we need a small sleep between 10x reads?
+            # Note: avg 10 SIS current readings. PA drain control (0,2.5) +-0.01
+            # Note: SIS current given in mA, but targets are in uA.
+            if nom_mixer and 'warm' not in self.simulate and 'cold' not in self.simulate:
+                for po in range(2):
+                    pass # TODO
         except:
             # TODO: zero PA on failure?
             raise
@@ -408,6 +431,7 @@ class Cart(Base):
         lo_counts = max(0, coarse_counts - window_counts)
         hi_counts = min(4095, coarse_counts + window_counts)
         
+        self.state['lo_ghz'] = lo_ghz
         self.state['yig_ghz'] = yig_ghz
         
         # if simulating, pretend we are locked and return.
@@ -545,17 +569,6 @@ class Cart(Base):
             lo_ghz = self.state['lo_ghz']
             raise RuntimeError(self.logname + ' lost lock while adjusting control voltage to %.2f at lo_ghz=%.9f' % (voltage, lo_ghz))
         # Cart._optimize_fm
-  
-  
-    def _optimize_pa(self, lo_ghz):
-        pass
-        
-    def _optimize_lna(self, lo_ghz):
-        pass
-        
-    def _optimize_sis(self, lo_ghz):
-        pass
-
 
     def _estimate_fm_slope(self):
         '''
@@ -631,7 +644,8 @@ class Cart(Base):
             if 'femc' not in self.simulate:
                 self.femc.set_pd_enable(self.ca, 1)
                 self.sleep(1)  # cartridge needs a second to wake up
-            self.state['pd_enable'] = 1
+            #self.state['pd_enable'] = 1
+            self.initialise()
             self._set_pa([0.0]*4)
             self.demagnetize_and_deflux()
             self._calc_sis_bias_error()
@@ -647,9 +661,11 @@ class Cart(Base):
             self._ramp_sis_magnet_currents([0.0]*4)
             if 'femc' not in self.simulate:
                 self.femc.set_pd_enable(self.ca, 0)
-            self.state['pd_enable'] = 0
-            self.state['number'] += 1
-            self.publish(self.name, self.state)
+                self.sleep(0.1)  # TODO: does cartridge need longer to power down?
+            #self.state['pd_enable'] = 0
+            self.initialise()
+            #self.state['number'] += 1
+            #self.publish(self.name, self.state)
             self.log.info('power-off complete.')
         # Cart.power
     
@@ -740,6 +756,8 @@ class Cart(Base):
         Heat SIS mixers to 12K and wait for them to cool back down.
         Note that the heaters automatically shut off after 1s,
         so we have to keep toggling them during the loop.
+        
+        TODO: support heating a single polarization?
         '''
         if 'cold' in self.simulate:
             return
@@ -767,6 +785,8 @@ class Cart(Base):
         self.log('_mixer_heating: current thresholds: %g %g', base_heater_current_0, base_heater_current_1)
         self.log('_mixer_heating: kelvin thresholds: %g %g', base_mixer_temp_0, base_mixer_temp_1)
         target_temp = 12.0  # kelvin
+        if self.band == 8:
+            target_temp = 20.0
         timeout = 30
         if self.band == 9:
             timeout = 3
@@ -926,6 +946,29 @@ class Cart(Base):
             self.femc.set_cartridge_lo_pa_pol_drain_voltage_scale(self.ca, po, pa[po])
             self.femc.set_cartridge_lo_pa_pol_gate_voltage(self.ca, po, pa[po+2])
         # Cart._set_pa
+
+    def _set_lna(self, po, sb, lna):
+        '''
+        Internal function, does not publish state.
+        Given lna is [VD1, VD2, VD3, ID1, ID2, ID3, VG1, VG2, VG3] (same as table row).
+        
+        TODO: Where do we need to ENABLE the LNA?  Powerup? Tune? Here?
+              Should we enable LNA before or after setting drain v/c?
+              Do we need a pause after enabling the LNA?
+        
+        TODO: What does LNA LED do?
+        '''
+        lna_state_i = (po*2 + sb) * 3
+        if 'cold' in self.simulate:
+            self.state['lna_drain_v'][lna_state_i:lna_state_i+3] = lna[0:3]
+            self.state['lna_drain_c'][lna_state_i:lna_state_i+3] = lna[3:6]
+            self.state['lna_gate_v'][lna_state_i:lna_state_i+3] = lna[6:9]
+            return
+        self.log.debug('setting LNA[%d][%d] to %s', po, sb, lna)
+        for st in range(3):
+            self.femc.set_lna_drain_voltage(self.ca, po, sb, st, lna[st])
+            self.femc.set_lna_drain_current(self.ca, po, sb, st, lna[3+st])
+        # Cart._set_lna
 
 '''
 TODO power on/off, demag, deflux
