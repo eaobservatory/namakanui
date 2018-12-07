@@ -81,7 +81,7 @@ class Base(object):
                 self.config.read_string(inistr, source='<%s>'%(fname))
                 inidone.add(fname)
                 if 'include' in self.config:
-                    for fname self.config['include']:
+                    for fname in self.config['include']:
                         fname = fname.strip()
                         if fname.startswith('/'):
                             fname = os.path.realpath(fname)
