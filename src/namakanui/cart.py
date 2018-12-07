@@ -16,6 +16,8 @@ from namakanui.base import Base
 from namakanui.femc import FEMC
 import logging
 import time
+import collections
+import bisect
 
 def sign(x):
     '''
@@ -48,7 +50,7 @@ def read_table(config_section, name, dtype, fnames):
     prev = None
     for i in range(1,num+1):
         val = config_section[name + '%02d' % (i)]
-        tup = ttype(dtype(x.strip()) for x in val.split(','))
+        tup = ttype(*[dtype(x.strip()) for x in val.split(',')])
         if prev is not None and tup[0] < prev:
             raise RuntimeError('[%s] %s table values are out of order' % (config_section.name, name))
         prev = tup[0]
@@ -75,7 +77,7 @@ def interp_table(table, freqLO):
         return table[i]  # arbitrary, else divide by zero below
     f = (freqLO - table[i].freqLO) / (table[j].freqLO - table[i].freqLO)
     ttype = type(table[i])
-    return ttype(x + f*(y-x) for x,y in zip(table[i], table[j]))
+    return ttype(*[x + f*(y-x) for x,y in zip(table[i], table[j])])
 
 
 class Cart(Base):
@@ -135,10 +137,10 @@ class Cart(Base):
         # 4x list comprehension is inefficient, but simple.
         fnames = 'freqLO, VD1, VD2, VD3, ID1, ID2, ID3, VG1, VG2, VG3'
         ttype = collections.namedtuple('PreampParam', fnames)
-        self.lna_table_01 = [ttype([r[0]] + list(r[3:])) for r in lna_table if r.Pol==0 and r.SIS==1]
-        self.lna_table_02 = [ttype([r[0]] + list(r[3:])) for r in lna_table if r.Pol==0 and r.SIS==2]
-        self.lna_table_11 = [ttype([r[0]] + list(r[3:])) for r in lna_table if r.Pol==1 and r.SIS==1]
-        self.lna_table_12 = [ttype([r[0]] + list(r[3:])) for r in lna_table if r.Pol==1 and r.SIS==2]
+        self.lna_table_01 = [ttype(*[r[0]] + list(r[3:])) for r in lna_table if r.Pol==0 and r.SIS==1]
+        self.lna_table_02 = [ttype(*[r[0]] + list(r[3:])) for r in lna_table if r.Pol==0 and r.SIS==2]
+        self.lna_table_11 = [ttype(*[r[0]] + list(r[3:])) for r in lna_table if r.Pol==1 and r.SIS==1]
+        self.lna_table_12 = [ttype(*[r[0]] + list(r[3:])) for r in lna_table if r.Pol==1 and r.SIS==2]
         
         # assigning to simulate will invoke initialise()
         self.simulate = self._simulate
@@ -539,7 +541,7 @@ class Cart(Base):
         step = round((self.state['pll_corr_v'] - voltage) * counts_per_volt)
         coarse_counts = self.state['yto_coarse']
         try_counts = max(0,min(4095, coarse_counts + step))
-        if try_counts != coarse_counts
+        if try_counts != coarse_counts:
             coarse_counts = try_counts
             femc.set_cartridge_lo_yto_coarse_tune(self.ca, coarse_counts)
             self.sleep(0.05)
@@ -917,7 +919,12 @@ class Cart(Base):
         for i in range(4):
             set_mv[i] = mv[i] - self.bias_error[i]
             get_mv[i] = self.femc.get_sis_voltage(self.ca, i//2, i%2)
-            self.state['sis_v'][i] = self.femc.get_sis_voltage_cmd(self.ca, i//2, i%2)
+            # this can fail if bias voltage not set yet; assume 0.
+            # maybe this test should move into FEMC class code.
+            try:
+                self.state['sis_v'][i] = self.femc.get_sis_voltage_cmd(self.ca, i//2, i%2)
+            except RuntimeError:
+                self.state['sis_v'][i] = 0.0
         self.log.debug('_ramp_sis_bias_voltages arg mv:  %s', mv)
         self.log.debug('_ramp_sis_bias_voltages set mv: %s', set_mv)
         self.log.debug('_ramp_sis_bias_voltages get mv: %s', get_mv)
