@@ -105,6 +105,8 @@ class Cart(Base):
         self.state = {'number':0}
         self.update_functions = [self.update_a, self.update_b, self.update_c]
         
+        self.log.info('__init__')
+        
         cc = self.config[self.config[b]['cold']]
         wca = self.config[self.config[b]['warm']]
         cc_band = int(cc['Band'])
@@ -378,6 +380,7 @@ class Cart(Base):
         Attempt to set PLL control voltage near given value, if not None.
         Set the proper SIS, PA, and LNA parameters.
         '''
+        self.log.info('tune(%g, %g)', lo_ghz, voltage)
         try:
             self._lock_pll(lo_ghz)
             self._adjust_fm(voltage)
@@ -436,6 +439,8 @@ class Cart(Base):
         self.state['lo_ghz'] = lo_ghz
         self.state['yig_ghz'] = yig_ghz
         
+        self.log.debug('_lock_pll lo: %.9f, yig: %.9f', lo_ghz, yig_ghz)
+        
         # if simulating, pretend we are locked and return.
         if 'warm' in self.simulate:
             self.state['pll_lock_v'] = 5.0
@@ -446,6 +451,7 @@ class Cart(Base):
             return
         
         # TODO move this before sim check?  enforce simulated power-on.
+        # currently simulate forces pd_enable=0, though.
         if not self.state['pd_enable']:
             raise RuntimeError(self.logname + ' power disabled')
         
@@ -520,6 +526,8 @@ class Cart(Base):
         if voltage is None:
             return
         
+        self.log.debug('_adjust_fm(%.2f)', voltage)
+        
         if 'warm' in self.simulate:
             self.state['pll_corr_v'] = voltage
             return
@@ -570,7 +578,7 @@ class Cart(Base):
         if ll:
             lo_ghz = self.state['lo_ghz']
             raise RuntimeError(self.logname + ' lost lock while adjusting control voltage to %.2f at lo_ghz=%.9f' % (voltage, lo_ghz))
-        # Cart._optimize_fm
+        # Cart._adjust_fm
 
     def _estimate_fm_slope(self):
         '''
@@ -642,7 +650,7 @@ class Cart(Base):
         '''
         enable = int(bool(enable))
         if enable and not self.state['pd_enable']:  # power-on
-            self.log.info('power-on...')
+            self.log.info('power(1): power-on...')
             if 'femc' not in self.simulate:
                 self.femc.set_pd_enable(self.ca, 1)
                 self.sleep(1)  # cartridge needs a second to wake up
@@ -657,7 +665,7 @@ class Cart(Base):
             self.publish(self.name, self.state)
             self.log.info('power-on complete.')
         elif self.state['pd_enable'] and not enable:  # power-off
-            self.log.info('power-off...')
+            self.log.info('power(0): power-off...')
             self._set_pa([0.0]*4)
             self._ramp_sis_bias_voltages([0.0]*4)
             self._ramp_sis_magnet_currents([0.0]*4)
@@ -669,6 +677,10 @@ class Cart(Base):
             #self.state['number'] += 1
             #self.publish(self.name, self.state)
             self.log.info('power-off complete.')
+        elif enable:
+            self.log.info('power(1): power already on')
+        else:
+            self.log.info('power(0): power already off')
         # Cart.power
     
     
@@ -683,6 +695,7 @@ class Cart(Base):
         The final steps refer to 'nominal' magnet current, but without
         config what is that?  Does our band 6 lack SIS magnets?
         '''
+        self.log.info('demagnetize_and_deflux')
         if 'cold' in self.simulate:
             return
         if not self.state['pd_enable']:
@@ -726,6 +739,7 @@ class Cart(Base):
         regular time.sleep(), with only a brief custom sleep where the
         event loop can run.
         '''
+        self.log.info('_demagnetize(%d,%d)', po, sb)
         i_mag = [0,0,0,0,0, 30, 50, 50, 20, 50, 100][self.band]
         sleep_secs = 0.1
         i_mag_dec = 1
@@ -747,7 +761,8 @@ class Cart(Base):
             if s > 0.001:
                 time.sleep(s)
             self.state['sis_mag_c'][po*2 + sb] = self.femc.get_sis_magnet_current(self.ca, po, sb)
-            # TODO: log magnet current.  probably too fast to justify publishing.
+            # TODO: save somewhere? probably too fast to justify publishing.
+            self.log_debug('sis_mag_c(%d,%d): %d, %7.3f', po, sb, i_set, self.state['sis_mag_c'][po*2 + sb])
             s = endpoint - time.time()
             if s > 0.001:
                 time.sleep(s)
@@ -761,6 +776,7 @@ class Cart(Base):
         
         TODO: support heating a single polarization?
         '''
+        #self.log.info('_mixer_heating')
         if 'cold' in self.simulate:
             return
         if self.band < 3:
@@ -768,7 +784,7 @@ class Cart(Base):
         if self.band >= 5:
             self._ramp_sis_magnet_currents([0.0]*4)
         # measure baseline pol0/1 heater current and mixer temp, 10x 50ms = 0.5s
-        self.log('_mixer_heating: measuring baseline heater currents and mixer temps.')
+        self.log.info('_mixer_heating: measuring baseline heater currents and mixer temps')
         base_heater_current_0 = 0.0
         base_heater_current_1 = 0.0
         base_mixer_temp_0 = 0.0
@@ -784,8 +800,8 @@ class Cart(Base):
         base_heater_current_1 = (base_heater_current_1 / n) + 1.0
         base_mixer_temp_0 = (base_mixer_temp_0 / n) + 0.2
         base_mixer_temp_1 = (base_mixer_temp_1 / n) + 0.2
-        self.log('_mixer_heating: current thresholds: %g %g', base_heater_current_0, base_heater_current_1)
-        self.log('_mixer_heating: kelvin thresholds: %g %g', base_mixer_temp_0, base_mixer_temp_1)
+        self.log.debug('_mixer_heating: current thresholds: %g %g', base_heater_current_0, base_heater_current_1)
+        self.log.debug('_mixer_heating: kelvin thresholds: %g %g', base_mixer_temp_0, base_mixer_temp_1)
         target_temp = 12.0  # kelvin
         if self.band == 8:
             target_temp = 20.0
@@ -793,13 +809,13 @@ class Cart(Base):
         if self.band == 9:
             timeout = 3
         timeout += time.time()  # wall time
-        self.log('_mixer_heating: heating loop.')
+        self.log.info('_mixer_heating: heating loop')
         while time.time() < timeout:
             # TODO: publish state during this loop?  or otherwise log currents/temps?
             heater_current_0 = self.femc.get_sis_heater_current(self.ca, 0)
             heater_current_1 = self.femc.get_sis_heater_current(self.ca, 1)
             if heater_current_0 < base_heater_current_0 or heater_current_1 < base_heater_current_1:
-                self.log('mixer_heating: toggling heaters')
+                self.log.debug('mixer_heating: toggling heaters')
                 # heaters must be disabled, then enabled.
                 self.femc.set_sis_heater_enable(self.ca, 0, 0)
                 self.femc.set_sis_heater_enable(self.ca, 1, 0)
@@ -813,10 +829,10 @@ class Cart(Base):
         # disable heaters
         self.femc.set_sis_heater_enable(self.ca, 0, 0)
         self.femc.set_sis_heater_enable(self.ca, 1, 0)
-        self.log('_mixer_heating: hot kelvins: %g %g', mixer_temp_0, mixer_temp_1)
+        self.log.debug('_mixer_heating: hot kelvins: %g %g', mixer_temp_0, mixer_temp_1)
         # TODO: complain if mixer temps are lower than target?
         timeout = time.time() + 300  # 5min
-        self.log('_mixer_heating: cooldown loop.')
+        self.log.info('_mixer_heating: cooldown loop')
         while time.time() < timeout:
             # TODO publish state during loop or otherwise log temps?
             self.sleep(1)
@@ -824,7 +840,7 @@ class Cart(Base):
             mixer_temp_1 = self.femc.get_cartridge_lo_cartridge_temp(self.ca, 5)
             if mixer_temp_0 < base_mixer_temp_0 and mixer_temp_1 < base_mixer_temp_1:
                 break
-        self.log('_mixer_heating: cold kelvins: %g %g', mixer_temp_0, mixer_temp_1)
+        self.log.debug('_mixer_heating: cold kelvins: %g %g', mixer_temp_0, mixer_temp_1)
         if mixer_temp_0 >= base_mixer_temp_0 or mixer_temp_1 >= base_mixer_temp_1:
             raise RuntimeError(self.logname + ' _mixer_heating cooldown failed, (%g, %g) >= (%g, %g) K' % (mixer_temp_0, mixer_temp_1, base_mixer_temp_0, base_mixer_temp_1))
         # Cart._mixer_heating
@@ -914,6 +930,7 @@ class Cart(Base):
         if 'cold' in self.simulate:
             self.state['sis_v'] = mv
             return
+        self.log.debug('ramping SIS bias voltage to %s', mv)
         set_mv = [0.0]*4
         get_mv = [0.0]*4
         for i in range(4):
@@ -977,11 +994,6 @@ class Cart(Base):
             self.femc.set_lna_drain_current(self.ca, po, sb, st, lna[3+st])
         # Cart._set_lna
 
-'''
-TODO power on/off, demag, deflux
-
-
-'''
 
 
 
