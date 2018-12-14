@@ -401,7 +401,7 @@ class FEMC(object):
         # TODO: certain operations might require action for specific errors,
         # so it'd be better to raise an exception that's easier to check.
         if r_data[-1] != 0:
-            code = _b.unpack(r_data[-1:])[0]  # overkill, could just use r_data[-1]
+            code = _b.unpack(r_data[-1:])[0]  # r_data[-1] is unsigned; must unpack
             estr = _errors.get(code, "unrecognized error code")
             raise RuntimeError("error code from set 0x%08x: %d: %s" % (self.node|rca, code, estr))
         if len(r_data) != len(data) + 1 or r_data[:-1] != data:
@@ -425,35 +425,35 @@ class FEMC(object):
     def get_standard_ubyte(self, rca_offset):
         '''Send a STANDARD monitor command, base 0x00000; return ubyte value.'''
         d = self.get_rca(0x00000 | rca_offset)
-        if len(d) != 2:
-            raise RuntimeError("reply len from get 0x%08x not 2: 0x%s" % (self.node|rca_offset, d.hex()))
-        v,e = _Bb.unpack(d)
-        if e != 0:
+        if d[-1] != 0:
+            e = _b.unpack(d[-1:])[0]  # d[-1] is unsigned; must unpack
             estr = _errors.get(e, "unrecognized error code")
             raise RuntimeError("error code from get 0x%08x: %d: %s" % (self.node|rca_offset, e, estr))
-        return v
+        if len(d) != 2:
+            raise RuntimeError("reply len from get 0x%08x not 2: 0x%s" % (self.node|rca_offset, d.hex()))
+        return _B.unpack(d[:-1])[0]
     
     def get_standard_ushort(self, rca_offset):
         '''Send a STANDARD monitor command, base 0x00000; return ushort value.'''
         d = self.get_rca(0x00000 | rca_offset)
-        if len(d) != 3:
-            raise RuntimeError("reply len from get 0x%08x not 3: 0x%s" % (self.node|rca_offset, d.hex()))
-        v,e = _Hb.unpack(d)
-        if e != 0:
+        if d[-1] != 0:
+            e = _b.unpack(d[-1:])[0]  # d[-1] is unsigned; must unpack
             estr = _errors.get(e, "unrecognized error code")
             raise RuntimeError("error code from get 0x%08x: %d: %s" % (self.node|rca_offset, e, estr))
-        return v
+        if len(d) != 3:
+            raise RuntimeError("reply len from get 0x%08x not 3: 0x%s" % (self.node|rca_offset, d.hex()))
+        return _H.unpack(d[:-1])[0]
     
     def get_standard_float(self, rca_offset):
         '''Send a STANDARD monitor command, base 0x00000; return float value.'''
         d = self.get_rca(0x00000 | rca_offset)
-        if len(d) != 5:
-            raise RuntimeError("reply len from get 0x%08x not 5: 0x%s" % (self.node|rca_offset, d.hex()))
-        v,e = _fb.unpack(d)
-        if e != 0:
+        if d[-1] != 0:
+            e = _b.unpack(d[-1:])[0]  # d[-1] is unsigned; must unpack
             estr = _errors.get(e, "unrecognized error code")
             raise RuntimeError("error code from get 0x%08x: %d: %s" % (self.node|rca_offset, e, estr))
-        return v
+        if len(d) != 5:
+            raise RuntimeError("reply len from get 0x%08x not 5: 0x%s" % (self.node|rca_offset, d.hex()))
+        return _f.unpack(d[:-1])[0]
     
     ########### special SET commands ###########
     
