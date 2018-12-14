@@ -1,14 +1,16 @@
-#!/local/python/bin/python3
+#!/local/python3/bin/python3
 '''
 20181016 RMB
 
-Drama control task for the Namakanui receivers:
-Ala'ihi: 86 GHz
-U'u: 230 GHz
-Aweoweo: 345 GHz
+ 86 GHz: Ala'ihi
+230 GHz: U'u
+345 GHz: Aweoweo
 
-The specific receiver is selected by the taskname (argv[1]):
-ALAIHI, UU, or AWEOWEO.
+TODO.  Since I've decided to break up the cartridge control into
+individual tasks, it might make sense to have a supervisor task.
+However, the duties of such a task would be pretty minimal, little
+more than a TUNE action that sets the IF switch and signal generator
+before sending a tune command to the individual cartridges.
 
 I haven't decided yet whether this script will only be an
 engineering control task or if it will act as the frontend
