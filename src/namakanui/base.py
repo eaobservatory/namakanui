@@ -38,8 +38,12 @@ class Base(object):
     def get_simulate(self): return self._simulate
     def del_simulate(self): del self._simulate
     def set_simulate(self, s):
-        '''Invoked on assignment to self.simulate property.'''
+        '''
+        Invoked on assignment to self.simulate property.
+        TODO: Proper handling of byte strings
+        '''
         if hasattr(s, 'split'):  # string
+            s = s.replace(',', ' ')
             s = s.split()
         s = set(x.lower() for x in s)
         # save current settings for rollback on failure
