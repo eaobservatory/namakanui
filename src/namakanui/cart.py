@@ -2,14 +2,6 @@
 Ryan Berthold 20181105
 Cart: Warm and Cold Cartridge monitoring and control class.
 Also helper functions for dealing with tables in INI files.
-
-MYSTERIES:
- - band3 lists 2po, 2sb mixers, but drawing only shows USB for LHC & RHC.
-     might not be getting "alma hardware".  so long as FEMC doesn't complain,
-     it should be okay to set params for all 4 mixers.
- - band6 has SIS magnets for each polarization, but no params given in INI.
-     maybe set as hardware defaults?  maybe unused?
-     needs some special testing once we have a cold cartridge.
 '''
 
 from namakanui.base import Base
@@ -129,6 +121,7 @@ class Cart(Base):
         self.pa_table = read_table(wca, 'LOParam', float, fnames)
         fnames = 'freqLO, IMag01, IMag02, IMag11, IMag12'
         self.magnet_table = read_table(cc, 'MagnetParam', float, fnames)
+        self.hot_magnet_table = read_table(cc, 'HotMagnet', float, fnames)
         fnames = 'freqLO, VJ01, VJ02, VJ11, VJ12, IJ01, IJ02, IJ11, IJ12'
         self.mixer_table = read_table(cc, 'MixerParam', float, fnames)
         fnames = 'freqLO, Pol, SIS, VD1, VD2, VD3, ID1, ID2, ID3, VG1, VG2, VG3'
@@ -143,16 +136,10 @@ class Cart(Base):
         self.lna_table_02 = [ttype(*[r[0]] + list(r[3:])) for r in lna_table if r.Pol==0 and r.SIS==2]
         self.lna_table_11 = [ttype(*[r[0]] + list(r[3:])) for r in lna_table if r.Pol==1 and r.SIS==1]
         self.lna_table_12 = [ttype(*[r[0]] + list(r[3:])) for r in lna_table if r.Pol==1 and r.SIS==2]
+        self.hot_lna = read_table(cc, 'HotPreamp', float, fnames)
         
         # assigning to simulate will invoke initialise()
         self.simulate = self._simulate
-        
-        # if the cart is already powered, measure SIS bias error.
-        # sets PA gate/drain voltages to 0 as a side effect.
-        # this may take a few seconds.
-        self.bias_error = [0.0]*4
-        if self.state['pd_enable']:
-            self._calc_sis_bias_error()
         
         self.log.info('__init__ done')
         # Cart.__init__
@@ -162,6 +149,8 @@ class Cart(Base):
         '''
         Get initial state of the parameters that are not read back from hardware.
         Future updates to these parameters are done immediately when commands are sent.
+        Then fill out the remaining state using update_all() and perform
+        bias voltage error measurement, which may take several seconds.
         '''
         # fix simulate set; simulated FEMC means simulated warm and cold carts.
         if 'femc' in self._simulate:
@@ -169,7 +158,7 @@ class Cart(Base):
         
         self.log.info('initialise: simulate = %s', self.simulate)
         
-        # connect to FEMC if not simulated, otherwise delete
+        # (re)connect to FEMC if not simulated, otherwise delete
         if 'femc' not in self.simulate:
             interface = self.config['femc']['interface']
             node = int(self.config['femc']['node'], 0)
@@ -230,7 +219,21 @@ class Cart(Base):
             self.state['pll_sb_lock'] = 0
             self.state['pll_null_int'] = 0
         
+        # create this entry so update_c doesn't need to check existence every time
+        self.state['cart_temp'] = [0.0]*6
+        
+        # reset the hot flag so we zero params on first high_temperature()
+        self.hot = False
+        
         self.update_all()  # fill out rest of state dict
+        
+        # if the cart is already powered, measure SIS bias error.
+        # sets PA gate/drain voltages to 0 as a side effect.
+        # this may take a few seconds.
+        self.bias_error = [0.0]*4
+        if self.state['pd_enable']:
+            self._calc_sis_bias_error()
+        
         # Cart.initialise
     
     # TODO: it might make more logical sense to break up updates into
@@ -359,19 +362,76 @@ class Cart(Base):
             self.state['yig_heater_c'] = 0.0
             self.state['pll_ref_power'] = 0.0
             self.state['pll_if_power'] = 0.0
-            
+        
+        # disconnected temperature sensors raise -5: hardware conversion error.
+        # during testing with band3, i found that attempting to read such a
+        # sensor would cause bad readings (328K vs 292K) for the pol0 mixer.
+        # therefore we cache bad sensors (-1.0) and skip them on future reads.
+        # if we trigger a bad read, go through the loop thrice more to clear
+        # out the bad readings.
+        # TODO: can other FEMC errors trigger bad temperature readings?
         if self.state['pd_enable'] and 'cold' not in self.simulate:
-            t = []
-            for te in range(6):
-                t.append(self.femc.get_cartridge_lo_cartridge_temp(self.ca, te))
-            self.state['cart_temp'] = t
+            loops = 1
+            while loops:
+                loops -= 1
+                for te in range(6):
+                    if self.state['cart_temp'][te] != -1.0:
+                        try:
+                            t = self.femc.get_cartridge_lo_cartridge_temp(self.ca, te))
+                        except RuntimeError:
+                            t = -1.0
+                            loops = 3
+                        self.state['cart_temp'][te] = t
         else:
             self.state['cart_temp'] = [0.0]*6
+        
+        # if the temperature has gone high, zero PA/LNA, mixer/magnets.
+        if not self.hot:
+            self.hot = self.high_temperature()
+            if self.hot:
+                self.log.warn('high temperature, setting pa/lna/sis to zero')
+                self._ramp_sis_magnet_currents([0.0]*4)
+                for i in range(4):
+                    self._set_lna(i//2,i%2, [0.0]*9)
+                self._ramp_sis_bias_voltages([0.0]*4)
+                self._set_pa([0.0]*4)
         
         self.state['number'] += 1
         self.publish(self.name, self.state)
         # Cart.update_c
 
+
+    def high_temperature(self):
+        '''
+        Returns True if the 4K stage, 12/20K stage, or mixers are above 30K.
+        Also returns True if temperatures are unavailable or simulated.
+        Uses cached temperatures in self.state; does not poll hardware.
+        '''
+        return any(not 0.0 < self.state['cart_temp'][te] < 30.0 for te in [0,2,4,5])
+    
+    
+    def has_sis_mixers(self):
+        '''
+        Returns True if this cartridge has SIS mixers, as indicated by the
+        presence of MixerParams in the config file.
+        '''
+        return bool(self.mixer_table)
+    
+    
+    def has_sis_magnets(self, po=None, sb=None):
+        '''
+        Returns True if this cartridge has SIS magnets, as indicated by the
+        presence of MagnetParams in the config file.  If po/sb are given,
+        will check the table at current lo_ghz and return False for zero
+        in the po/sb column (useful for e.g. band8, apparently).
+        '''
+        if not self.magnet_table:
+            return False
+        if po is None and sb is None:
+            return True
+        nom_magnet = interp_table(self.magnet_table, self.state['lo_ghz'])[1:]
+        return bool(nom_magnet[po*2 + sb])
+    
     
     def tune(self, lo_ghz, voltage):
         '''
@@ -385,13 +445,20 @@ class Cart(Base):
             self._lock_pll(lo_ghz)
             self._adjust_fm(voltage)
             
-            nom_magnet = interp_table(self.magnet_table, lo_ghz)
-            nom_mixer = interp_table(self.mixer_table, lo_ghz)
+            # allow for high temperature testing
             nom_pa = interp_table(self.pa_table, lo_ghz)
-            nom_lna_01 = interp_table(self.lna_table_01, lo_ghz)
-            nom_lna_02 = interp_table(self.lna_table_02, lo_ghz)
-            nom_lna_11 = interp_table(self.lna_table_11, lo_ghz)
-            nom_lna_12 = interp_table(self.lna_table_12, lo_ghz)
+            nom_mixer = interp_table(self.mixer_table, lo_ghz)
+            if self.high_temperature():
+                nom_magnet = interp_table(self.hot_magnet_table, lo_ghz)
+                lna = interp_table(self.hot_lna_table, lo_ghz)
+                nom_lna_01 = nom_lna_02 = nom_lna_11 = nom_lna_12 = lna
+            else:
+                nom_magnet = interp_table(self.magnet_table, lo_ghz)
+                nom_lna_01 = interp_table(self.lna_table_01, lo_ghz)
+                nom_lna_02 = interp_table(self.lna_table_02, lo_ghz)
+                nom_lna_11 = interp_table(self.lna_table_11, lo_ghz)
+                nom_lna_12 = interp_table(self.lna_table_12, lo_ghz)
+            
             if nom_magnet:
                 self._ramp_sis_magnet_currents(nom_magnet[1:])
             if nom_mixer:
@@ -401,19 +468,10 @@ class Cart(Base):
             for i, lna in enumerate([nom_lna_01, nom_lna_02, nom_lna_11, nom_lna_12]):
                 if lna:
                     self._set_lna(i//2, i%2, lna[1:])
-            # servo each PA[po] drain voltage to adjust SIS1 (sb=0) current to nom_mixer[5],[7]
-            # increased voltage generally produces increased mixer current,
-            # but it might not be as simple as that.
-            # TODO:
-            #   test sweeps of PA to see what typical current vs drain curves look like
-            #   test repeated mixer current reads; do we need a small sleep between 10x reads?
-            # Note: avg 10 SIS current readings. PA drain control (0,2.5) +-0.01
-            # Note: SIS current given in mA, but targets are in uA.
-            if nom_mixer and 'warm' not in self.simulate and 'cold' not in self.simulate:
-                for po in range(2):
-                    pass # TODO
+            
+            self._servo_pa()
+            
         except:
-            # TODO: zero PA on failure?
             raise
         finally:
             self.state['number'] += 1
@@ -592,7 +650,6 @@ class Cart(Base):
         '''
         if 'warm' in self.simulate:
             return 0.0
-        
         if not self.state['pd_enable']:
             raise RuntimeError(self.logname + ' power disabled')
         
@@ -638,6 +695,73 @@ class Cart(Base):
         return fm_slope
         # Cart._estimate_fm_slope
 
+    
+    def _servo_pa(self):
+        '''
+        Servo each PA[po] drain voltage to get the SIS mixer (sb=0) current
+        close to nominal values from the mixer table.
+        This procedure is taken from Appendix A of FEND-40.00.00.00-089-D-MAN.
+        
+        TODO: I'd like to see the general shape of current vs drain curves.
+        In general, increased voltage produces increased mixer current,
+        but there might be local maxima to deal with.
+        '''
+        if 'warm' in self.simulate or 'cold' in self.simulate:
+            return
+        if not self.state['pd_enable']:
+            raise RuntimeError(self.logname + ' power disabled')
+        if not self.has_sis_mixers():
+            self.log.info('no SIS mixers, skipping _servo_pa')
+            return
+        if self.high_temperature():
+            self.log.info('high temperature, skipping _servo_pa')
+            return
+        self.log.info('_servo_pa')
+        lo_ghz = self.state['lo_ghz']
+        nom_pa = interp_table(self.pa_table, lo_ghz)[1:]
+        nom_mixer = interp_table(self.mixer_table, lo_ghz)
+        nom_curr = [nom_mixer[5]*.001, nom_mixer[7]*.001]  # table in uA, but readout in mA.
+        step = 2.5/255
+        for po in range(2):
+            pa = nom_pa[po]
+            win_curr = nom_curr[po] * 0.05  # +-5% window
+            win_lo = nom_curr[po] - win_curr
+            win_hi = nom_curr[po] + win_curr
+            win_dir = 0
+            min_err = 1e300
+            done = False
+            while 0.0 < pa < 2.5 and not done:
+                curr = 0.0
+                n = 10
+                for i in range(n):
+                    # TODO do we need a short sleep between reads?
+                    curr += self.femc.get_sis_current(self.ca, po, 0)
+                curr /= n
+                if curr < win_lo:
+                    pa += step
+                elif curr > win_hi:
+                    pa -= step
+                else:
+                    # in the window, step until error increases, then step back.
+                    # assign step direction only once to prevent oscillation.
+                    diff_curr = nom_curr[po] - curr
+                    win_dir = win_dir or sign(diff_curr) or 1
+                    err = abs(diff_curr)
+                    if err < min_err:
+                        min_err = err
+                        pa += win_dir * step
+                    else:
+                        pa -= win_dir * step
+                        done = True
+                self.femc.set_cartridge_lo_pa_pol_drain_voltage_scale(self.ca, po, pa)
+                # TODO do we need a small sleep to let sis current adjust?
+            if pa <= 0.0 or pa >= 2.5:
+                pa = nom_pa[po]
+                self.log.warn('_servo_pa[%d] failed, setting back to %g', po, pa)
+                self.femc.set_cartridge_lo_pa_pol_drain_voltage_scale(self.ca, po, pa)
+        # Cart._servo_pa
+    
+    
 
     def power(self, enable):
         '''
@@ -654,13 +778,12 @@ class Cart(Base):
             if 'femc' not in self.simulate:
                 self.femc.set_pd_enable(self.ca, 1)
                 self.sleep(1)  # cartridge needs a second to wake up
-            #self.state['pd_enable'] = 1
             self.initialise()
             self._set_pa([0.0]*4)
             self.demagnetize_and_deflux()
             self._calc_sis_bias_error()
             # NOTE: we skip the "standard biasing sequence",
-            # instead waiting for first tune cmd.
+            # which can wait until the first tune cmd.
             self.state['number'] += 1
             self.publish(self.name, self.state)
             self.log.info('power-on complete.')
@@ -670,12 +793,10 @@ class Cart(Base):
             self._ramp_sis_bias_voltages([0.0]*4)
             self._ramp_sis_magnet_currents([0.0]*4)
             if 'femc' not in self.simulate:
+                self.state['pd_enable'] = 0  # so background UPDATE doesn't choke
                 self.femc.set_pd_enable(self.ca, 0)
                 self.sleep(0.1)  # TODO: does cartridge need longer to power down?
-            #self.state['pd_enable'] = 0
             self.initialise()
-            #self.state['number'] += 1
-            #self.publish(self.name, self.state)
             self.log.info('power-off complete.')
         elif enable:
             self.log.info('power(1): power already on')
@@ -688,37 +809,31 @@ class Cart(Base):
         '''
         This could take a while.
         Described in section 10.1.1 of FEND-40.00.00.00-089-D-MAN.
-        
-        TODO: Our mixers may not match the documented configuration.
-        Should add a section to the config file describing setup.
-        For instance, our INI doesn't have any magnet config for band 6.
-        The final steps refer to 'nominal' magnet current, but without
-        config what is that?  Does our band 6 lack SIS magnets?
         '''
-        self.log.info('demagnetize_and_deflux')
         if 'cold' in self.simulate:
             return
         if not self.state['pd_enable']:
             raise RuntimeError(self.logname + ' power disabled')
-        if self.band < 3:
+        if self.high_temperature():
+            self.log.info('high temperature, skipping demag/deflux')
             return
+        self.log.info('demagnetize_and_deflux')
         # Preliminary Steps
         self._set_pa([0.0]*4)
-        self._ramp_sis_bias_voltages([0.0]*4)
-        # Demagnetizing, for bands with SIS magnets
-        if self.band >= 5:
-            self._ramp_sis_magnet_currents([0.0]*4)
-            self._demagnetize(0,0)  # po,sb
-            if self.band <= 8:
-                self._demagnetize(0,1)
-            self._demagnetize(1,0)
-            if self.band <= 8:
-                self._demagnetize(1,1)
+        self._ramp_sis_bias_voltages([0.0]*4)  # harmless if not SIS mixers
+        self._ramp_sis_magnet_currents([0.0]*4)  # harmless if no SIS magnets
+        # Demagnetizing
+        if not self.has_sis_magnets():
+            self.log.info('no SIS magnets, skipping demagnetization')
+        else:
+            for po in range(2):
+                for sb in range(2):
+                    self._demagnetize(po,sb)
         # Mixer Heating
         self._mixer_heating()
         # Final Steps
-        # NOTE: we leave everything at zero until next tune cmd.
-        # TODO: band 6 nominal magnet current?
+        # NOTE: instead of setting parameters back to nominal,
+        #       we leave everything at zero until next tune cmd.
         nom_i_mag = interp_table(self.magnet_table, self.state['lo_ghz'])
         if nom_i_mag:
             nom_i_mag = [1.1*x for x in nom_i_mag[1:]]
@@ -739,8 +854,15 @@ class Cart(Base):
         regular time.sleep(), with only a brief custom sleep where the
         event loop can run.
         '''
+        if self.high_temperature():
+            # high magnet currents can cause damage at room temperature
+            self.log.info('high temperature, skipping demagnetize')
+            return
+        if not self.has_sis_magnets(po,sb):
+            self.log.info('no SIS magnets for po=%d sb=%d, skipping demagnetize', po,sb)
+            return
         self.log.info('_demagnetize(%d,%d)', po, sb)
-        i_mag = [0,0,0,0,0, 30, 50, 50, 20, 50, 100][self.band]
+        i_mag = [0,0,0,0,0, 30, 50, 50, 20, 50, 100][self.band]  # TODO make configurable
         sleep_secs = 0.1
         i_mag_dec = 1
         if self.band == 10:
@@ -760,6 +882,7 @@ class Cart(Base):
             s = midpoint - time.time()
             if s > 0.001:
                 time.sleep(s)
+            # TODO: avg several readings?
             self.state['sis_mag_c'][po*2 + sb] = self.femc.get_sis_magnet_current(self.ca, po, sb)
             # TODO: save somewhere? probably too fast to justify publishing.
             self.log_debug('sis_mag_c(%d,%d): %d, %7.3f', po, sb, i_set, self.state['sis_mag_c'][po*2 + sb])
@@ -776,13 +899,15 @@ class Cart(Base):
         
         TODO: support heating a single polarization?
         '''
-        #self.log.info('_mixer_heating')
         if 'cold' in self.simulate:
             return
-        if self.band < 3:
+        if not self.has_sis_mixers():
+            self.log.info('not SIS mixers, skipping mixer heating')
             return
-        if self.band >= 5:
-            self._ramp_sis_magnet_currents([0.0]*4)
+        if self.high_temperature():
+            self.log.info('high temperature, skipping mixer heating')
+            return
+        self._ramp_sis_magnet_currents([0.0]*4)  # harmless if no SIS magnets
         # measure baseline pol0/1 heater current and mixer temp, 10x 50ms = 0.5s
         self.log.info('_mixer_heating: measuring baseline heater currents and mixer temps')
         base_heater_current_0 = 0.0
@@ -856,12 +981,18 @@ class Cart(Base):
             return
         if not self.state['pd_enable']:
             raise RuntimeError(self.logname + ' power disabled')
+        if not self.has_sis_mixers():
+            self.log.info('not SIS mixers, skipping bias voltage error calc')
+            return
         self.log.info('calculating SIS bias voltage setting error')
         self._set_pa([0.0]*4)
-        nominal_magnet_current = interp_table(self.magnet_table, self.state['lo_ghz'])
+        mt = self.magnet_table
+        if self.high_temperature():
+            mt = self.hot_magnet_table
+        nominal_magnet_current = interp_table(mt, self.state['lo_ghz'])
         if nominal_magnet_current:
             self._ramp_sis_magnet_currents(nominal_magnet_current[1:])
-        sis_setting = [0,0,0, 10.0, 4.8, 2.3, 9.0, 2.2, 2.2, 2.3, 2.2][self.band]
+        sis_setting = [0,0,0, 10.0, 4.8, 2.3, 9.0, 2.2, 2.2, 2.3, 2.2][self.band]  # TODO config
         self._ramp_sis_bias_voltages([sis_setting]*4)  # note bias_error=0 here
         self.sleep(0.01)
         sbv = [0.0]*4  # avg sis bias voltage reading
@@ -979,6 +1110,8 @@ class Cart(Base):
         TODO: Where do we need to ENABLE the LNA?  Powerup? Tune? Here?
               Should we enable LNA before or after setting drain v/c?
               Do we need a pause after enabling the LNA?
+        
+        TODO: Are we supposed to compare to nominal gate voltage?
         
         TODO: What does LNA LED do?
         '''
