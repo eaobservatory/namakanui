@@ -55,6 +55,7 @@ def POWER(msg):
     
     TODO: Invoking SIMULATE during this procedure (or interrupting it in
     some other way) could leave the cart powered but not setup properly.
+    That is, not demagnetized or defluxed.
     Can we do anything about that?  It would also be a problem if this task
     suddenly died, though, and there wouldn't be any indication.
     There will probably just need to be a procedure that an error during

@@ -778,10 +778,9 @@ class Cart(Base):
             if 'femc' not in self.simulate:
                 self.femc.set_pd_enable(self.ca, 1)
                 self.sleep(1)  # cartridge needs a second to wake up
-            self.initialise()
+            self.initialise()  # calls _calc_sis_bias_error
             self._set_pa([0.0]*4)
             self.demagnetize_and_deflux()
-            self._calc_sis_bias_error()
             # NOTE: we skip the "standard biasing sequence",
             # which can wait until the first tune cmd.
             self.state['number'] += 1
