@@ -132,7 +132,7 @@ class Load(Base):
             raise RuntimeError('bad reply to H: %s' % (r))
        
         # wait 30s for completion
-        timeout = time.time() + 15
+        timeout = time.time() + 30
         self.state['busy'] = 1
         while self.state['busy'] and time.time() < timeout:
             self.sleep(0.5)
