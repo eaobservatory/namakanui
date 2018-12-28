@@ -4,7 +4,7 @@ Cart: Warm and Cold Cartridge monitoring and control class.
 Also helper functions for dealing with tables in INI files.
 '''
 
-from namakanui.base import Base
+from namakanui.includeparser import IncludeParser
 from namakanui.femc import FEMC
 import logging
 import time
@@ -72,10 +72,9 @@ def interp_table(table, freqLO):
     return ttype(*[x + f*(y-x) for x,y in zip(table[i], table[j])])
 
 
-class Cart(Base):
+class Cart(object):
     '''
     Monitor and control a given band (warm and cold cartridges).
-    
     NOTE: There are three update functions, so call update_one() at 0.6 Hz.
     '''
     
@@ -83,7 +82,7 @@ class Cart(Base):
         '''
         Create a Cart instance from given config file.
         '''
-        Base.__init__(self, inifilename)  # todo use super
+        self.config = IncludeParser(inifilename)
         self.band = band
         self.ca = self.band-1  # cartridge index for FEMC
         self.sleep = sleep
@@ -93,9 +92,11 @@ class Cart(Base):
         self.logname = self.config[b]['logname']
         self.log = logging.getLogger(self.logname)
         self.name = self.config[b]['pubname']
-        self._simulate = set(self.config[b]['simulate'].split())  # note underscore
+        self.simulate = set(self.config[b]['simulate'].split())
         self.state = {'number':0}
+        # this list is used by update_one() and update_all()
         self.update_functions = [self.update_a, self.update_b, self.update_c]
+        self.update_index = -1
         
         self.log.info('__init__')
         
@@ -138,12 +139,21 @@ class Cart(Base):
         self.lna_table_12 = [ttype(*[r[0]] + list(r[3:])) for r in lna_table if r.Pol==1 and r.SIS==2]
         self.hot_lna = read_table(cc, 'HotPreamp', float, fnames)
         
-        # assigning to simulate will invoke initialise()
-        self.simulate = self._simulate
-        
+        self.initialise()
         self.log.info('__init__ done')
         # Cart.__init__
     
+    
+    def update_all(self):
+        '''Call all functions in self.update_functions.'''
+        for f in self.update_functions:
+            f()
+    
+    def update_one(self):
+        '''Call the next function in self.update_functions.'''
+        self.update_index = (self.update_index + 1) % len(self.update_functions)
+        self.update_functions[self.update_index]()
+
     
     def initialise(self):
         '''
@@ -153,8 +163,8 @@ class Cart(Base):
         bias voltage error measurement, which may take several seconds.
         '''
         # fix simulate set; simulated FEMC means simulated warm and cold carts.
-        if 'femc' in self._simulate:
-            self._simulate |= {'warm', 'cold'}
+        if 'femc' in self.simulate:
+            self.simulate |= {'warm', 'cold'}
         
         self.log.info('initialise: simulate = %s', self.simulate)
         
@@ -377,7 +387,7 @@ class Cart(Base):
                 for te in range(6):
                     if self.state['cart_temp'][te] != -1.0:
                         try:
-                            t = self.femc.get_cartridge_lo_cartridge_temp(self.ca, te))
+                            t = self.femc.get_cartridge_lo_cartridge_temp(self.ca, te)
                         except RuntimeError:
                             t = -1.0
                             loops = 3

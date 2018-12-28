@@ -16,43 +16,37 @@ rather than any of the programmed button positions -- since there are
 only five buttons, we would likely run out.
 '''
 
-from namakanui.base import Base
+from namakanui.includeparser import IncludeParser
 import socket
 import time
 import logging
 
-class Load(Base):
-    '''
-    Interface to the load controller.
-    There is only one update function; call at ~0.1 Hz.
-    '''
+class Load(object):
+    '''Interface to the load controller.'''
     
     def __init__(self, inifilename, sleep, publish):
-        Base.__init__(self, inifilename)  # TODO super
+        self.config = IncludeParser(inifilename)
         self.sleep = sleep
         self.publish = publish
-        self._simulate = set(self.config['load']['simulate'].split())  # note underscore
+        self.simulate = set(self.config['load']['simulate'].split())
         self.name = self.config['load']['pubname']
         self.state = {'number':0}
-        self.update_functions = [self.update_a]
         self.logname = self.config['load']['logname']
         self.log = logging.getLogger(self.logname)
         
-        # note reverse lookup does not allow synonymous positions
+        # NOTE: reverse lookup does not allow synonymous positions
         self.positions = {n:int(p) for n,p in self.config['positions'].items()}
         self.positions_r = {p:n for n,p in self.positions.items()}
         
-        self.simulate = self._simulate  # assignment invokes initialise()
+        self.initialise()
         # Load.__init__
     
     
     def initialise(self):
-        '''
-        (Re)connect to the CMS port and call update_all.
-        '''
-        # fix simulate set; note underscore.
-        if self._simulate:
-            self._simulate = set(['load'])
+        '''(Re)connect to the CMS port and call update().'''
+        # fix simulate set
+        if self.simulate:
+            self.simulate = set(['load'])
         
         if 'load' not in self.simulate:
             timeout = float(self.config['load']['timeout'])
@@ -74,11 +68,12 @@ class Load(Base):
         self.state['pos_counts'] = 0
         self.state['pos_name'] = self.positions_r.get(0, 'undef')
         
-        self.update_all()
+        self.update()
         # Load.initialise
         
     
-    def update_a(self):
+    def update(self):
+        '''Call at ~0.1 Hz.'''
         if 'load' not in self.simulate:
             r = self.cmd('Q:\r\n')
             pos,a1,a2,a3 = [s.strip() for s in r[1:].split(',')]
@@ -100,7 +95,7 @@ class Load(Base):
         
         self.state['number'] += 1
         self.publish(self.name, self.state)
-        # Load.update_a
+        # Load.update
     
     
     def cmd(self, c):
@@ -136,7 +131,7 @@ class Load(Base):
         self.state['busy'] = 1
         while self.state['busy'] and time.time() < timeout:
             self.sleep(0.5)
-            self.update_all()
+            self.update()
         if self.state['busy']:
             raise RuntimeError('timeout waiting for home completion')
         if not self.state['homed']:
@@ -165,7 +160,7 @@ class Load(Base):
         timeout = time.time() + 5
         while self.state['busy'] and time.time() < timeout:
             self.sleep(0.5)
-            self.update_all()
+            self.update()
         if self.state['busy']:
             raise RuntimeError('timeout waiting for axis ready')
         
@@ -186,7 +181,7 @@ class Load(Base):
         self.state['busy'] = 1
         while self.state['busy'] and time.time() < timeout:
             self.sleep(0.5)
-            self.update_all()
+            self.update()
         if self.state['busy']:
             raise RuntimeError('timeout waiting for move completion')
         end_pos = self.state['pos_counts']

@@ -4,41 +4,39 @@ Monitoring and control for the Namakanui cryostat.
 Valves, pumps, pressures, temperatures, power supply.
 '''
 
-from namakanui.base import Base
+from namakanui.includeparser import IncludeParser
 from namakanui.femc import FEMC
 import logging
 
-class Cryo(Base):
+class Cryo(object):
     '''
     Monitor and control the Namakanui cryostat.
-    
-    NOTE: There is only one update function, so call update_one() at 0.2Hz.
+    Call update() at ~0.2Hz.
     '''
     
     def __init__(self, inifilename, sleep, publish):
         # TODO simulate granularity? unsure what bits we'll have included.
         # TODO: does the cryostat have ESNs we need to check?
-        Base.__init__(self, inifilename)  # should probably use magic super().__init__()
+        self.config = IncludeParser(inifilename)
         self.sleep = sleep
         self.publish = publish
-        self._simulate = set(self.config['cryo']['simulate'].split())  # note underscore
+        self.simulate = set(self.config['cryo']['simulate'].split())
         self.name = self.config['cryo']['pubname']
         self.state = {'number':0}
-        self.update_functions = [self.update_a]
         self.logname = self.config['cryo']['logname']
         self.log = logging.getLogger(self.logname)
-        self.simulate = self._simulate  # assignment invokes initialise()
+        self.initialise()
     
     
     def initialise(self):
         '''
         Update state for those parameters that are not hardware readbacks,
         after which we keep track of state as the commands are given.
-        Then update_all to fill out the full state structure.
+        Then update() to fill out the full state structure.
         '''
         # fix simulate set.  for now, any implies all.  TODO
-        if self._simulate:
-            self._simulate = set(['femc', 'all'])  # note underscore
+        if self.simulate:
+            self.simulate = set(['femc', 'all'])
         
         if 'femc' not in self.simulate:
             interface = self.config['femc']['interface']
@@ -60,11 +58,11 @@ class Cryo(Base):
             self.state['turbopump_enable'] = 0
             self.state['vacgauge_enable'] = 0
         
-        self.update_all()
+        self.update()
         # Cryo.initialise
             
     
-    def update_a(self):
+    def update(self):
         '''
         Update cryostat parameters.  Expect this to take ~21ms.
         '''
@@ -98,7 +96,7 @@ class Cryo(Base):
         
         self.state['number'] += 1
         self.publish(self.name, self.state)
-        # Cryo.update_a
+        # Cryo.update
 
 # TODO control funcs
 

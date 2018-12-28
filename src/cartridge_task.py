@@ -36,14 +36,15 @@ def UPDATE(msg):
     drama.reschedule(1.67)
     
 
-def SIMULATE(msg):
+def INITIALISE(msg):
     '''
-    Change the set of simulated components (which re-initiliazes the cart).
-    The set can be given as positional args or a single SIMULATE="..." param.
+    Reinitialise the cart.  If a SIMULATE parameter is given,
+    first set cart.simulate from the given string.
     '''
     args,kwargs = drama.parse_argument(msg.arg)
-    sim = ' '.join(args + [kwargs.get('SIMULATE', '')])
-    cart.simulate = sim  # assignment invokes initialise()
+    if 'SIMULATE' in kwargs:
+        cart.simulate = set(kwargs['SIMULATE'].replace(',',' ').lower().split())
+    cart.initialise()
 
 
 def POWER(msg):
@@ -88,7 +89,7 @@ def TUNE(msg):
 
 
 try:
-    drama.init(args.taskname, actions=[UPDATE, SIMULATE, POWER, TUNE])
+    drama.init(args.taskname, actions=[UPDATE, INITIALISE, POWER, TUNE])
     drama.blind_obey(args.taskname, 'UPDATE')
     drama.run()
 finally:
