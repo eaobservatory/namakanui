@@ -145,9 +145,12 @@ class Cart(object):
     
     
     def update_all(self):
-        '''Call all functions in self.update_functions.'''
+        '''Call all functions in self.update_functions, publishing once.'''
         for f in self.update_functions:
-            f()
+            f(do_publish=False)
+        self.state['number'] += 1
+        self.publish(self.name, self.state)
+
     
     def update_one(self):
         '''Call the next function in self.update_functions.'''
@@ -249,7 +252,7 @@ class Cart(object):
     # TODO: it might make more logical sense to break up updates into
     # warm and cold cartridges.  warm would take ~27ms, cold would take ~60ms.
     
-    def update_a(self):
+    def update_a(self, do_publish=True):
         '''
         Update LNA parameters. Expect this to take ~36ms.
         '''
@@ -270,13 +273,14 @@ class Cart(object):
             self.state['lna_drain_v'] = [0.0]*12;
             self.state['lna_drain_c'] = [0.0]*12;
             self.state['lna_gate_v'] = [0.0]*12;
-            
-        self.state['number'] += 1
-        self.publish(self.name, self.state)
+        
+        if do_publish:
+            self.state['number'] += 1
+            self.publish(self.name, self.state)
         # Cart.update_a
     
     
-    def update_b(self):
+    def update_b(self, do_publish=True):
         '''
         Update params for PLL lock, PA, SIS mixers. Expect this to take ~25ms.
         '''
@@ -323,12 +327,13 @@ class Cart(object):
             self.state['sis_mag_v'] = [0.0]*4
             self.state['sis_mag_c'] = [0.0]*4
         
-        self.state['number'] += 1
-        self.publish(self.name, self.state)
+        if do_publish:
+            self.state['number'] += 1
+            self.publish(self.name, self.state)
         # Cart.update_b
     
     
-    def update_c(self):
+    def update_c(self, do_publish=True):
         '''
         Update params for AMC, temperatures, misc. Expect this to take ~24ms.
         TODO could probably bundle into fewer top-level state params.
@@ -406,8 +411,9 @@ class Cart(object):
                 self._ramp_sis_bias_voltages([0.0]*4)
                 self._set_pa([0.0]*4)
         
-        self.state['number'] += 1
-        self.publish(self.name, self.state)
+        if do_publish:
+            self.state['number'] += 1
+            self.publish(self.name, self.state)
         # Cart.update_c
 
 
