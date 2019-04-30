@@ -1,0 +1,66 @@
+<!-- 
+<INSTRUMENT> contains the basic physical parameters of a particular frontend.
+
+It has attributes of:
+ - NAME: the frontend task name
+ - SERIAL: The receiver serial number
+ - FOC_STATION: the location of the receiver either NASMYTH_R NASMYTH_L or DIRECT
+ - X, Y: The X and Y offset of the frontend reference point from the focal
+   station optic axis in arcseconds in the focal plane's default
+   coordinate system.
+ - WAVELENGTH - the wavelength to use for refraction calculations.
+
+The IF_CENTER_FREQ is the receiver's IF center frequency in GHZ.
+
+bw is the bandwidth
+
+smu_offset is the SMU instrument offset for the XYZ table
+
+... and an array of receptors.
+
+Each <receptor> contains the following attributes:
+
+ - id: identifies the receptor (H00-H15 for HARP, A for RxA, A and B 
+       for RXB and BA and BB or DA and DB for RxW)
+ - health: ON OFF or UNSTABLE.
+ - x, y: The X and Y offset of the pixel from the front end reference
+       point in arcseconds in the focal plane's default coordinate system.
+ - pol_type: which describes the polarization type
+
+A <sensitivity> element that gives the sensitivity of this receptor 
+divided by that of the receptor named in the 'ref_receptor' attribute.
+
+A  <receptor_angle> element that gives the angle of the linear polarization to 
+which the receptor is sensitive.
+-->
+
+<INSTRUMENT NAME="FE_UU" SERIAL="UU" FOC_STATION="DIRECT" X="0.0" Y="0.0" WAVELENGTH="1235">
+   <IF_CENTER_FREQ>6.0</IF_CENTER_FREQ>
+   <bw units="Hz" value="4.0E9"/>
+   <smu_offset X="0.0" Y="0.0" Z="0.7"/>
+   <pointing_offset CA="-8.0" IE="73.0"/>
+   <waveBand  band="A" label="A" units="Hz" centre="243E9" width="62E9">
+       <etal>0.9</etal>
+   </waveBand>
+
+   <receptor id="NU1L" health="ON" x="0.0" y="0.0" pol_type="Linear" band="A">
+      <sensitivity reference="NU1L" value="1.0"/>
+      <angle units="rad" value="0.0" />
+      <sideband value="LSB" />
+   </receptor>
+   <receptor id="NU2L" health="ON" x="0.0" y="0.0" pol_type="Linear" band="A">
+      <sensitivity reference="NU1L" value="1.0"/>
+      <angle units="rad" value="1.570796" />
+      <sideband value="LSB" />
+   </receptor>
+   <receptor id="NU1U" health="ON" x="0.0" y="0.0" pol_type="Linear" band="A">
+      <sensitivity reference="NU1L" value="1.0"/>
+      <angle units="rad" value="0.0" />
+      <sideband value="USB" />
+   </receptor>
+   <receptor id="NU2U" health="ON" x="0.0" y="0.0" pol_type="Linear" band="A">
+      <sensitivity reference="NU1L" value="1.0"/>
+      <angle units="rad" value="1.570796" />
+      <sideband value="USB" />
+   </receptor>
+</INSTRUMENT>

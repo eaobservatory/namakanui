@@ -1,0 +1,6 @@
+include $(TOP)/config/CONFIG
+
+DATA += $(wildcard ../*.ini)
+DATA += $(wildcard ../*.ent)
+
+include $(TOP)/config/RULES.Build

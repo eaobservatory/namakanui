@@ -18,6 +18,8 @@ args = parser.parse_args()
 
 import drama.log
 drama.log.setup()  # no taskname, so no /jac_logs file output
+import logging
+log = logging.getLogger(args.taskname)
 
 # create the Cart instance here so any failure kills the process.
 # TODO: override starting simulate params?
@@ -31,6 +33,9 @@ def UPDATE(msg):
     '''
     Keep overall cart.state updated with a 5s period.
     There are 3 update functions, so call update_one at 0.6Hz, every 1.67s.
+    
+    TODO: wrap this in a try block so it keeps going.
+          what exceptions do we need to catch?
     '''
     cart.update_one()  # calls drama.set_param to publish state
     drama.reschedule(1.67)

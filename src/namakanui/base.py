@@ -1,6 +1,8 @@
 '''
 RMB 20181130
 This module provides a base class for Namakanui monitor and control classes.
+
+TODO delete me -- will not be used
 '''
 
 import sys

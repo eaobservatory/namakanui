@@ -6,6 +6,10 @@ User interface is through the Namakanui class.
 TODO: Consider simulation
 
 TODO: it'd be nice if states could have more verbose names.  nested structs?
+
+TODO: Empty this file.  The namakanui module will only serve
+as a class namespace for the individual components.
+
 '''
 
 from namakanui.femc import FEMC

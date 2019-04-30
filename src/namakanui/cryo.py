@@ -34,9 +34,9 @@ class Cryo(object):
         after which we keep track of state as the commands are given.
         Then update() to fill out the full state structure.
         '''
-        # fix simulate set.  for now, any implies all.  TODO
-        if self.simulate:
-            self.simulate = set(['femc', 'all'])
+        # fix simulate set.  TODO not very useful yet.
+        if 'femc' in self.simulate:
+            self.simulate |= {'cryo'}
         
         if 'femc' not in self.simulate:
             interface = self.config['femc']['interface']
