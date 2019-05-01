@@ -10,17 +10,61 @@ a separate class?  Also if ASIAA uses a different signal generator
 for the GLT, need to develop a new control class (with same interface).
 '''
 
+from namakanui.includeparser import IncludeParser
 import socket
+import logging
+
 
 class Agilent(object):
     
-    def __init__(self, ip, port=5025):
-        self.s = socket.socket()
-        self.s.settimeout(1)
-        self.s.connect((ip, port))
+    def __init__(self, inifilename, sleep, publish):
+        self.config = IncludeParser(inifilename)
+        agconfig = self.config['agilent']
+        self.sleep = sleep
+        self.publish = publish
+        self.simulate = set(agconfig['simulate'].split())
+        self.name = agconfig['pubname']
+        self.state = {'number':0}
+        self.logname = agconfig['logname']
+        self.log = logging.getLogger(self.logname)
+        self.ip = agconfig['ip']
+        self.port = int(agconfig['port'])
+        self.dbm = float(agconfig['dbm'])
+        self.harmonic = int(agconfig['harmonic'])
+        self.floog = float(agconfig['floog'])
+        self.initialise()
     
     def __del__(self):
-        self.s.close()
+        self.close()
+    
+    def close(self):
+        if hasattr(self, 's'):
+            self.log.debug('closing socket')
+            self.s.close()
+        del self.s
+    
+    def initialise(self):
+        if self.simulate:
+            self.simulate = {'agilent'}
+        self.state['simulate'] = ' '.join(self.simulate)
+        self.close()
+        if not self.simulate:
+            self.log.debug('connecting socket to %s:%d', self.ip, self.port)
+            self.s = socket.socket()
+            self.s.settimeout(1)
+            self.s.connect((self.ip, self.port))
+            self.state['hz'] = self.get_hz()
+            self.state['dbm'] = self.get_dbm()
+            self.state['output'] = self.get_output()
+        else:
+            self.state['hz'] = 0.0
+            self.state['dbm'] = self.dbm
+            self.state['output'] = 0
+        self.update()
+    
+    def update(self):
+        self.state['number'] += 1
+        self.publish(self.name, self.state)
     
     def cmd(self, cmd):
         '''Send SCPI cmd.  If cmd ends in ?, return reply.
@@ -29,6 +73,7 @@ class Agilent(object):
         if convert:
             cmd = cmd.encode()  # convert to bytes
         cmd = cmd.strip()
+        self.log.debug('> %s', cmd)
         reply = cmd.endswith(b'?')
         cmd += b'\n'
         # packets are small, never expect this to fail -- be lazy.
@@ -37,6 +82,7 @@ class Agilent(object):
         if reply:
             reply = self.s.recv(256)  # will replies ever be longer?
             reply = reply.strip()  # remove trailing newline
+            self.log.debug('< %s', reply)
             if convert:
                 reply = reply.decode()  # convert to string
             return reply
@@ -55,38 +101,52 @@ class Agilent(object):
     def set_cmd(self, param, value, fmt):
         '''Set param to value, first stringifying using fmt (e.g. "%.3f").
            The param is then queried; if reply does not match cmd, raise RuntimeError.'''
+        if self.simulate:
+            return
         t = type(value)
         v = fmt % (value)
         self.cmd(param + ' ' + v)
         rv = self.cmd(param + '?')
         if t(v) != t(rv):
             raise RuntimeError('Agilent failed to set %s to %s, reply %s, errors %s' % (param, v, rv, self.get_errors()))
+    
+    # NOTE: These 'set' functions do not call update(), since we expect
+    #       the user to make multiple set_ calls followed by a single update().
             
     def set_hz(self, hz):
         '''Set output frequency in Hz.'''
         hz = float(hz)
         self.set_cmd(':freq', hz, '%.3f')
+        self.state['hz'] = hz
         
     def set_dbm(self, dbm):
         '''Set output amplitude in dBm.'''
         dbm = float(dbm)
         self.set_cmd(':power', dbm, '%.7f')
+        self.state['dbm'] = dbm
     
     def set_output(self, on):
         '''Set RF output on (1) or off (0).'''
         on = int(on)
         self.set_cmd(':output', on, '%d')
+        self.state['output'] = on
     
     def get_hz(self):
         '''Get output frequency in Hz.'''
+        if self.simulate:
+            return self.state['hz']
         return float(self.cmd(':freq?'))
     
     def get_dbm(self):
         '''Get output amplitude in dBm.'''
+        if self.simulate:
+            return self.state['dbm']
         return float(self.cmd(':power?'))
     
     def get_output(self):
         '''Get output on (1) or off (0).'''
+        if self.simulate:
+            return self.state['output']
         return int(self.cmd(':output?'))
     
     
