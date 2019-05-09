@@ -12,44 +12,82 @@ import namakanui.cart
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('taskname')
-parser.add_argument('band')
-parser.add_argument('inifile')
+#parser.add_argument('band')
+#parser.add_argument('inifile')
 args = parser.parse_args()
+taskname = args.taskname
 
 import drama.log
 drama.log.setup()  # no taskname, so no /jac_logs file output
 import logging
-log = logging.getLogger(args.taskname)
+log = logging.getLogger(taskname)
 
 # create the Cart instance here so any failure kills the process.
 # TODO: override starting simulate params?
 # maybe carts should always start on full sim and fire up later.
 # notably, connecting to a powered cartridge will invoke bias error measurement,
 # which might take several seconds due to the ramping involved.
-cart = namakanui.cart.Cart(args.band, args.inifile, drama.wait, drama.set_param)
-
+#cart = namakanui.cart.Cart(args.band, args.inifile, drama.wait, drama.set_param)
+cart = None
+inifile = None
+band = None
 
 def UPDATE(msg):
     '''
     Keep overall cart.state updated with a 5s period.
     There are 3 update functions, so call update_one at 0.6Hz, every 1.67s.
     
-    TODO: wrap this in a try block so it keeps going.
+    TODO: wrap this in a try block so it keeps going?
           what exceptions do we need to catch?
     '''
+    delay = 1.67
+    if msg.reason == drama.REA_KICK:
+        return
+    if msg.reason == drama.REA_OBEY:
+        # INITIALISE has just done an update_all, so skip the first update.
+        drama.reschedule(delay)
+        return
     cart.update_one()  # calls drama.set_param to publish state
-    drama.reschedule(1.67)
+    drama.reschedule(delay)
     
 
 def INITIALISE(msg):
     '''
-    Reinitialise the cart.  If a SIMULATE parameter is given,
+    Reinitialise the cartridge.  If a SIMULATE parameter is given,
     first set cart.simulate from the given string.
     '''
+    global cart, inifile, band
     args,kwargs = drama.parse_argument(msg.arg)
+    
+    if 'INITIALISE' in kwargs:
+        inifile = kwargs['INITIALISE']
+    if not inifile:
+        raise drama.BadStatus(drama.INVARG, 'missing argument INITIALISE, .ini file path')
+    
+    simulate = None
     if 'SIMULATE' in kwargs:
-        cart.simulate = set(kwargs['SIMULATE'].replace(',',' ').lower().split())
-    cart.initialise()
+        simulate = set(kwargs['SIMULATE'].replace(',',' ').lower().split())
+    
+    if 'BAND' in kwargs:
+        band = int(kwargs['BAND'])
+    if not band:
+        raise drama.BadStatus(drama.INVARG, 'missing argument BAND, receiver band number')
+    
+    # kick the update loop, if running, just to make sure it can't interfere
+    # with cart's initialise().
+    try:
+        drama.kick(taskname, "UPDATE").wait()
+    except drama.DramaException:
+        pass
+    
+    # we recreate the cart instance to force it to reread its ini file.
+    # note that Cart.__init__() calls Cart.initialise().
+    del cart
+    cart = None
+    cart = namakanui.cart.Cart(band, inifile, drama.wait, drama.set_param, simulate)
+    
+    # restart the update loop
+    drama.blind_obey(taskname, "UPDATE")
 
 
 def POWER(msg):
@@ -94,8 +132,7 @@ def TUNE(msg):
 
 
 try:
-    drama.init(args.taskname, actions=[UPDATE, INITIALISE, POWER, TUNE])
-    drama.blind_obey(args.taskname, 'UPDATE')
+    drama.init(taskname, actions=[UPDATE, INITIALISE, POWER, TUNE])
     drama.run()
 finally:
     drama.stop()
