@@ -78,7 +78,7 @@ class Cart(object):
     NOTE: There are three update functions, so call update_one() at 0.6 Hz.
     '''
     
-    def __init__(self, band, inifilename, sleep, publish):
+    def __init__(self, band, inifilename, sleep, publish, simulate=None):
         '''
         Create a Cart instance from given config file.
         '''
@@ -92,7 +92,10 @@ class Cart(object):
         self.logname = self.config[b]['logname']
         self.log = logging.getLogger(self.logname)
         self.name = self.config[b]['pubname']
-        self.simulate = set(self.config[b]['simulate'].split())
+        if simulate is not None:
+            self.simulate = set(simulate.split())
+        else:
+            self.simulate = set(self.config[b]['simulate'].split())
         self.state = {'number':0}
         # this list is used by update_one() and update_all()
         self.update_functions = [self.update_a, self.update_b, self.update_c]

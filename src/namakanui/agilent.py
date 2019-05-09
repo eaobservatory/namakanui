@@ -17,12 +17,15 @@ import logging
 
 class Agilent(object):
     
-    def __init__(self, inifilename, sleep, publish):
+    def __init__(self, inifilename, sleep, publish, simulate=None):
         self.config = IncludeParser(inifilename)
         agconfig = self.config['agilent']
         self.sleep = sleep
         self.publish = publish
-        self.simulate = set(agconfig['simulate'].split())
+        if simulate is not None:
+            self.simulate = set(simulate.split())
+        else:
+            self.simulate = set(agconfig['simulate'].split())
         self.name = agconfig['pubname']
         self.state = {'number':0}
         self.logname = agconfig['logname']

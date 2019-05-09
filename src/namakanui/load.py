@@ -24,11 +24,14 @@ import logging
 class Load(object):
     '''Interface to the load controller.'''
     
-    def __init__(self, inifilename, sleep, publish):
+    def __init__(self, inifilename, sleep, publish, simulate=None):
         self.config = IncludeParser(inifilename)
         self.sleep = sleep
         self.publish = publish
-        self.simulate = set(self.config['load']['simulate'].split())
+        if simulate is not None:
+            self.simulate = set(simulate.split())
+        else:
+            self.simulate = set(self.config['load']['simulate'].split())
         self.name = self.config['load']['pubname']
         self.state = {'number':0}
         self.logname = self.config['load']['logname']

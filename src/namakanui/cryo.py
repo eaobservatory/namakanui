@@ -14,13 +14,16 @@ class Cryo(object):
     Call update() at ~0.2Hz.
     '''
     
-    def __init__(self, inifilename, sleep, publish):
+    def __init__(self, inifilename, sleep, publish, simulate=None):
         # TODO simulate granularity? unsure what bits we'll have included.
         # TODO: does the cryostat have ESNs we need to check?
         self.config = IncludeParser(inifilename)
         self.sleep = sleep
         self.publish = publish
-        self.simulate = set(self.config['cryo']['simulate'].split())
+        if simulate is not None:
+            self.simulate = set(simulate.split())
+        else:
+            self.simulate = set(self.config['cryo']['simulate'].split())
         self.name = self.config['cryo']['pubname']
         self.state = {'number':0}
         self.logname = self.config['cryo']['logname']
