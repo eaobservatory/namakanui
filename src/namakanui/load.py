@@ -17,6 +17,7 @@ only five buttons, we would likely run out.
 '''
 
 from namakanui.includeparser import IncludeParser
+from namakanui import sim
 import socket
 import time
 import logging
@@ -29,9 +30,9 @@ class Load(object):
         self.sleep = sleep
         self.publish = publish
         if simulate is not None:
-            self.simulate = set(simulate.split())
+            self.simulate = simulate
         else:
-            self.simulate = set(self.config['load']['simulate'].split())
+            self.simulate = sim.str_to_bits(self.config['load']['simulate'])
         self.name = self.config['load']['pubname']
         self.state = {'number':0}
         self.logname = self.config['load']['logname']
@@ -48,10 +49,9 @@ class Load(object):
     def initialise(self):
         '''(Re)connect to the CMS port and call update().'''
         # fix simulate set
-        if self.simulate:
-            self.simulate = set(['load'])
+        self.simulate &= sim.SIM_LOAD
         
-        if 'load' not in self.simulate:
+        if not self.simulate:
             timeout = float(self.config['load']['timeout'])
             cms = self.config['load']['cms']
             port = int(self.config['load']['port'])
@@ -65,7 +65,8 @@ class Load(object):
         elif hasattr(self, 's'):
             del self.s
         
-        self.state['simulate'] = ' '.join(self.simulate)
+        self.state['simulate'] = self.simulate
+        self.state['sim_text'] = sim.bits_to_str(self.simulate)
         
         # init these state fields so simulate can pretend properly
         self.state['pos_counts'] = 0
@@ -77,7 +78,7 @@ class Load(object):
     
     def update(self):
         '''Call at ~0.1 Hz.'''
-        if 'load' not in self.simulate:
+        if not self.simulate:
             r = self.cmd('Q:\r\n')
             pos,a1,a2,a3 = [s.strip() for s in r[1:].split(',')]
             pos = int(pos)
@@ -115,7 +116,7 @@ class Load(object):
     
     def home(self):
         '''Home the stage and wait for completion.'''
-        if 'load' in self.simulate:
+        if self.simulate:
             self.state['homed'] = 1
             return
         
@@ -147,7 +148,7 @@ class Load(object):
         if pos in self.positions:
             pos = self.positions[pos]
         pos = int(pos)
-        if 'load' in self.simulate:
+        if self.simulate:
             self.state['pos_counts'] = pos
             self.state['pos_name'] = self.positions_r.get(pos, 'undef')
             return

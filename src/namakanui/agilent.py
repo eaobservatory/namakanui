@@ -11,6 +11,7 @@ for the GLT, need to develop a new control class (with same interface).
 '''
 
 from namakanui.includeparser import IncludeParser
+from namakanui import sim
 import socket
 import logging
 
@@ -23,9 +24,9 @@ class Agilent(object):
         self.sleep = sleep
         self.publish = publish
         if simulate is not None:
-            self.simulate = set(simulate.split())
+            self.simulate = simulate
         else:
-            self.simulate = set(agconfig['simulate'].split())
+            self.simulate = sim.str_to_bits(agconfig['simulate'])
         self.name = agconfig['pubname']
         self.state = {'number':0}
         self.logname = agconfig['logname']
@@ -47,9 +48,12 @@ class Agilent(object):
         del self.s
     
     def initialise(self):
-        if self.simulate:
-            self.simulate = {'agilent'}
-        self.state['simulate'] = ' '.join(self.simulate)
+        # fix simulate set
+        self.simulate &= sim.SIM_AGILENT
+        
+        self.state['simulate'] = self.simulate
+        self.state['sim_text'] = sim.bits_to_str(self.simulate)
+        
         self.close()
         if not self.simulate:
             self.log.debug('connecting socket to %s:%d', self.ip, self.port)

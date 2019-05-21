@@ -6,6 +6,7 @@ Valves, pumps, pressures, temperatures, power supply.
 
 from namakanui.includeparser import IncludeParser
 from namakanui.femc import FEMC
+from namakanui import sim
 import logging
 
 class Cryo(object):
@@ -21,9 +22,9 @@ class Cryo(object):
         self.sleep = sleep
         self.publish = publish
         if simulate is not None:
-            self.simulate = set(simulate.split())
+            self.simulate = simulate
         else:
-            self.simulate = set(self.config['cryo']['simulate'].split())
+            self.simulate = sim.str_to_bits(self.config['cryo']['simulate'])
         self.name = self.config['cryo']['pubname']
         self.state = {'number':0}
         self.logname = self.config['cryo']['logname']
@@ -37,18 +38,18 @@ class Cryo(object):
         after which we keep track of state as the commands are given.
         Then update() to fill out the full state structure.
         '''
-        # fix simulate set.  TODO not very useful yet.
-        if 'femc' in self.simulate:
-            self.simulate |= {'cryo'}
+        # fix simulate set.
+        self.simulate &= sim.SIM_CRYO_FEMC
         
-        if 'femc' not in self.simulate:
+        if not self.simulate:
             interface = self.config['femc']['interface']
             node = int(self.config['femc']['node'], 0)
             self.femc = FEMC(interface, node)
         elif hasattr(self, 'femc'):
             del self.femc
         
-        self.state['simulate'] = ' '.join(self.simulate)
+        self.state['simulate'] = self.simulate
+        self.state['sim_text'] = sim.bits_to_str(self.simulate)
         
         # TODO: check ESNs?        
         
