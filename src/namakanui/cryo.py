@@ -12,7 +12,6 @@ import logging
 class Cryo(object):
     '''
     Monitor and control the Namakanui cryostat.
-    Call update() at ~0.2Hz.
     '''
     
     def __init__(self, inifilename, sleep, publish, simulate=None):
@@ -69,6 +68,7 @@ class Cryo(object):
     def update(self):
         '''
         Update cryostat parameters.  Expect this to take ~21ms.
+        Call at ~0.2Hz.
         '''
         if self.state['backpump_enable'] and not self.simulate:
             self.state['turbopump_state'] = self.femc.get_cryostat_turbo_pump_state()

@@ -7,6 +7,7 @@ A DRAMA task to monitor and control a Namakanui warm/cold cartridge set.
 import jac_sw
 import drama
 import time
+import gc
 import namakanui.cart
 
 import argparse
@@ -22,9 +23,7 @@ drama.log.setup()  # no taskname, so no /jac_logs file output
 import logging
 log = logging.getLogger(taskname)
 
-# create the Cart instance here so any failure kills the process.
-# TODO: override starting simulate params?
-# maybe carts should always start on full sim and fire up later.
+# TODO: maybe carts should always start on full sim and fire up later.
 # notably, connecting to a powered cartridge will invoke bias error measurement,
 # which might take several seconds due to the ramping involved.
 #cart = namakanui.cart.Cart(args.band, args.inifile, drama.wait, drama.set_param)
@@ -53,8 +52,7 @@ def UPDATE(msg):
 
 def INITIALISE(msg):
     '''
-    Reinitialise the cartridge.  If a SIMULATE parameter is given,
-    first set cart.simulate from the given string.
+    Reinitialise (reinstantiate) the cartridge.
     '''
     global cart, inifile, band
     args,kwargs = drama.parse_argument(msg.arg)
@@ -66,7 +64,7 @@ def INITIALISE(msg):
     
     simulate = None
     if 'SIMULATE' in kwargs:
-        simulate = set(kwargs['SIMULATE'].replace(',',' ').lower().split())
+        simulate = int(kwargs['SIMULATE'])  # bitmask
     
     if 'BAND' in kwargs:
         band = int(kwargs['BAND'])
@@ -84,6 +82,7 @@ def INITIALISE(msg):
     # note that Cart.__init__() calls Cart.initialise().
     del cart
     cart = None
+    gc.collect()
     cart = namakanui.cart.Cart(band, inifile, drama.wait, drama.set_param, simulate)
     
     # restart the update loop
@@ -93,7 +92,7 @@ def INITIALISE(msg):
 def POWER(msg):
     '''
     Enable or disable power to the cartridge.
-    Single argument is ENABLE, which can be 0/1, on/off, true/false.
+    Single argument is ENABLE, which can be 1/0, on/off, true/false.
     Enabling power will trigger the demagnetization and defluxing sequence
     plus bias voltage error measurement, which could take considerable time.
     
@@ -126,7 +125,7 @@ def TUNE(msg):
     The reference signal and IF switch must already be set externally.
     '''
     args,kwargs = drama.parse_argument(msg.arg)
-    lo_ghz,voltage = tune_args(**args,**kwargs)
+    lo_ghz,voltage = tune_args(*args,**kwargs)
     cart.tune(lo_ghz, voltage)
 
 

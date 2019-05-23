@@ -67,9 +67,18 @@ class Agilent(object):
             self.state['hz'] = 0.0
             self.state['dbm'] = self.dbm
             self.state['output'] = 0
-        self.update()
+        self.update(publish_only=True)
     
-    def update(self):
+    def update(self, publish_only=False):
+        '''
+        Update agilent parameters.  If publish_only, do not query params first.
+        Call at ~0.1Hz.
+        '''
+        if not publish_only:
+            self.state['hz'] = self.get_hz()
+            self.state['dbm'] = self.get_dbm()
+            self.state['output'] = self.get_output()
+        
         self.state['number'] += 1
         self.publish(self.name, self.state)
     
@@ -155,7 +164,6 @@ class Agilent(object):
         if self.simulate:
             return self.state['output']
         return int(self.cmd(':output?'))
-    
-    
-    
+
+
         

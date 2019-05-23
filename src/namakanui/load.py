@@ -14,6 +14,15 @@ so we connect through a CMS switch.
 This class uses absolute positions given in the config file,
 rather than any of the programmed button positions -- since there are
 only five buttons, we would likely run out.
+
+NOTE: The stage is not homed automatically.  During GLT testing there were
+      wires running to the load wheel that could get twisted up during homing,
+      requiring supervision.  If Namakanui is configured differently, this
+      class should be altered to allow automatic homing.
+
+TODO: Make sure wheel is stopped if actions are kicked or errors occur.
+
+TODO: Can the motor be turned off and the wheel positioned by hand?
 '''
 
 from namakanui.includeparser import IncludeParser
