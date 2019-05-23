@@ -203,6 +203,8 @@ class Cart(object):
             if not self.sim_cold and self.cold_esn not in esns:
                 raise RuntimeError(self.logname + ' cold cartridge ESN %s not found in list: %s' % (self.cold_esn, esns))
         
+        self.state['ppcomm_time'] = 0.0  # put this near the top of state
+        
         # before receiving a tune command, we have no way
         # to know these parameters unless the IF switch
         # is pointing to this cartridge and it is actually locked.
@@ -298,6 +300,11 @@ class Cart(object):
         '''
         Update params for PLL lock, PA, SIS mixers. Expect this to take ~25ms.
         '''
+        if not self.sim_femc:
+            self.state['ppcomm_time'] = self.femc.get_ppcomm_time()  # expect ~1ms, TODO warn if long
+        else:
+            self.state['ppcomm_time'] = 0.0
+        
         if self.state['pd_enable'] and not self.sim_warm:
             self.state['pll_lock_v'] = self.femc.get_cartridge_lo_pll_lock_detect_voltage(self.ca)
             self.state['pll_corr_v'] = self.femc.get_cartridge_lo_pll_correction_voltage(self.ca)

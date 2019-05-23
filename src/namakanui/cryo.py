@@ -50,6 +50,8 @@ class Cryo(object):
         self.state['simulate'] = self.simulate
         self.state['sim_text'] = sim.bits_to_str(self.simulate)
         
+        self.state['ppcomm_time'] = 0.0  # put this near the top of state
+        
         # TODO: check ESNs?        
         
         if not self.simulate:
@@ -97,6 +99,11 @@ class Cryo(object):
             self.state['vacgauge_state'] = 0
             self.state['cryostat_press'] = [0.0]*2
             self.state['cryostat_temp'] = [0.0]*13
+        
+        if not self.simulate:
+            self.state['ppcomm_time'] = self.femc.get_ppcomm_time()  # expect ~1ms, TODO warn if long
+        else:
+            self.state['ppcomm_time'] = 0.0
         
         self.state['number'] += 1
         self.publish(self.name, self.state)
