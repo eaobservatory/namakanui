@@ -257,10 +257,11 @@ def CART_TUNE(msg):
     fyig = lo_ghz / (cold_mult[band] * warm_mult[band])
     fsig = (fyig*warm_mult[band] + agilent.floog) / agilent.harmonic
     log.info('setting agilent to %g GHz, %g dBm')
+    # these "set" calls modify agilent.state, but do not publish
     agilent.set_hz(fsig*1e9)
     agilent.set_dbm(agilent.dbm)
     agilent.set_output(1)
-    agilent.update(publish_only=True)  # the "set_*" calls update state
+    agilent.update(publish_only=True)
     time.sleep(0.05)  # wait 50ms; for small changes PLL might hold lock
     cartname = cartridge_tasknames[band]
     vstr = ''

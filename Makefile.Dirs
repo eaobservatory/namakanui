@@ -1,2 +1,2 @@
 DIRS += data
-#DIRS += src
+DIRS += src
