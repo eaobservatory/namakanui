@@ -17,8 +17,17 @@ import logging
 
 
 class Agilent(object):
+    '''
+    Class to control an Agilent N5173B signal generator.
+    '''
     
     def __init__(self, inifilename, sleep, publish, simulate=None):
+        '''Arguments:
+            inifilename: Path to config file.
+            sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
+            publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
+            simulate: Bitmask. If not None (default), overrides setting in inifilename.
+        '''
         self.config = IncludeParser(inifilename)
         agconfig = self.config['agilent']
         self.sleep = sleep
@@ -36,18 +45,26 @@ class Agilent(object):
         self.dbm = float(agconfig['dbm'])
         self.harmonic = int(agconfig['harmonic'])
         self.floog = float(agconfig['floog'])
+        self.log.debug('__init__ %s, sim=%d, %s:%d, dbm=%g, harmonic=%d, floog=%g',
+                       inifilename, self.simulate, self.ip, self.port,
+                       self.dbm, self.harmonic, self.floog)
         self.initialise()
     
     def __del__(self):
+        self.log.debug('__del__')
         self.close()
     
     def close(self):
+        '''Close the socket connection to the Agilent.'''
         if hasattr(self, 's'):
             self.log.debug('closing socket')
             self.s.close()
-        del self.s
+            del self.s
     
     def initialise(self):
+        '''Open the socket connection to the Agilent and get/publish state.'''
+        self.log.debug('initialise')
+        
         # fix simulate set
         self.simulate &= sim.SIM_AGILENT
         
@@ -60,9 +77,10 @@ class Agilent(object):
             self.s = socket.socket()
             self.s.settimeout(1)
             self.s.connect((self.ip, self.port))
-            self.state['hz'] = self.get_hz()
-            self.state['dbm'] = self.get_dbm()
-            self.state['output'] = self.get_output()
+            # these functions update state dict
+            self.get_hz()
+            self.get_dbm()
+            self.get_output()
         else:
             self.state['hz'] = 0.0
             self.state['dbm'] = self.dbm
@@ -71,14 +89,15 @@ class Agilent(object):
     
     def update(self, publish_only=False):
         '''
-        Update agilent parameters.  If publish_only, do not query params first.
+        Update Agilent parameters.  If publish_only, do not query params first.
         Call at ~0.1Hz.
         '''
+        self.log.debug('update')
         if not publish_only:
-            self.state['hz'] = self.get_hz()
-            self.state['dbm'] = self.get_dbm()
-            self.state['output'] = self.get_output()
-        
+            # these functions update state dict
+            self.get_hz()
+            self.get_dbm()
+            self.get_output()
         self.state['number'] += 1
         self.publish(self.name, self.state)
     
@@ -89,7 +108,7 @@ class Agilent(object):
         if convert:
             cmd = cmd.encode()  # convert to bytes
         cmd = cmd.strip()
-        self.log.debug('> %s', cmd)
+        self.log.debug('cmd: %s', cmd)
         reply = cmd.endswith(b'?')
         cmd += b'\n'
         # packets are small, never expect this to fail -- be lazy.
@@ -98,13 +117,14 @@ class Agilent(object):
         if reply:
             reply = self.s.recv(256)  # will replies ever be longer?
             reply = reply.strip()  # remove trailing newline
-            self.log.debug('< %s', reply)
+            self.log.debug('reply: %s', reply)
             if convert:
                 reply = reply.decode()  # convert to string
             return reply
 
     def get_errors(self):
         '''Clear the error message queue and return as list of strings.'''
+        self.log.debug('get_errors')
         e = []
         while True:
             e.append(self.cmd(':syst:err?'))
@@ -117,6 +137,7 @@ class Agilent(object):
     def set_cmd(self, param, value, fmt):
         '''Set param to value, first stringifying using fmt (e.g. "%.3f").
            The param is then queried; if reply does not match cmd, raise RuntimeError.'''
+        self.log.debug('set_cmd(%s, %s, %s)', param, value, fmt)
         if self.simulate:
             return
         t = type(value)
@@ -130,40 +151,48 @@ class Agilent(object):
     #       the user to make multiple set_ calls followed by a single update().
             
     def set_hz(self, hz):
-        '''Set output frequency in Hz.'''
+        '''Set output frequency in Hz.  Updates state, but does not publish.'''
         hz = float(hz)
         self.set_cmd(':freq', hz, '%.3f')
         self.state['hz'] = hz
         
     def set_dbm(self, dbm):
-        '''Set output amplitude in dBm.'''
+        '''Set output amplitude in dBm.  Updates state, but does not publish.'''
         dbm = float(dbm)
         self.set_cmd(':power', dbm, '%.7f')
         self.state['dbm'] = dbm
     
     def set_output(self, on):
-        '''Set RF output on (1) or off (0).'''
+        '''Set RF output on (1) or off (0).  Updates state, but does not publish.'''
         on = int(on)
+        if on:
+            on = 1
         self.set_cmd(':output', on, '%d')
         self.state['output'] = on
     
     def get_hz(self):
-        '''Get output frequency in Hz.'''
+        '''Get output frequency in Hz.  Updates state, but does not publish.'''
         if self.simulate:
             return self.state['hz']
-        return float(self.cmd(':freq?'))
+        hz = float(self.cmd(':freq?'))
+        self.state['hz'] = hz
+        return hz
     
     def get_dbm(self):
-        '''Get output amplitude in dBm.'''
+        '''Get output amplitude in dBm.  Updates state, but does not publish.'''
         if self.simulate:
             return self.state['dbm']
-        return float(self.cmd(':power?'))
+        dbm = float(self.cmd(':power?'))
+        self.state['dbm'] = dbm
+        return dbm
     
     def get_output(self):
-        '''Get output on (1) or off (0).'''
+        '''Get output on (1) or off (0).  Updates state, but does not publish.'''
         if self.simulate:
             return self.state['output']
-        return int(self.cmd(':output?'))
+        on = int(self.cmd(':output?'))
+        self.state['output'] = on
+        return on
 
 
         

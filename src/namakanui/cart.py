@@ -27,7 +27,11 @@ def sign(x):
 
 def read_table(config_section, name, dtype, fnames):
     '''
-    Return a table from a section of the config file.
+    Return a table from a section of the config file.  Arguments:
+        config_section: ConfigParser or dict instance to read from
+        name: Table name, must match config as shown below
+        dtype: Type to cast each table value as
+        fnames: List of field names
     The table will be a list of namedtuples holding values of dtype.
     The config file should look like this:
         [Section]
@@ -81,7 +85,11 @@ class Cart(object):
     
     def __init__(self, band, inifilename, sleep, publish, simulate=None):
         '''
-        Create a Cart instance from given config file.
+        Create a Cart instance from given config file.  Arguments:
+            inifilename: Path to config file.
+            sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
+            publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
+            simulate: Bitmask. If not None (default), overrides setting in inifilename.
         '''
         self.config = IncludeParser(inifilename)
         self.band = band
@@ -102,7 +110,7 @@ class Cart(object):
         self.update_functions = [self.update_a, self.update_b, self.update_c]
         self.update_index = -1
         
-        self.log.info('__init__')
+        self.log.debug('__init__ %s, sim=%d, band=%d', inifilename, self.simulate, band)
         
         cc = self.config[self.config[b]['cold']]
         wca = self.config[self.config[b]['warm']]
@@ -141,15 +149,15 @@ class Cart(object):
         self.lna_table_02 = [ttype(*[r[0]] + list(r[3:])) for r in lna_table if r.Pol==0 and r.SIS==2]
         self.lna_table_11 = [ttype(*[r[0]] + list(r[3:])) for r in lna_table if r.Pol==1 and r.SIS==1]
         self.lna_table_12 = [ttype(*[r[0]] + list(r[3:])) for r in lna_table if r.Pol==1 and r.SIS==2]
-        self.hot_lna = read_table(cc, 'HotPreamp', float, fnames)
+        self.hot_lna_table = read_table(cc, 'HotPreamp', float, fnames)
         
         self.initialise()
-        self.log.info('__init__ done')
         # Cart.__init__
     
     
     def update_all(self):
         '''Call all functions in self.update_functions, publishing once.'''
+        self.log.debug('update_all')
         for f in self.update_functions:
             f(do_publish=False)
         self.state['number'] += 1
@@ -158,6 +166,7 @@ class Cart(object):
     
     def update_one(self):
         '''Call the next function in self.update_functions.'''
+        self.log.debug('update_one')
         self.update_index = (self.update_index + 1) % len(self.update_functions)
         self.update_functions[self.update_index]()
 
@@ -169,6 +178,8 @@ class Cart(object):
         Then fill out the remaining state using update_all() and perform
         bias voltage error measurement, which may take several seconds.
         '''
+        self.log.debug('initialise')
+        
         # get the sim bits specific to this cartridge band
         SIM_FEMC, SIM_WARM, SIM_COLD = sim.bits_for_band(self.band)
         
@@ -272,6 +283,8 @@ class Cart(object):
         '''
         Update LNA parameters. Expect this to take ~36ms.
         '''
+        self.log.debug('update_a(do_publish=%s)', do_publish)
+        
         if self.state['pd_enable'] and not self.sim_cold:
             dv = []
             dc = []
@@ -300,6 +313,8 @@ class Cart(object):
         '''
         Update params for PLL lock, PA, SIS mixers. Expect this to take ~25ms.
         '''
+        self.log.debug('update_b(do_publish=%s)', do_publish)
+        
         if not self.sim_femc:
             self.state['ppcomm_time'] = self.femc.get_ppcomm_time()  # expect ~1ms, TODO warn if long
         else:
@@ -359,6 +374,8 @@ class Cart(object):
         Update params for AMC, temperatures, misc. Expect this to take ~24ms.
         TODO could probably bundle into fewer top-level state params.
         '''
+        self.log.debug('update_c(do_publish=%s)', do_publish)
+        
         if self.state['pd_enable'] and not self.sim_warm:
             self.state['amc_gate_a_v'] = self.femc.get_cartridge_lo_amc_gate_a_voltage(self.ca)
             self.state['amc_drain_a_v'] = self.femc.get_cartridge_lo_amc_drain_a_voltage(self.ca)
@@ -540,7 +557,7 @@ class Cart(object):
         self.state['lo_ghz'] = lo_ghz
         self.state['yig_ghz'] = yig_ghz
         
-        self.log.debug('_lock_pll lo: %.9f, yig: %.9f', lo_ghz, yig_ghz)
+        self.log.info('_lock_pll lo=%.9f, yig=%.9f', lo_ghz, yig_ghz)
         
         # if simulating, pretend we are locked and return.
         if self.sim_warm:
@@ -561,7 +578,7 @@ class Cart(object):
         ldv = femc.get_cartridge_lo_pll_lock_detect_voltage(self.ca)
         rfp = femc.get_cartridge_lo_pll_ref_total_power(self.ca)
         ifp = femc.get_cartridge_lo_pll_if_total_power(self.ca)
-        if ldv > 3.0 and rfp < -0.5 and ifp < -0.5:
+        if ldv > 3.0 and rfp < -0.5 and ifp < -0.5:  # good lock
             self.state['pll_lock_v'] = ldv
             self.state['pll_if_power'] = ifp
             self.state['pll_ref_power'] = rfp
@@ -575,6 +592,7 @@ class Cart(object):
         femc.set_cartridge_lo_yto_coarse_tune(self.ca, coarse_counts)
         self.sleep(0.05)  # first step might be large
         
+        # search outward from initial guess: +step, -step, +2step, -2step...
         step = 0
         while True:
             try_counts = coarse_counts + step
@@ -606,7 +624,7 @@ class Cart(object):
         self.state['pll_ref_power'] = rfp
         self.state['pll_if_power'] = ifp
         
-        if ldv > 3.0 and rfp < -0.5 and ifp < -0.5:
+        if ldv > 3.0 and rfp < -0.5 and ifp < -0.5:  # good lock
             femc.set_cartridge_lo_pll_clear_unlock_detect_latch(self.ca)
             self.state['pll_unlock'] = 0
             self.state['pll_corr_v'] = femc.get_cartridge_lo_pll_correction_voltage(self.ca)
@@ -615,6 +633,7 @@ class Cart(object):
         self.state['pll_unlock'] = 1
         raise RuntimeError(self.logname + ' failed to lock at lo_ghz=%.9f' % (lo_ghz))
         # Cart._lock_pll
+    
     
     def _adjust_fm(self, voltage):
         '''
@@ -627,7 +646,7 @@ class Cart(object):
         if voltage is None:
             return
         
-        self.log.debug('_adjust_fm(%.2f)', voltage)
+        self.log.info('_adjust_fm(%.2f)', voltage)
         
         if self.sim_warm:
             self.state['pll_corr_v'] = voltage
@@ -681,6 +700,7 @@ class Cart(object):
             raise RuntimeError(self.logname + ' lost lock while adjusting control voltage to %.2f at lo_ghz=%.9f' % (voltage, lo_ghz))
         # Cart._adjust_fm
 
+
     def _estimate_fm_slope(self):
         '''
         Testing function.  Does not publish state.
@@ -691,6 +711,8 @@ class Cart(object):
         This function may take a few seconds to complete, since it
         waits 0.05s between single steps of the YTO.
         '''
+        self.log.info('_estimate_fm_slope')
+        
         if self.sim_warm:
             return 0.0
         if not self.state['pd_enable']:
@@ -700,13 +722,19 @@ class Cart(object):
         
         coarse_counts = self.state['yto_coarse']
         old_counts = coarse_counts
+        
+        # average the current correction voltage
         n = 10
         cv = 0.0
         for i in range(n):
             cv += femc.get_cartridge_lo_pll_correction_voltage(self.ca)
         cv /= n
         old_cv = cv
+        
+        # target voltage is 8V away, thru 0.
         voltage = sign(cv) * -8.0
+        
+        # single-step toward target voltage until sign changes
         relv = cv - voltage
         step = sign(relv)
         try_counts = max(0,min(4095, coarse_counts + step))
@@ -726,6 +754,7 @@ class Cart(object):
             lo_ghz = self.state['lo_ghz']
             raise RuntimeError(self.logname + ' lost lock in estimate_fm_slope at lo_ghz=%.9f' % (lo_ghz))
         
+        # average new correction voltage
         cv = 0.0
         for i in range(n):
             cv += femc.get_cartridge_lo_pll_correction_voltage(self.ca)
@@ -735,6 +764,10 @@ class Cart(object):
         counts_per_volt = abs((coarse_counts - old_counts) / (cv - old_cv))
         yig_slope = (self.yig_hi - self.yig_lo) / 4095  # GHz/count
         fm_slope = counts_per_volt * yig_slope  # GHz/Volt
+        
+        self.log.info('counts_per_volt=%g, yig_slope=%g GHz/count, fm_slope=%g GHz/volt',
+                      counts_per_volt, yig_slope, fm_slope)
+        
         return fm_slope
         # Cart._estimate_fm_slope
 
@@ -745,10 +778,14 @@ class Cart(object):
         close to nominal values from the mixer table.
         This procedure is taken from Appendix A of FEND-40.00.00.00-089-D-MAN.
         
+        NOTE: PAs should already be set to nominal values from tune().
+        
         TODO: I'd like to see the general shape of current vs drain curves.
         In general, increased voltage produces increased mixer current,
         but there might be local maxima to deal with.
         '''
+        self.log.info('_servo_pa')
+        
         if self.sim_warm or self.sim_cold:
             return
         if not self.state['pd_enable']:
@@ -759,7 +796,7 @@ class Cart(object):
         if self.high_temperature():
             self.log.info('high temperature, skipping _servo_pa')
             return
-        self.log.info('_servo_pa')
+        
         lo_ghz = self.state['lo_ghz']
         nom_pa = interp_table(self.pa_table, lo_ghz)[1:]
         nom_mixer = interp_table(self.mixer_table, lo_ghz)
@@ -774,6 +811,7 @@ class Cart(object):
             min_err = 1e300
             done = False
             while 0.0 < pa < 2.5 and not done:
+                # average mixer current
                 curr = 0.0
                 n = 10
                 for i in range(n):
@@ -805,7 +843,6 @@ class Cart(object):
         # Cart._servo_pa
     
     
-
     def power(self, enable):
         '''
         Enable or disable power to the cartridge (state['pd_enable']).
@@ -852,6 +889,8 @@ class Cart(object):
         This could take a while.
         Described in section 10.1.1 of FEND-40.00.00.00-089-D-MAN.
         '''
+        self.log.info('demagnetize_and_deflux')
+        
         if self.sim_cold:
             return
         if not self.state['pd_enable']:
@@ -859,7 +898,7 @@ class Cart(object):
         if self.high_temperature():
             self.log.info('high temperature, skipping demag/deflux')
             return
-        self.log.info('demagnetize_and_deflux')
+        
         # Preliminary Steps
         self._set_pa([0.0]*4)
         self._ramp_sis_bias_voltages([0.0]*4)  # harmless if not SIS mixers
@@ -883,6 +922,7 @@ class Cart(object):
             self._ramp_sis_magnet_currents([0.0]*4)
         # Cart.demagnetize_and_deflux
     
+    
     def _demagnetize(self, po, sb):
         '''
         Internal function.
@@ -896,6 +936,8 @@ class Cart(object):
         regular time.sleep(), with only a brief custom sleep where the
         event loop can run.
         '''
+        self.log.info('_demagnetize(%d,%d)', po, sb)
+        
         if self.high_temperature():
             # high magnet currents can cause damage at room temperature
             self.log.info('high temperature, skipping demagnetize')
@@ -903,7 +945,7 @@ class Cart(object):
         if not self.has_sis_magnets(po,sb):
             self.log.info('no SIS magnets for po=%d sb=%d, skipping demagnetize', po,sb)
             return
-        self.log.info('_demagnetize(%d,%d)', po, sb)
+        
         i_mag = [0,0,0,0,0, 30, 50, 50, 20, 50, 100][self.band]  # TODO make configurable
         sleep_secs = 0.1
         i_mag_dec = 1
@@ -925,13 +967,15 @@ class Cart(object):
             if s > 0.001:
                 time.sleep(s)
             # TODO: avg several readings?
-            self.state['sis_mag_c'][po*2 + sb] = self.femc.get_sis_magnet_current(self.ca, po, sb)
+            mc = self.femc.get_sis_magnet_current(self.ca, po, sb)
+            self.state['sis_mag_c'][po*2 + sb] = mc
             # TODO: save somewhere? probably too fast to justify publishing.
-            self.log_debug('sis_mag_c(%d,%d): %d, %7.3f', po, sb, i_set, self.state['sis_mag_c'][po*2 + sb])
+            self.log_debug('sis_mag_c(%d,%d): %d, %7.3f', po, sb, i_set, mc)
             s = endpoint - time.time()
             if s > 0.001:
                 time.sleep(s)
         # Cart._demagnetize
+    
     
     def _mixer_heating(self):
         '''
@@ -941,6 +985,8 @@ class Cart(object):
         
         TODO: support heating a single polarization?
         '''
+        self.log.info('_mixer_heating')
+        
         if self.sim_cold:
             return
         if not self.has_sis_mixers():
@@ -982,7 +1028,7 @@ class Cart(object):
             heater_current_0 = self.femc.get_sis_heater_current(self.ca, 0)
             heater_current_1 = self.femc.get_sis_heater_current(self.ca, 1)
             if heater_current_0 < base_heater_current_0 or heater_current_1 < base_heater_current_1:
-                self.log.debug('mixer_heating: toggling heaters')
+                #self.log.debug('_mixer_heating: toggling heaters')
                 # heaters must be disabled, then enabled.
                 self.femc.set_sis_heater_enable(self.ca, 0, 0)
                 self.femc.set_sis_heater_enable(self.ca, 1, 0)
@@ -996,7 +1042,7 @@ class Cart(object):
         # disable heaters
         self.femc.set_sis_heater_enable(self.ca, 0, 0)
         self.femc.set_sis_heater_enable(self.ca, 1, 0)
-        self.log.debug('_mixer_heating: hot kelvins: %g %g', mixer_temp_0, mixer_temp_1)
+        self.log.info('_mixer_heating: hot kelvins: %g %g', mixer_temp_0, mixer_temp_1)
         # TODO: complain if mixer temps are lower than target?
         timeout = time.time() + 300  # 5min
         self.log.info('_mixer_heating: cooldown loop')
@@ -1007,10 +1053,11 @@ class Cart(object):
             mixer_temp_1 = self.femc.get_cartridge_lo_cartridge_temp(self.ca, 5)
             if mixer_temp_0 < base_mixer_temp_0 and mixer_temp_1 < base_mixer_temp_1:
                 break
-        self.log.debug('_mixer_heating: cold kelvins: %g %g', mixer_temp_0, mixer_temp_1)
+        self.log.info('_mixer_heating: cold kelvins: %g %g', mixer_temp_0, mixer_temp_1)
         if mixer_temp_0 >= base_mixer_temp_0 or mixer_temp_1 >= base_mixer_temp_1:
             raise RuntimeError(self.logname + ' _mixer_heating cooldown failed, (%g, %g) >= (%g, %g) K' % (mixer_temp_0, mixer_temp_1, base_mixer_temp_0, base_mixer_temp_1))
         # Cart._mixer_heating
+    
     
     def _calc_sis_bias_error(self):
         '''
@@ -1024,9 +1071,9 @@ class Cart(object):
         if not self.state['pd_enable']:
             raise RuntimeError(self.logname + ' power disabled')
         if not self.has_sis_mixers():
-            self.log.info('not SIS mixers, skipping bias voltage error calc')
+            self.log.info('not SIS mixers, skipping bias voltage offset calc')
             return
-        self.log.info('calculating SIS bias voltage setting error')
+        self.log.info('calculating SIS bias voltage setting offset')
         self._set_pa([0.0]*4)
         mt = self.magnet_table
         if self.high_temperature():
@@ -1048,7 +1095,7 @@ class Cart(object):
         for i in range(4):
             sbv[i] = sbv[i]/n
             self.bias_error[i] = sbv[i] - sis_setting[i]
-        self.log.info('SIS bias voltage setting error: %s', self.bias_error)
+        self.log.info('SIS bias voltage setting offset: %s', self.bias_error)
         self._ramp_sis_bias_voltages([0.0]*4)
         # Cart._calc_sis_bias_error
         
@@ -1058,12 +1105,14 @@ class Cart(object):
         Internal function, does not publish state or check femc/simulate.
         Used by _ramp_sis_magnet_currents and _ramp_sis_bias_voltages.
         Assumes self.state[key] is up-to-date.
+        
+        TODO: Ramp in parallel, it's probably safe.
         '''
         i = 0
         for po in range(2):
             for sb in range(2):
                 val = self.state[key][i]
-                end = ma[i]
+                end = values[i]
                 inc = step * sign(end-val)
                 j = 0
                 while abs(end-val) > step:
@@ -1078,18 +1127,20 @@ class Cart(object):
                 self.sleep(0.01)  # these ramps might take 300ms each!
         # Cart._ramp_sis
     
+    
     def _ramp_sis_magnet_currents(self, ma):
         '''
         Internal function, does not publish state.
         Ramp magnet currents to desired values in 0.1mA steps.
         Order of current array ma is pol/sis [01, 02, 11, 12].
         '''
+        self.log.debug('_ramp_sis_magnet_currents(%s)', ma)
         if self.sim_cold:
             self.state['sis_mag_c'] = ma
             return
-        self.log.debug('ramping SIS magnet current to %s', ma)
         self._ramp_sis(ma, 'sis_mag_c', 0.1, self.femc.set_sis_magnet_current)
         # Cart._ramp_sis_magnet_currents
+    
     
     def _ramp_sis_bias_voltages(self, mv):
         '''
@@ -1100,10 +1151,10 @@ class Cart(object):
         
         NOTE use of special get_sis_voltage_cmd, TODO NEEDS TESTING ON STARTUP.
         '''
+        self.log.debug('_ramp_sis_bias_voltages(%s)', mv)
         if self.sim_cold:
             self.state['sis_v'] = mv
             return
-        self.log.debug('ramping SIS bias voltage to %s', mv)
         set_mv = [0.0]*4
         get_mv = [0.0]*4
         for i in range(4):
@@ -1114,13 +1165,14 @@ class Cart(object):
             try:
                 self.state['sis_v'][i] = self.femc.get_sis_voltage_cmd(self.ca, i//2, i%2)
             except RuntimeError:
-                self.state['sis_v'][i] = 0.0
+                self.state['sis_v'][i] = 0.0  # or should we use get_mv[i]?
         self.log.debug('_ramp_sis_bias_voltages arg mv:  %s', mv)
         self.log.debug('_ramp_sis_bias_voltages set mv: %s', set_mv)
         self.log.debug('_ramp_sis_bias_voltages get mv: %s', get_mv)
         self.log.debug('_ramp_sis_bias_voltages cmd mv: %s', self.state['sis_v'])
         self._ramp_sis(set_mv, 'sis_v', 0.05, self.femc.set_sis_voltage)
         # Cart._ramp_sis_bias_voltages
+    
     
     def _set_pa(self, pa):
         '''
@@ -1134,15 +1186,16 @@ class Cart(object):
         TODO: Is there a disconnect between set (scale) and get (voltage)?
         Do the INI file parameters account for scale correctly?
         '''
+        self.log.debug('_set_pa(%s)', pa)
         if self.sim_warm:
             self.state['pa_drain_v'] = pa[0:2]
             self.state['pa_gate_v'] = pa[2:4]
             return
-        self.log.debug('setting PA to %s', pa)
         for po in range(2):
             self.femc.set_cartridge_lo_pa_pol_drain_voltage_scale(self.ca, po, pa[po])
             self.femc.set_cartridge_lo_pa_pol_gate_voltage(self.ca, po, pa[po+2])
         # Cart._set_pa
+
 
     def _set_lna(self, po, sb, lna):
         '''
@@ -1157,13 +1210,13 @@ class Cart(object):
         
         TODO: What does LNA LED do?
         '''
+        self.log.debug('_set_lna(%d, %d, %s)', po, sb, lna)
         lna_state_i = (po*2 + sb) * 3
         if self.sim_cold:
             self.state['lna_drain_v'][lna_state_i:lna_state_i+3] = lna[0:3]
             self.state['lna_drain_c'][lna_state_i:lna_state_i+3] = lna[3:6]
             self.state['lna_gate_v'][lna_state_i:lna_state_i+3] = lna[6:9]
             return
-        self.log.debug('setting LNA[%d][%d] to %s', po, sb, lna)
         for st in range(3):
             self.femc.set_lna_drain_voltage(self.ca, po, sb, st, lna[st])
             self.femc.set_lna_drain_current(self.ca, po, sb, st, lna[3+st])

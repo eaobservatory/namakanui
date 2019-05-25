@@ -60,9 +60,15 @@ warm_mult = {}
 
 def INITIALISE(msg):
     '''
+    Start the cartridge tasks and initialise them,
+    then initialise the local control classes.  Arguments:
+        INITIALISE: The ini file path
+        SIMULATE: Bitmask. If given, overrides config file settings.
     '''
     global initialised, inifile, agilent, cryo, load
     global cartridge_tasknames, cold_mult, warm_mult
+    
+    log.debug('INITIALISE(%s)', msg.arg)
     
     args,kwargs = drama.parse_argument(msg.arg)
     
@@ -137,6 +143,7 @@ def INITIALISE(msg):
     drama.blind_obey(taskname, "UPDATE")
     
     initialised = True
+    log.info('initialised.')
     # INITIALISE
     
 
@@ -152,18 +159,19 @@ def UPDATE(msg):
     '''
     delay = 10
     if msg.reason == drama.REA_KICK:
+        log.debug('UPDATE kicked.')
         return
     if msg.reason == drama.REA_OBEY:
+        log.debug('UPDATE started.')
         if not initialised:
             raise drama.BadStatus(drama.APP_ERROR, 'task needs INITIALISE')
         # INITIALISE has just updated everything, so skip the first update.
         drama.reschedule(delay)
         return
-    
+    log.debug('UPDATE reschedule.')
     cryo.update()
     load.update()
     agilent.update()
-    
     drama.reschedule(delay)
     # UPDATE
 
@@ -177,6 +185,7 @@ def LOAD_HOME(msg):
        TODO: A kick will interrupt the wait/update loop,
              but we need to make sure the wheel stops.
     '''
+    log.debug('LOAD_HOME')
     if not initialised:
         raise drama.BadStatus(drama.APP_ERROR, 'task needs INITIALISE')
     log.info('homing load...')
@@ -191,6 +200,7 @@ def LOAD_MOVE(msg):
     '''Move the load.  Arguments:
             POSITION:  Named position or absolute encoder counts.
     '''
+    log.debug('LOAD_MOVE(%s)', msg.arg)
     if not initialised:
         raise drama.BadStatus(drama.APP_ERROR, 'task needs INITIALISE')
     args,kwargs = drama.parse_argument(msg.arg)
@@ -211,6 +221,7 @@ def CART_POWER(msg):
             BAND: One of 3,6,7
             ENABLE: Can be 1/0, on/off, true/false
     '''
+    log.debug('CART_POWER(%s)', msg.arg)
     if not initialised:
         raise drama.BadStatus(drama.APP_ERROR, 'task needs INITIALISE')
     args,kwargs = drama.parse_argument(msg.arg)
@@ -243,6 +254,7 @@ def CART_TUNE(msg):
        
        TODO: Set IF switch.
     '''
+    log.debug('CART_TUNE(%s)', msg.arg)
     if not initialised:
         raise drama.BadStatus(drama.APP_ERROR, 'task needs INITIALISE')
     args,kwargs = drama.parse_argument(msg.arg)
@@ -278,10 +290,13 @@ def CART_TUNE(msg):
 
 
 try:
+    log.info('%s starting drama.', taskname)
     drama.init(taskname, actions=[UPDATE, INITIALISE,
                                   LOAD_HOME, LOAD_MOVE,
                                   CART_POWER, CART_TUNE])
+    log.info('%s entering main loop.', taskname)
     drama.run()
 finally:
     drama.stop()
+    log.info('%s done.', taskname)
 

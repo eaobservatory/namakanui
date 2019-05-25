@@ -10,8 +10,8 @@ from namakanui.version import __version__
 # default publish function, does nothing
 def nop(*args, **kwargs):
     '''
-    This function does nothing; it can be used as a 'publish' function
-    for testing Namakanui classes.
+    This function does nothing.
+    It can be used as a 'publish' function for testing Namakanui classes.
     '''
     pass
 

@@ -32,9 +32,15 @@ import time
 import logging
 
 class Load(object):
-    '''Interface to the load controller.'''
+    '''Interface to the load wheel controller.'''
     
     def __init__(self, inifilename, sleep, publish, simulate=None):
+        '''Arguments:
+            inifilename: Path to config file.
+            sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
+            publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
+            simulate: Bitmask. If not None (default), overrides setting in inifilename.
+        '''
         self.config = IncludeParser(inifilename)
         self.sleep = sleep
         self.publish = publish
@@ -51,12 +57,15 @@ class Load(object):
         self.positions = {n:int(p) for n,p in self.config['positions'].items()}
         self.positions_r = {p:n for n,p in self.positions.items()}
         
+        self.log.debug('__init__ %s, sim=%d', inifilename, self.simulate)
         self.initialise()
         # Load.__init__
     
     
     def initialise(self):
         '''(Re)connect to the CMS port and call update().'''
+        self.log.debug('initialise')
+        
         # fix simulate set
         self.simulate &= sim.SIM_LOAD
         
@@ -87,6 +96,8 @@ class Load(object):
     
     def update(self):
         '''Call at ~0.1 Hz.'''
+        self.log.debug('update')
+        
         if not self.simulate:
             r = self.cmd('Q:\r\n')
             pos,a1,a2,a3 = [s.strip() for s in r[1:].split(',')]
@@ -125,8 +136,11 @@ class Load(object):
     
     def home(self):
         '''Home the stage and wait for completion.'''
+        self.log.debug('home')
+        
         if self.simulate:
             self.state['homed'] = 1
+            self.update()
             return
         
         # stop whatever we're doing
@@ -154,12 +168,15 @@ class Load(object):
     
     def move(self, pos):
         '''Move to pos (name or counts) and wait for completion.'''
+        self.log.debug('move(%s)', pos)
+        
         if pos in self.positions:
             pos = self.positions[pos]
         pos = int(pos)
         if self.simulate:
             self.state['pos_counts'] = pos
             self.state['pos_name'] = self.positions_r.get(pos, 'undef')
+            self.update()
             return
         if not self.state['homed']:
             raise RuntimeError('stage not homed')

@@ -41,11 +41,14 @@ def UPDATE(msg):
     '''
     delay = 1.67
     if msg.reason == drama.REA_KICK:
+        log.debug('UPDATE kicked.')
         return
     if msg.reason == drama.REA_OBEY:
+        log.debug('UPDATE started.')
         # INITIALISE has just done an update_all, so skip the first update.
         drama.reschedule(delay)
         return
+    log.debug('UPDATE reschedule.')
     cart.update_one()  # calls drama.set_param to publish state
     drama.reschedule(delay)
     
@@ -55,6 +58,9 @@ def INITIALISE(msg):
     Reinitialise (reinstantiate) the cartridge.
     '''
     global cart, inifile, band
+    
+    log.debug('INITIALISE(%s)', msg.arg)
+    
     args,kwargs = drama.parse_argument(msg.arg)
     
     if 'INITIALISE' in kwargs:
@@ -80,6 +86,7 @@ def INITIALISE(msg):
     
     # we recreate the cart instance to force it to reread its ini file.
     # note that Cart.__init__() calls Cart.initialise().
+    log.info('initialising band %d...', band)
     del cart
     cart = None
     gc.collect()
@@ -87,6 +94,8 @@ def INITIALISE(msg):
     
     # restart the update loop
     drama.blind_obey(taskname, "UPDATE")
+    log.info('initialised.')
+    # INITIALISE
 
 
 def POWER(msg):
@@ -104,11 +113,15 @@ def POWER(msg):
     There will probably just need to be a procedure that an error during
     power up will require power-cycling the cartridge.
     '''
+    log.debug('POWER(%s)', msg.arg)
     args,kwargs = drama.parse_argument(msg.arg)
     enable = kwargs.get('ENABLE','') or args[0]
     enable = enable.lower().strip()
     enable = {'0':0, 'off':0, 'false':0, '1':1, 'on':1, 'true':1}[enable]
+    onoff = ['off','on'][enable]
+    log.info('powering %s...', onoff)
     cart.power(enable)
+    log.info('powered %s.', onoff)
 
 
 def tune_args(LO_GHZ, VOLTAGE=None):
@@ -124,17 +137,26 @@ def TUNE(msg):
     following the initial lock.
     The reference signal and IF switch must already be set externally.
     '''
+    log.debug('TUNE(%s)', msg.arg)
     args,kwargs = drama.parse_argument(msg.arg)
     lo_ghz,voltage = tune_args(*args,**kwargs)
+    vstr = ''
+    if voltage is not None:
+        vstr = ', %g V' % (voltage)
+    log.info('tuning to LO %g GHz%s...', lo_ghz, vstr)
     cart.tune(lo_ghz, voltage)
+    log.info('tuned.')
 
 
 
 try:
+    log.info('%s starting drama.', taskname)
     drama.init(taskname, actions=[UPDATE, INITIALISE, POWER, TUNE])
+    log.info('%s entering main loop.', taskname)
     drama.run()
 finally:
     drama.stop()
+    log.info('%s done.', taskname)
 
 
 

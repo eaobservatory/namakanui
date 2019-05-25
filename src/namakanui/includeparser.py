@@ -1,7 +1,7 @@
 '''
 RMB 20181228
 ConfigParser derivative that supports an [include] section.
-Properly handles nested inclusions with absolute or relative paths.
+Handles nested inclusions with absolute or relative paths.
 '''
 
 import sys
