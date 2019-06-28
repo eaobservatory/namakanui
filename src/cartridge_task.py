@@ -92,6 +92,9 @@ def INITIALISE(msg):
     gc.collect()
     cart = namakanui.cart.Cart(band, inifile, drama.wait, drama.set_param, simulate)
     
+    # set the SIMULATE bitmask used by the cart
+    drama.set_param('SIMULATE', cart.simulate)
+    
     # restart the update loop
     drama.blind_obey(taskname, "UPDATE")
     log.info('initialised.')

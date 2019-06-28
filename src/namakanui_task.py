@@ -141,6 +141,13 @@ def INITIALISE(msg):
     cryo = namakanui.cryo.Cryo(datapath+nconfig['cryo_ini'], drama.wait, drama.set_param, simulate)
     load = namakanui.load.Load(datapath+nconfig['load_ini'], drama.wait, drama.set_param, simulate)
     
+    # rebuild the actual simulate bitmask for our own status
+    simulate = agilent.simulate | cryo.simulate | load.simulate
+    for band in [3,6,7]:
+        task = cartridge_tasknames[band]
+        simulate |= drama.get(task, 'SIMULATE').wait(5).arg['SIMULATE']
+    drama.set_param('SIMULATE', simulate)
+    
     # restart the update loop
     drama.blind_obey(taskname, "UPDATE")
     

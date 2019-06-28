@@ -16,6 +16,7 @@ import jac_sw
 import drama
 import drama.rts
 import sys
+import namakanui.sim
 
 # taskname argument is required
 taskname = sys.argv[1]
@@ -177,9 +178,22 @@ def initialise(msg):
         # get name and path to our cartridge task
         global CART_TASK
         msg = drama.get(NAMAKANUI_TASK, 'TASKNAMES').wait(5)
-        check_message(msg, f'get({NAMAKANUI_TASK},TASKNAMES)'
+        check_message(msg, f'get({NAMAKANUI_TASK},TASKNAMES)')
         CART_TASK = msg.arg['TASKNAMES'][f'B{g_band}']
         drama.cache_path(CART_TASK)
+        
+        # get SIMULATE value and mask out the bits we don't care about
+        msg = drama.get(NAMAKANUI_TASK, 'SIMULATE').wait(5)
+        check_message(msg, f'get({NAMAKANUI_TASK},SIMULATE)')
+        simulate = msg.arg['SIMULATE']
+        otherbands = [3,6,7]
+        otherbands.remove(g_band)
+        otherbits = 0
+        for band in otherbands:
+            for bit in namakanui.sim.bits_for_band(band):
+                otherbits |= bit
+        simulate &= ~otherbits
+        drama.set_param('SIMULATE', simulate)
         
         # send load to AMBIENT, will fail if not already homed
         pos = f'b{g_band}_hot'
