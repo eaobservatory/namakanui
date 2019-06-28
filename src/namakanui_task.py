@@ -88,6 +88,8 @@ def INITIALISE(msg):
     cartridge_tasknames[3] = nconfig['b3_taskname']
     cartridge_tasknames[6] = nconfig['b6_taskname']
     cartridge_tasknames[7] = nconfig['b7_taskname']
+    # export these so the frontend task doesn't have to guess
+    drama.set_param('TASKNAMES', {'B%d'%(k):v for k,v in cartridge_tasknames.items()})
     
     # start the cartridge tasks in the background.
     # will exit immediately if already running, which is fine.
@@ -142,6 +144,8 @@ def INITIALISE(msg):
     # restart the update loop
     drama.blind_obey(taskname, "UPDATE")
     
+    # TODO: power up the cartridges? tune? leave it for the FE wrapper?
+    
     initialised = True
     log.info('initialised.')
     # INITIALISE
@@ -179,8 +183,8 @@ def UPDATE(msg):
 def LOAD_HOME(msg):
     '''Home the load stage.  No arguments.
        
-       NOTE: This can twist up any wires running to the load stage.
-             Supervise as needed.
+       NOTE: This can twist up any wires running to the load stage,
+             e.g. for a tone source. Supervise as needed.
        
        TODO: A kick will interrupt the wait/update loop,
              but we need to make sure the wheel stops.
