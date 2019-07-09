@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="US-ASCII"?>
+
+<!DOCTYPE frontend_init  SYSTEM "/JACdocs/JCMT/OCS/ICD/004/initialise_rxa.dtd" [
+<!ENTITY instrument      SYSTEM "./instrument_aweoweo.ent">
+<!ENTITY calibration     SYSTEM "./calibration_aweoweo.ent">
+]>
+
+<frontend_init>
+
+  <FE_statetable>
+  <name> OFFSETZERO </name> <size> 1 </size>
+     <FE_state> <index> 1 </index> <offset> 0.0 </offset> </FE_state>
+  </FE_statetable>
+
+  <FE_statetable>
+  <name> OFFSETPLUS </name> <size> 1 </size>
+     <FE_state> <index> 1 </index> <offset> 1.0 </offset> </FE_state>
+  </FE_statetable>
+
+  <FE_statetable>
+  <name> OFFSETMINUS </name> <size> 1 </size>
+     <FE_state> <index> 1 </index> <offset> -1.0 </offset> </FE_state>
+  </FE_statetable>
+
+  <FE_statetable>
+  <name> FSW2 </name> <size> 2 </size>
+     <FE_state> <index> 1 </index> <offset> 1.0 </offset> </FE_state>
+
+     <FE_state> <index> 2 </index> <offset> -1.0 </offset> </FE_state>
+  </FE_statetable>
+
+  <FE_statetable>
+  <name> FSW4 </name> <size> 4 </size>
+     <FE_state> <index> 1 </index> <offset> 1.0 </offset> </FE_state>
+
+     <FE_state> <index> 2 </index> <offset> -1.0 </offset> </FE_state>
+
+     <FE_state> <index> 3 </index> <offset> -1.0 </offset> </FE_state>
+
+     <FE_state> <index> 4 </index> <offset> 1.0 </offset> </FE_state>
+   </FE_statetable>
+
+
+<!-- Need to insert the instrument here
+-->
+
+ &instrument;
+
+ &calibration;
+
+</frontend_init>

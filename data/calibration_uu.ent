@@ -1,0 +1,26 @@
+<!--
+  Calibration parameters for U'u, Namakanui 230 GHz
+-->
+   <CALIBRATION>
+     <ALPHA> 1.0 </ALPHA>
+     <DTHOT_FREQ> \215.0,272.0\ </DTHOT_FREQ>
+     <DTHOT_VAL> \1.5,6.0\ </DTHOT_VAL>
+     <ETA_TEL> 0.85 </ETA_TEL>
+     <FE_CAL_TYPE> THREELOADS </FE_CAL_TYPE>
+     <FE_NUOUT> 4.0 </FE_NUOUT>
+     <FWHM> 16.0D0 </FWHM>
+     <G_S> 0.5 </G_S>
+     <G_S_FREQ> \215.0,272.0\ </G_S_FREQ>
+     <G_S_VAL> \0.5,0.5\ </G_S_VAL>
+     <NO_FE_O_CH> 1 </NO_FE_O_CH>
+     <T_COLD> 134.5 </T_COLD>
+     <T_COLD_TABLE  FREQ="215.0"  TEMP="142.0" />
+     <T_COLD_TABLE  FREQ="272.0"  TEMP="127.0" />
+     <T_HOT> 280.0 </T_HOT>
+     <T_SPILL> 273.15 </T_SPILL>
+     <TCOLD_FREQ> \215.0,272.0\ </TCOLD_FREQ>
+     <TCOLD_VAL> \142.0,127.0\ </TCOLD_VAL>
+     <TL_TASK> TEL </TL_TASK>
+   </CALIBRATION>
+
+
