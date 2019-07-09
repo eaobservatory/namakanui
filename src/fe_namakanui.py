@@ -149,7 +149,10 @@ def initialise(msg):
         for i,r in enumerate(inst['receptor']):
             ID = r['id']
             VAL = r['health']  # ON or OFF
-            if ID not in ['NU1L', 'NU2L', 'NU1U', 'NU2U']:
+            valid_ids = {3: ['NA1', 'NA2'],
+                         6: ['NU1L', 'NU2L', 'NU1U', 'NU2U'],
+                         7: ['NW1L', 'NW2L', 'NW1U', 'NW2U']}
+            if ID not in valid_ids[g_band]:
                 raise drama.BadStatus(WRAP__WRONG_RECEPTOR_IN_INITIALISE,
                     'bad INSTRUMENT.receptor.id %s' % (ID))
             g_state['RECEPTOR_ID%d'%(i+1)] = ID
@@ -390,9 +393,9 @@ def setup_sequence(msg, wait_set, done_set):
         
         # save time by moving load while waiting on doppler from ANTENNA_TASK
         load = msg.arg.get('LOAD', g_state['LOAD'])
-        if load == 'COLD':
-            # TODO: should COLD raise BadStatus instead?
-            log.warning('no COLD load, setting to SKY instead')
+        if load == 'LOAD2':
+            # TODO: should this raise BadStatus instead?
+            log.warning('no LOAD2, setting to SKY instead')
             load = 'SKY'
         pos = 'b%d_%s'%(g_band, {'AMBIENT':'hot', 'SKY':'sky'}[load])
         g_state['LOAD'] = ''  # TODO unknown/invalid value

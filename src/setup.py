@@ -5,7 +5,8 @@ uae.git_version_file('namakanui/version.py')
 
 uae.setup(
     scripts = ['namakanui_task.py',
-               'cartridge_task.py'],
+               'cartridge_task.py',
+               'fe_namakanui.py'],
     packages = ['namakanui'],
 )
 
