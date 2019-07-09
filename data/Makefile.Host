@@ -2,5 +2,7 @@ include $(TOP)/config/CONFIG
 
 DATA += $(wildcard ../*.ini)
 DATA += $(wildcard ../*.ent)
+DATA += $(wildcard ../*.xml)
+DATA += $(wildcard ../*.tide)
 
 include $(TOP)/config/RULES.Build

@@ -20,6 +20,7 @@ import jac_sw
 import drama
 import sys
 import os
+import gc
 import time
 import subprocess
 from namakanui.includeparser import IncludeParser
@@ -39,6 +40,7 @@ import drama.log
 drama.log.setup()  # no taskname, so no /jac_logs file output
 import logging
 log = logging.getLogger(args.taskname)
+#logging.getLogger('drama').setLevel(logging.DEBUG)
 
 # always use sibling cartridge_task.py (vs one in $PATH)
 binpath = os.path.dirname(os.path.realpath(sys.argv[0])) + '/'
@@ -94,9 +96,9 @@ def INITIALISE(msg):
     # start the cartridge tasks in the background.
     # will exit immediately if already running, which is fine.
     log.info('starting cartridge tasks')
-    subprocess.popen([binpath + 'cartridge_task.py', cartridge_tasknames[3])
-    subprocess.popen([binpath + 'cartridge_task.py', cartridge_tasknames[6])
-    subprocess.popen([binpath + 'cartridge_task.py', cartridge_tasknames[7])
+    subprocess.Popen([binpath + 'cartridge_task.py', cartridge_tasknames[3]])
+    subprocess.Popen([binpath + 'cartridge_task.py', cartridge_tasknames[6]])
+    subprocess.Popen([binpath + 'cartridge_task.py', cartridge_tasknames[7]])
     
     # kill the UPDATE action while we fire things up
     try:
@@ -118,14 +120,14 @@ def INITIALISE(msg):
         ini = datapath + nconfig['b%d_ini'%(band)]
         log.info('initialising %s', task)
         msg = drama.obey(task, "INITIALISE", BAND=band, INITIALISE=ini, **cart_kwargs).wait()
-        if msg.status != 0
+        if msg.status != 0:
             raise drama.BadStatus(msg.status, task + ' INITIALISE failed')
     
     # setting agilent frequency requires warm/cold multipliers for each band.
     # TODO: this assumes pubname=DYN_STATE -- could instead [include] config.
     #       also this is rather a large get() for just a couple values.
     for band in [3,6,7]:
-        dyn_state = drama.get(cartridge_tasknames[band], "DYN_STATE").wait().arg
+        dyn_state = drama.get(cartridge_tasknames[band], "DYN_STATE").wait().arg["DYN_STATE"]
         cold_mult[band] = dyn_state['cold_mult']
         warm_mult[band] = dyn_state['warm_mult']
     
@@ -302,9 +304,12 @@ def CART_TUNE(msg):
 
 try:
     log.info('%s starting drama.', taskname)
-    drama.init(taskname, actions=[UPDATE, INITIALISE,
-                                  LOAD_HOME, LOAD_MOVE,
-                                  CART_POWER, CART_TUNE])
+    drama.init(taskname,
+               tidefile = datapath+'namakanui.tide',
+               buffers = [32000, 8000, 8000, 2000],
+               actions=[UPDATE, INITIALISE,
+                        LOAD_HOME, LOAD_MOVE,
+                        CART_POWER, CART_TUNE])
     log.info('%s entering main loop.', taskname)
     drama.run()
 finally:

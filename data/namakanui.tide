@@ -1,0 +1,18 @@
+
+# shavano: 10.100.202.3
+# setenv EPICS_CA_AUTO_ADDR_LIST NO
+# setenv EPICS_CA_ADDR_LIST '128.171.92.75 192.168.131.71 128.171.92.76 128.171.92.77 128.171.92.78 128.171.92.79 128.171.92.88 128.171.92.89 128.171.92.22 128.171.92.81 128.171.92.92 128.171.92.209 128.171.92.21 192.168.141.122'
+# setenv EPICS_CA_ADDR_LIST "${EPICS_CA_ADDR_LIST} 10.100.202.3"
+
+field LAKESHORE.temp1   nmnCryo:ls:temp1  DBR_DOUBLE
+field LAKESHORE.temp2   nmnCryo:ls:temp2  DBR_DOUBLE
+field LAKESHORE.temp3   nmnCryo:ls:temp3  DBR_DOUBLE
+field LAKESHORE.temp4   nmnCryo:ls:temp4  DBR_DOUBLE
+field LAKESHORE.temp5   nmnCryo:ls:temp5  DBR_DOUBLE
+field LAKESHORE.temp6   nmnCryo:ls:temp6  DBR_DOUBLE
+field LAKESHORE.temp7   nmnCryo:ls:temp7  DBR_DOUBLE
+field LAKESHORE.temp8   nmnCryo:ls:temp8  DBR_DOUBLE
+
+field VACUUM.s1       nmnCryo:adc:s1        DBR_STRING
+field VACUUM.p1       nmnCryo:adc:p1        DBR_DOUBLE
+field VACUUM.p1_calc  nmnCryo:adc:p1_calc   DBR_DOUBLE
