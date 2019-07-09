@@ -64,13 +64,14 @@ class Cryo(object):
         # TODO: check ESNs?        
         
         if not self.simulate:
-            self.state['backpump_enable'] = self.femc.get_cryostat_backing_pump_enable()
-            self.state['turbopump_enable'] = self.femc.get_cryostat_turbo_pump_enable()
-            self.state['vacgauge_enable'] = self.femc.get_cryostat_vacuum_gauge_enable()
+            # NOTE The name "turbopump_enable" was too long for DRAMA.
+            self.state['backpump_on'] = self.femc.get_cryostat_backing_pump_enable()
+            self.state['turbopump_on'] = self.femc.get_cryostat_turbo_pump_enable()
+            self.state['vacgauge_on'] = self.femc.get_cryostat_vacuum_gauge_enable()
         else:
-            self.state['backpump_enable'] = 0
-            self.state['turbopump_enable'] = 0
-            self.state['vacgauge_enable'] = 0
+            self.state['backpump_on'] = 0
+            self.state['turbopump_on'] = 0
+            self.state['vacgauge_on'] = 0
         
         self.update()
         # Cryo.initialise
@@ -88,7 +89,7 @@ class Cryo(object):
         else:
             self.state['ppcomm_time'] = 0.0
          
-        if self.state['backpump_enable'] and not self.simulate:
+        if self.state['backpump_on'] and not self.simulate:
             self.state['turbopump_state'] = self.femc.get_cryostat_turbo_pump_state()
             self.state['turbopump_speed'] = self.femc.get_cryostat_turbo_pump_speed()
             self.state['solvalve_state'] = self.femc.get_cryostat_solenoid_valve_state()
