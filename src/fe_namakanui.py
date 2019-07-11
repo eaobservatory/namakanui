@@ -241,15 +241,15 @@ def configure(msg, wait_set, done_set):
             cid = cr['RECEPTOR_ID']
             if iid != cid:
                 raise drama.BadStatus(WRAP__WRONG_RECEPTOR_IN_CONFIGURE,
-                    f'CONFIGURE.RECEPTOR_MASK[{i}].RECEPTOR_ID={cid} but INSTRUMENT.receptor[{i}].id={iid}')
+                    f'configure RECEPTOR_MASK[{i}].RECEPTOR_ID={cid} but initialise receptor[{i}].id={iid}')
             ival = ir['health']
             cval = cr['VALUE']
             if cval == 'NEED' and ival != 'ON':
                 raise drama.BadStatus(WRAP__NEED_BAD_RECEPTOR,
-                    f'{cid}: CONFIGURE.RECEPTOR_MASK.VALUE={cval} but INSTRUMENT.receptor.health={ival}')
+                    f'{cid}: configure RECEPTOR_MASK.VALUE={cval} but initialise receptor.health={ival}')
             if cval == 'ON' and ival == 'OFF':
                 raise drama.BadStatus(WRAP__ON_RECEPTOR_IS_OFF,
-                    f'{cid}: CONFIGURE.RECEPTOR_MASK.VALUE={cval} but INSTRUMENT.receptor.health={ival}')
+                    f'{cid}: configure RECEPTOR_MASK.VALUE={cval} but initialise receptor.health={ival}')
             if cval == 'OFF':
                 g_state['RECEPTOR_VAL%d'%(i+1)] = 'OFF'
             else:
@@ -260,7 +260,9 @@ def configure(msg, wait_set, done_set):
             raise drama.BadStatus(WRAP__UNKNOWN_SIDEBAND, f'SIDEBAND={g_sideband}')
         g_rest_freq = float(fe['REST_FREQUENCY'])
         g_freq_mult = {'USB':1.0, 'LSB':-1.0}[g_sideband]
-        g_center_freq  = float(inst['IF_CENTER_FREQ'])
+        # use IF_CENTER_FREQ from config file instead of initialise
+        #g_center_freq  = float(inst['IF_CENTER_FREQ'])
+        g_center_freq = float(config['INSTRUMENT']['IF_CENTER_FREQ'])
         g_freq_off_scale = float(fe['FREQ_OFF_SCALE'])  # MHz
         dtrack = fe['DOPPLER_TRACK']
         g_mech_tuning = dtrack['MECH_TUNING']
