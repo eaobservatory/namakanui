@@ -19,7 +19,7 @@ args = parser.parse_args()
 taskname = args.taskname
 
 import drama.log
-drama.log.setup()  # no taskname, so no /jac_logs file output
+drama.log.setup(taskname)  # save to file in /jac_logs
 import logging
 log = logging.getLogger(taskname)
 
