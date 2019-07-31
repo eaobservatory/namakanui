@@ -1015,7 +1015,7 @@ class Cart(object):
             mc = self.femc.get_sis_magnet_current(self.ca, po, sb)
             self.state['sis_mag_c'][po*2 + sb] = mc
             # TODO: save somewhere? probably too fast to justify publishing.
-            self.log_debug('sis_mag_c(%d,%d): %d, %7.3f', po, sb, i_set, mc)
+            self.log.debug('sis_mag_c(%d,%d): %d, %7.3f', po, sb, i_set, mc)
             s = endpoint - time.time()
             if s > 0.001:
                 time.sleep(s)
