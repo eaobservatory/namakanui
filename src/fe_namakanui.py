@@ -16,7 +16,10 @@ import jac_sw
 import drama
 import drama.rts
 import sys
+import pprint
+import time
 import namakanui.sim
+import numpy
 
 # taskname argument is required
 taskname = sys.argv[1]
@@ -54,27 +57,45 @@ wrapper_err_n = {}
 for name,number in wrapper_err_d.items():
     wrapper_err_n[number] = name
 
-# the STATE structure for every frame
+# the STATE structure for every frame; field order chosen to match fesim
 g_state = { 
-# RECEPTOR vals filled in by initialise
-#"RECEPTOR_ID1":"A",
-#"RECEPTOR_VAL1":"ON",
-# LINE fields might be needed for tone source?
+#"NUMBER":numpy.int32(0), cannot include here or will override RTS
+"DOPPLER":1.0,
 "LINE_SOURCE":"OFF",
 "LINE_FREQUENCY":250.5,
 "LINE_POWER":0.0,
-"DOPPLER":1.0,
-"LO_FREQUENCY":246.5,
 "FREQ_OFFSET":0.0,
-"LAST_FREQ":0,  # set for last frame in current state table index
-"FE_STATE":"OFFSETZERO",  # ?
-"LOCKED":"YES",
-"LOAD":"SKY",  # do we want rx-specific names, or will that confuse reduction?
+"LO_FREQUENCY":0.0,
+"LAST_FREQ":numpy.int32(0),  # set for last frame in current state table index, 4-byte int
+"LOCKED":"NO",
+"LOAD":"SKY",
+"FE_STATE":"OFFSETZERO",
 # TEMP: need some real values for these
-"TEMP_AMBIENT":285.673,
-"TEMP_LOAD2":230.786,
-"TEMP_TSPILL":200.786
+"TEMP_TSPILL":200.786,
+"TEMP_AMBIENT":300.0,
+"TEMP_LOAD2":250.0,
 }
+
+# fill in initial RECEPTOR values; may be modified by INITIALISE
+# TODO: maybe at this point these should just be empty strings
+if g_band == 3:
+    g_state['RECEPTOR_ID1'] = 'NA1'
+    g_state['RECEPTOR_ID2'] = 'NA2'
+if g_band == 6:
+    g_state['RECEPTOR_ID1'] = 'NU1L'
+    g_state['RECEPTOR_ID2'] = 'NU1U'
+    g_state['RECEPTOR_ID3'] = 'NU2L'
+    g_state['RECEPTOR_ID4'] = 'NU2U'
+if g_band == 7:
+    g_state['RECEPTOR_ID1'] = 'NW1L'
+    g_state['RECEPTOR_ID2'] = 'NW1U'
+    g_state['RECEPTOR_ID3'] = 'NW2L'
+    g_state['RECEPTOR_ID4'] = 'NW2U'
+g_state['RECEPTOR_VAL1'] = 'ON'
+g_state['RECEPTOR_VAL2'] = 'ON'
+if g_band in [6,7]:
+    g_state['RECEPTOR_VAL3'] = 'ON'
+    g_state['RECEPTOR_VAL4'] = 'ON'
 
 g_sideband = 'USB'
 g_rest_freq = 230.538
@@ -108,7 +129,7 @@ def interpolate_t_cold(freq):
 
 def set_state_table(name):
     '''Copy first state table with matching name into MY_STATE_TABLE.'''
-    st = drama.get_param('INITIALISE')['FE_statetable']
+    st = drama.get_param('INITIALISE')['frontend_init']['FE_statetable']
     #if not isinstance(st, list):  # or numpy array
     if isinstance(st, dict):
         st = [st]
@@ -119,11 +140,11 @@ def set_state_table(name):
 def check_message(msg, target):
     '''Check msg after a wait() and raise errors if needed.'''
     if msg.reason == drama.REA_RESCHED:
-        raise BadStatus(drama.APP_TIMEOUT, f'Timeout waiting for {target}')
+        raise drama.BadStatus(drama.APP_TIMEOUT, f'Timeout waiting for {target}')
     elif msg.reason != drama.REA_COMPLETE:
-        raise BadStatus(drama.UNEXPMSG, f'Unexpected reply to {target}: {msg}')
+        raise drama.BadStatus(drama.UNEXPMSG, f'Unexpected reply to {target}: {msg}')
     elif msg.status != 0:
-            raise BadStatus(msg.status, f'Bad status from {target}')
+            raise drama.BadStatus(msg.status, f'Bad status from {target}')
 
 
 def initialise(msg):
@@ -140,6 +161,7 @@ def initialise(msg):
         if log.isEnabledFor(logging.DEBUG):  # expensive formatting
             log.debug("INITIALISE:\n%s", pprint.pformat(initxml))
         
+        initxml = initxml['frontend_init']
         inst = initxml['INSTRUMENT']
         name = inst['NAME']
         if name != taskname:
@@ -163,7 +185,7 @@ def initialise(msg):
         t_cold = float(cal['T_COLD'])  # K?
         t_spill = float(cal['T_SPILL'])
         t_hot = float(cal['T_HOT'])
-        g_state['TEMP_TLOAD2'] = t_cold
+        g_state['TEMP_LOAD2'] = t_cold
         g_state['TEMP_TSPILL'] = t_spill
         g_state['TEMP_AMBIENT'] = t_hot
         
@@ -196,7 +218,7 @@ def initialise(msg):
             for bit in namakanui.sim.bits_for_band(band):
                 otherbits |= bit
         simulate &= ~otherbits
-        drama.set_param('SIMULATE', simulate)
+        drama.set_param('SIMULATE', numpy.int32(simulate))  # might need to be 4-byte int
         
         # send load to AMBIENT, will fail if not already homed
         pos = f'b{g_band}_hot'
@@ -209,6 +231,21 @@ def initialise(msg):
         log.info('powering up band %d cartridge...', g_band)
         msg = drama.obey(NAMAKANUI_TASK, 'CART_POWER', g_band, 1).wait(30)
         check_message(msg, f'obey({NAMAKANUI_TASK},CART_POWER,{g_band},1)')
+        
+        # publish initial parameters; not sure if really needed.
+        drama.set_param('LOAD', g_state['LOAD'])
+        drama.set_param('STATE', [{'NUMBER':numpy.int32(0), **g_state}])
+        drama.set_param('TUNE_PAUSE', numpy.int32(0))  # TODO use this?
+        drama.set_param('MECH_TUNE', numpy.int32(0))
+        drama.set_param('ELEC_TUNE', numpy.int32(0))
+        drama.set_param('LOCK_STATUS', numpy.int32(0))
+        drama.set_param('COMB_ON', numpy.int32(0))  # fesim only?
+        drama.set_param('LO_FREQ', g_state['LO_FREQUENCY'])
+        drama.set_param('REST_FREQUENCY', 0.0)
+        drama.set_param('SIDEBAND', 'USB')
+        drama.set_param('TEMP_TSPILL', t_spill)
+        #drama.set_param('SB_MODE', {3:'SSB',6:'2SB',7:'2SB'}[g_band])
+        drama.set_param('SB_MODE', 'SSB')  # debug
         
         # obey
         
@@ -231,8 +268,10 @@ def configure(msg, wait_set, done_set):
         if log.isEnabledFor(logging.DEBUG):  # expensive formatting
             log.debug("CONFIGURATION:\n%s", pprint.pformat(config))
         
+        config = config['OCS_CONFIG']
         fe = config['FRONTEND_CONFIG']
         init = drama.get_param('INITIALISE')
+        init = init['frontend_init']
         inst = init['INSTRUMENT']
         
         # init/config must have same number/order of receptors
@@ -268,6 +307,13 @@ def configure(msg, wait_set, done_set):
         g_mech_tuning = dtrack['MECH_TUNING']
         g_elec_tuning = dtrack['ELEC_TUNING']
         
+        drama.set_param('MECH_TUNE', numpy.int32({'NEVER':0}.get(g_mech_tuning,1)))
+        drama.set_param('ELEC_TUNE', numpy.int32({'NEVER':0}.get(g_elec_tuning,1)))
+        drama.set_param('REST_FREQUENCY', g_rest_freq)
+        drama.set_param('SIDEBAND', g_sideband)
+        #drama.set_param('SB_MODE', fe['SB_MODE'])
+        drama.set_param('SB_MODE', 'SSB')  # debug
+        
         og = ['ONCE', 'GROUP']
         if g_mech_tuning in og or g_elec_tuning in og:
             configure.tune = True
@@ -281,7 +327,7 @@ def configure(msg, wait_set, done_set):
         # TODO: is this really necessary?
         if configure.tune:
             pos = f'b{g_band}_hot'
-            g_state['LOAD'] = ''  # TODO unknown/invalid value
+            g_state['LOAD'] = ''  # TODO unknown/invalid value; drama.set_param
             log.info('moving load to %s...', pos)
             configure.load_tid = drama.obey(NAMAKANUI_TASK, 'LOAD_MOVE', pos)
             configure.load_target = f'obey({NAMAKANUI_TASK},LOAD_MOVE,{pos})'
@@ -292,16 +338,17 @@ def configure(msg, wait_set, done_set):
             configure.load_tid = None
         # obey
     elif msg.reason == drama.REA_RESCHED:  # load must have timed out
-        raise BadStatus(drama.APP_TIMEOUT, f'Timeout waiting for {configure.load_target}')
+        raise drama.BadStatus(drama.APP_TIMEOUT, f'Timeout waiting for {configure.load_target}')
     elif configure.load_tid is not None:
         if msg.transid != configure.load_tid:
             drama.reschedule(configure.load_timeout)
             return
         elif msg.reason != drama.REA_COMPLETE:
-            raise BadStatus(drama.UNEXPMSG, f'Unexpected reply to {configure.load_target}: {msg}')
+            raise drama.BadStatus(drama.UNEXPMSG, f'Unexpected reply to {configure.load_target}: {msg}')
         elif msg.status != 0:
-            raise BadStatus(msg.status, f'Bad status from {configure.load_target}')
+            raise drama.BadStatus(msg.status, f'Bad status from {configure.load_target}')
         g_state['LOAD'] = 'AMBIENT'
+        drama.set_param('LOAD', g_state['LOAD'])
         configure.load_tid = None
     
     # TODO: figure out how to generalize this pattern to more obeys.
@@ -321,18 +368,22 @@ def configure(msg, wait_set, done_set):
     
     g_state['DOPPLER'] = g_doppler
     
+    # TODO check for valid LO_FREQUENCY range
+    lo_freq = g_doppler*g_rest_freq - g_center_freq*g_freq_mult
+    g_state['LO_FREQUENCY'] = lo_freq
+    drama.set_param('LO_FREQ', lo_freq)
+    
     if configure.tune:
         # tune the receiver.
-        # TODO check for valid LO_FREQUENCY range
-        lo_freq = g_doppler*g_rest_freq - g_center_freq*g_freq_mult
         # TODO: target control voltage for fast frequency switching.
         voltage = 0.0
         g_state['LOCKED'] = 'NO'
+        drama.set_param('LOCK_STATUS', numpy.int32(0))
         log.info('tuning receiver LO to %.9f GHz, %.3f V...', lo_freq, voltage)
         msg = drama.obey(NAMAKANUI_TASK, 'CART_TUNE', g_band, lo_freq, voltage).wait(30)
         check_message(msg, f'obey({NAMAKANUI_TASK},CART_TUNE,{g_band},{lo_freq},{voltage})')
-        g_state['LO_FREQUENCY'] = lo_freq
         g_state['LOCKED'] = 'YES'
+        drama.set_param('LOCK_STATUS', numpy.int32(1))
     
     # TODO: remove, we don't have a cold load
     t_cold = interpolate_t_cold(lo_freq) or g_state['TEMP_LOAD2']
@@ -358,6 +409,7 @@ def setup_sequence(msg, wait_set, done_set):
     if msg.reason == drama.REA_OBEY:
         # TODO these can probably be skipped
         init = drama.get_param('INITIALISE')
+        init = init['frontend_init']
         cal = init['CALIBRATION']
         t_hot = float(cal['T_HOT'])
         t_cold = float(cal['T_COLD'])
@@ -368,7 +420,7 @@ def setup_sequence(msg, wait_set, done_set):
         g_state['FE_STATE'] = state_table_name
         
         st = drama.get_param('MY_STATE_TABLE')
-        state_index_size = st['size']
+        state_index_size = int(st['size'])
         fe_state = st['FE_state']
         if not isinstance(fe_state, dict):
             fe_state = fe_state[0]
@@ -396,10 +448,14 @@ def setup_sequence(msg, wait_set, done_set):
         # save time by moving load while waiting on doppler from ANTENNA_TASK
         load = msg.arg.get('LOAD', g_state['LOAD'])
         if load == 'LOAD2':
-            # TODO: should this raise BadStatus instead?
+            # TODO: should this raise drama.BadStatus instead?
+            # NOTE: LOAD in SDP/STATE still remains "LOAD2",
+            #       since otherwise the reducers will hang forever
+            #       waiting on LOAD2 data.
             log.warning('no LOAD2, setting to SKY instead')
-            load = 'SKY'
-        pos = 'b%d_%s'%(g_band, {'AMBIENT':'hot', 'SKY':'sky'}[load])
+            pos = 'b%d_sky'%(g_band)
+        else:
+            pos = 'b%d_%s'%(g_band, {'AMBIENT':'hot', 'SKY':'sky'}[load])
         g_state['LOAD'] = ''  # TODO unknown/invalid value
         log.info('moving load to %s...', pos)
         setup_sequence.load = load
@@ -407,18 +463,21 @@ def setup_sequence(msg, wait_set, done_set):
         setup_sequence.load_target = f'obey({NAMAKANUI_TASK},LOAD_MOVE,{pos})'
         setup_sequence.load_timeout = time.time() + 30
         drama.reschedule(setup_sequence.load_timeout)
+        
+        return {'MULT': numpy.int32(state_index_size)}  # for JOS_MULT
         # obey
     elif msg.reason == drama.REA_RESCHED:  # load must have timed out
-        raise BadStatus(drama.APP_TIMEOUT, f'Timeout waiting for {setup_sequence.load_target}')
+        raise drama.BadStatus(drama.APP_TIMEOUT, f'Timeout waiting for {setup_sequence.load_target}')
     elif setup_sequence.load_tid is not None:
         if msg.transid != setup_sequence.load_tid:
             drama.reschedule(setup_sequence.load_timeout)
             return
         elif msg.reason != drama.REA_COMPLETE:
-            raise BadStatus(drama.UNEXPMSG, f'Unexpected reply to {setup_sequence.load_target}: {msg}')
+            raise drama.BadStatus(drama.UNEXPMSG, f'Unexpected reply to {setup_sequence.load_target}: {msg}')
         elif msg.status != 0:
-            raise BadStatus(msg.status, f'Bad status from {setup_sequence.load_target}')
+            raise drama.BadStatus(msg.status, f'Bad status from {setup_sequence.load_target}')
         g_state['LOAD'] = setup_sequence.load
+        # sdp should already hold the desired value, so no set_param here
         setup_sequence.load_tid = None
     
     if ANTENNA_TASK not in wait_set and ANTENNA_TASK not in done_set:
@@ -436,18 +495,22 @@ def setup_sequence(msg, wait_set, done_set):
     
     g_state['DOPPLER'] = g_doppler
     
+    # TODO check for valid LO_FREQUENCY range
+    lo_freq = (g_doppler*g_rest_freq) - (g_center_freq*g_freq_mult) + (g_freq_off_scale*g_state['FREQ_OFFSET']*1e-3)
+    g_state['LO_FREQUENCY'] = lo_freq
+    drama.set_param('LO_FREQ', lo_freq)
+    
     if setup_sequence.tune:
         # tune the receiver.
-        # TODO check for valid LO_FREQUENCY range
-        lo_freq = (g_doppler*g_rest_freq) - (g_center_freq*g_freq_mult) + (g_freq_off_scale*g_state['FREQ_OFFSET']*1e-3)
         # TODO: target control voltage for fast frequency switching.
         voltage = 0.0
         g_state['LOCKED'] = 'NO'
+        drama.set_param('LOCK_STATUS', numpy.int32(0))
         log.info('tuning receiver LO to %.9f GHz, %.3f V...', lo_freq, voltage)
         msg = drama.obey(NAMAKANUI_TASK, 'CART_TUNE', g_band, lo_freq, voltage).wait(30)
         check_message(msg, f'obey({NAMAKANUI_TASK},CART_TUNE,{g_band},{lo_freq},{voltage})')
-        g_state['LO_FREQUENCY'] = lo_freq
         g_state['LOCKED'] = 'YES'
+        drama.set_param('LOCK_STATUS', numpy.int32(1))
     
     # TODO: remove, we don't have a cold load
     t_cold = interpolate_t_cold(lo_freq) or g_state['TEMP_LOAD2']
@@ -519,6 +582,9 @@ def sequence_frame(frame):
     '''
     log.debug('sequence_frame: frame=%s', frame)
     
+    # could compare this to start/end for first/last integration handling
+    sequence.step_counter = frame['NUMBER']
+    
     # update frame with values that were used for this integration
     frame.update(g_state)
     
@@ -536,7 +602,9 @@ def sequence_frame(frame):
     
     # set LAST_FREQ if this was the last frame at this state table index
     if old_sti != sequence.state_table_index:
-        frame['LAST_FREQ'] = 1
+        frame['LAST_FREQ'] = numpy.int32(1)
+    else:
+        frame['LAST_FREQ'] = numpy.int32(0)
     
     # skip the rest of this since fast frequency switching isn't supported.
     return frame
@@ -549,11 +617,14 @@ def sequence_frame(frame):
         # TODO: target control voltage for fast frequency switching.
         voltage = 0.0
         g_state['LOCKED'] = 'NO'
+        drama.set_param('LOCK_STATUS', numpy.int32(0))
+        drama.set_param('LO_FREQ', lo_freq)
         log.info('tuning receiver LO to %.9f GHz, %.3f V...', lo_freq, voltage)
         msg = drama.obey(NAMAKANUI_TASK, 'CART_TUNE', g_band, lo_freq, voltage).wait(30)
         check_message(msg, f'obey({NAMAKANUI_TASK},CART_TUNE,{g_band},{lo_freq},{voltage})')
         g_state['LO_FREQUENCY'] = lo_freq
-        g_state['LOCKED'] = 'YES'    
+        g_state['LOCKED'] = 'YES'
+        drama.set_param('LOCK_STATUS', numpy.int32(1))
         # TODO: remove, we don't have a cold load
         t_cold = interpolate_t_cold(lo_freq) or g_state['TEMP_LOAD2']
         g_state['TEMP_LOAD2'] = t_cold
@@ -571,6 +642,8 @@ def sequence_batch(batch):
 try:
     drama.init(taskname, actions=[])
     drama.rts.init(initialise, configure, setup_sequence, sequence, sequence_frame, sequence_batch)
+    # publish initial parameters
+    drama.set_param('STATE', [{'NUMBER':numpy.int32(0), **g_state}])
     log.info('entering main loop.')
     drama.run()
 finally:
