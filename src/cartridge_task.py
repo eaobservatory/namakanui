@@ -119,8 +119,11 @@ def POWER(msg):
     log.debug('POWER(%s)', msg.arg)
     args,kwargs = drama.parse_argument(msg.arg)
     enable = kwargs.get('ENABLE','') or args[0]
-    enable = enable.lower().strip()
-    enable = {'0':0, 'off':0, 'false':0, '1':1, 'on':1, 'true':1}[enable]
+    if hasattr(enable, 'lower'):
+        enable = enable.lower().strip()
+        enable = {'0':0, 'off':0, 'false':0, '1':1, 'on':1, 'true':1}[enable]
+    else:
+        enable = int(bool(enable))
     onoff = ['off','on'][enable]
     log.info('powering %s...', onoff)
     cart.power(enable)

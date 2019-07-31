@@ -225,8 +225,11 @@ def LOAD_MOVE(msg):
 
 def cart_power_args(BAND, ENABLE):
     BAND = int(BAND)
-    ENABLE = ENABLE.lower().strip()
-    ENABLE = {'0':0, 'off':0, 'false':0, '1':1, 'on':1, 'true':1}[ENABLE]
+    if hasattr(ENABLE, 'lower'):
+        ENABLE = ENABLE.lower().strip()
+        ENABLE = {'0':0, 'off':0, 'false':0, '1':1, 'on':1, 'true':1}[ENABLE]
+    else:
+        ENABLE = int(bool(ENABLE))
     return BAND, ENABLE
     
 def CART_POWER(msg):
@@ -266,6 +269,9 @@ def CART_TUNE(msg):
                      following the initial lock.
        
        TODO: Set IF switch.
+       
+       TODO: lock polarity (below or above reference) could be a parameter.
+             for now we just read back from the cartridge task.
     '''
     log.debug('CART_TUNE(%s)', msg.arg)
     if not initialised:
@@ -279,16 +285,22 @@ def CART_TUNE(msg):
     if voltage and not -10<=voltage<=10:
         raise drama.BadStatus(drama.INVARG, 'VOLTAGE %g not in [-10,10]' % (voltage))
     
+    cartname = cartridge_tasknames[band]
+    
+    # TODO don't assume pubname is DYN_STATE
+    dyn_state = drama.get(cartname, "DYN_STATE").wait().arg["DYN_STATE"]
+    lock_polarity = dyn_state['pll_sb_lock']  # 0=below_ref, 1=above_ref
+    lock_polarity = -2.0 * lock_polarity + 1.0
+    
     fyig = lo_ghz / (cold_mult[band] * warm_mult[band])
-    fsig = (fyig*warm_mult[band] + agilent.floog) / agilent.harmonic
-    log.info('setting agilent to %g GHz, %g dBm')
+    fsig = (fyig*warm_mult[band] + agilent.floog*lock_polarity) / agilent.harmonic
+    log.info('setting agilent to %g GHz, %g dBm', fsig, agilent.dbm)
     # these "set" calls modify agilent.state, but do not publish
     agilent.set_hz(fsig*1e9)
     agilent.set_dbm(agilent.dbm)
     agilent.set_output(1)
     agilent.update(publish_only=True)
     time.sleep(0.05)  # wait 50ms; for small changes PLL might hold lock
-    cartname = cartridge_tasknames[band]
     vstr = ''
     band_kwargs = {"LO_GHZ":lo_ghz}
     if voltage is not None:
