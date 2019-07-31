@@ -639,12 +639,12 @@ class FEMC(object):
 
     def set_lna_drain_voltage(self, ca, po, sb, st, volts):
         '''Set LNA drain voltage for cartridge, polarization, sideband, stage.'''
-        rca_offset = self.make_rca(cartridge=ca, polarization=po, sideband=sb, lna_stage=st) | _sis_drain_voltage
+        rca_offset = self.make_rca(cartridge=ca, polarization=po, sideband=sb, lna_stage=st) | _lna_drain_voltage
         self.set_standard_float(rca_offset, volts)
     
     def set_lna_drain_current(self, ca, po, sb, st, ma):
         '''Set LNA drain current in mA for cartridge, polarization, sideband, stage.'''
-        rca_offset = self.make_rca(cartridge=ca, polarization=po, sideband=sb, lna_stage=st) | _sis_drain_current
+        rca_offset = self.make_rca(cartridge=ca, polarization=po, sideband=sb, lna_stage=st) | _lna_drain_current
         self.set_standard_float(rca_offset, ma)
 
     def set_lna_enable(self, ca, po, sb, enable):
