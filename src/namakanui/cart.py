@@ -110,6 +110,10 @@ class Cart(object):
         self.update_functions = [self.update_a, self.update_b, self.update_c]
         self.update_index = -1
         
+        # fe_mode must be 1 (TROUBLESHOOTING) for warm testing, but otherwise
+        # should be 0 (OPERATIONAL) to enable safety interlocks.
+        self.state['fe_mode'] = int(self.config[b]['fe_mode'])
+        
         self.log.debug('__init__ %s, sim=%d, band=%d', inifilename, self.simulate, band)
         
         cc = self.config[self.config[b]['cold']]
@@ -205,14 +209,18 @@ class Cart(object):
         elif hasattr(self, 'femc'):
             del self.femc
         
-        # check ESNs
-        if not self.sim_femc:
-            esns = self.femc.retry_esns(10, .01*self.band)
-            esns = [bytes(reversed(e)).hex().upper() for e in esns]  # ini format?
-            if not self.sim_warm and self.warm_esn not in esns:
-                raise RuntimeError(self.logname + ' warm cartridge ESN %s not found in list: %s' % (self.warm_esn, esns))
-            if not self.sim_cold and self.cold_esn not in esns:
-                raise RuntimeError(self.logname + ' cold cartridge ESN %s not found in list: %s' % (self.cold_esn, esns))
+        # RMB 20190730: cart ESNs don't seem to show up in list, so ignore.
+        ## check ESNs
+        #if not self.sim_femc:
+            #esns = self.femc.retry_esns(10, .01*self.band)
+            #esns = [bytes(reversed(e)).hex().upper() for e in esns]  # ini format?
+            #if not self.sim_warm and self.warm_esn not in esns:
+                #raise RuntimeError(self.logname + ' warm cartridge ESN %s not found in list: %s' % (self.warm_esn, esns))
+            #if not self.sim_cold and self.cold_esn not in esns:
+                #raise RuntimeError(self.logname + ' cold cartridge ESN %s not found in list: %s' % (self.cold_esn, esns))
+        
+        # set fe_mode from current state (set in __init__ or by last set_fe_mode)
+        self.set_fe_mode(self.state['fe_mode'])
         
         self.state['ppcomm_time'] = 0.0  # put this near the top of state
         
@@ -442,10 +450,13 @@ class Cart(object):
         if not self.hot:
             self.hot = self.high_temperature()
             if self.hot:
-                self.log.warn('high temperature, setting pa/lna/sis to zero')
+                # suppress warning if simulating
+                if not self.sim_cold:
+                    self.log.warn('high temperature, setting pa/lna/sis to zero')
                 self._ramp_sis_magnet_currents([0.0]*4)
                 for i in range(4):
                     self._set_lna(i//2,i%2, [0.0]*9)
+                self.set_lna_enable(0)
                 self._ramp_sis_bias_voltages([0.0]*4)
                 self._set_pa([0.0]*4)
         
@@ -493,6 +504,33 @@ class Cart(object):
         return bool(nom_magnet[po*2 + sb])
     
     
+    def set_fe_mode(self, mode):
+        '''
+        Calls set_fe_mode on the FEMC.  Use 1 (TROUBLESHOOTING) for warm tests,
+        otherwise use 0 (OPERATIONAL) to enable software interlocks.
+        TODO: publish?
+        '''
+        self.log.info('set_fe_mode(%s)', mode)
+        mode = int(mode)
+        if not self.sim_femc:
+            self.femc.set_fe_mode(mode)
+        self.state['fe_mode'] = mode
+    
+    
+    def set_lna_enable(self, enable):
+        '''
+        Calls set_lna_enable for all mixers and sets state.
+        TODO: publish?
+        '''
+        self.log.info('set_lna_enable(%s)', enable)
+        enable = int(bool(enable))
+        if not self.sim_femc:
+            for po in range(2):
+                for sb in range(2):
+                    self.femc.set_lna_enable(self.ca, po, sb, enable)
+        self.state['lna_enable'] = [enable]*4
+    
+    
     def tune(self, lo_ghz, voltage):
         '''
         Lock the PLL to produce the given LO frequency.
@@ -528,6 +566,10 @@ class Cart(object):
             for i, lna in enumerate([nom_lna_01, nom_lna_02, nom_lna_11, nom_lna_12]):
                 if lna:
                     self._set_lna(i//2, i%2, lna[1:])
+            
+            # TODO: can we set LNA values before enabling?
+            #       should we disable LNA while tuning?
+            self.set_lna_enable(1)
             
             self._servo_pa()
             
@@ -868,6 +910,7 @@ class Cart(object):
             self.log.info('power-on complete.')
         elif self.state['pd_enable'] and not enable:  # power-off
             self.log.info('power(0): power-off...')
+            self.set_lna_enable(0)  # necessary?  set LNAs to 0 first?
             self._set_pa([0.0]*4)
             self._ramp_sis_bias_voltages([0.0]*4)
             self._ramp_sis_magnet_currents([0.0]*4)
@@ -938,6 +981,8 @@ class Cart(object):
         '''
         self.log.info('_demagnetize(%d,%d)', po, sb)
         
+        if self.sim_cold:
+            return
         if self.high_temperature():
             # high magnet currents can cause damage at room temperature
             self.log.info('high temperature, skipping demagnetize')
