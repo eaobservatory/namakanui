@@ -255,7 +255,7 @@ _lpr_edfa_driver_state = 0xd03c  # temperature alarm
 
 class FEMC(object):
 
-    def __init__(self, interface="can0", node_id=0x13, verbose=False, timeout=1.0):
+    def __init__(self, interface="can0", node_id=0x13, verbose=False, timeout=0.1):
         self.verbose = verbose
         self.s = socket.socket(socket.AF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
         self.s.bind((interface,))
@@ -348,7 +348,7 @@ class FEMC(object):
                     raise
         raise RuntimeError("timeout waiting to send")
         
-    def get_rca(self, rca):
+    def try_get_rca(self, rca):
         '''Send SocketCAN packet to RCA and return reply data bytes.
            For resilience to other traffic on bus (or misread commands),
            keep looking for a matching reply id until timeout expires.
@@ -374,15 +374,32 @@ class FEMC(object):
             if r_can_id != s_can_id:
                 badreps.append(reply.hex())
                 if self.verbose:
-                    print('get_data %x unexpected reply id %x' % (s_can_id, r_can_id))
+                    print('get_rca %x unexpected reply id %x' % (s_can_id, r_can_id))
             elif not data_len:
                 badreps.append(reply.hex())
                 if self.verbose:
-                    print('get_data %x got reply with no data' % (s_can_id))
+                    print('get_rca %x got reply with no data' % (s_can_id))
         if r_can_id != s_can_id or not data_len:
-            raise RuntimeError("timeout after %d bad replies: %s" % (len(badreps), badreps))
+            raise RuntimeError("timeout after %d bad replies: %s" % (len(badreps), "<omitted>"))#badreps))
         data = data[:data_len]
         return data
+    
+    def get_rca(self, rca):
+        '''Call try_get_rca in a loop since sometimes the FEMC ignores us.'''
+        loop = 0
+        loops = 10
+        while loop < loops:
+            if self.verbose and loop:
+                print('get_rca retry %s' % (loop))
+            try:
+                data = self.try_get_rca(rca)
+                return data
+            except RuntimeError as e:
+                if self.verbose:
+                    print('get_rca %s' % (e))
+                loop += 1
+                if loop >= loops:
+                    raise
     
     def set_special(self, rca_offset, ubyte=0):
         '''Send a SPECIAL control command, base 0x21000'''
@@ -392,12 +409,12 @@ class FEMC(object):
         '''Send a SPECIAL monitor command, base 0x20000; return data bytes.'''
         return self.get_rca(0x20000 | rca_offset)
     
-    def set_get_rca(self, rca, data):
+    def try_set_get_rca(self, rca, data):
         '''Set, then get same rca to check for errors.
            Used by STANDARD control commands.
            On error, raise a RuntimeError exception.'''
         self.set_rca(rca, data)
-        r_data = self.get_rca(rca)
+        r_data = self.try_get_rca(rca)
         # TODO: certain operations might require action for specific errors,
         # so it'd be better to raise an exception that's easier to check.
         if r_data[-1] != 0:
@@ -406,6 +423,24 @@ class FEMC(object):
             raise RuntimeError("error code from set 0x%08x: %d: %s" % (self.node|rca, code, estr))
         if len(r_data) != len(data) + 1 or r_data[:-1] != data:
             raise RuntimeError("bad reply from set 0x%08x: expected 0x%s, got 0x%s" % (self.node|rca, data.hex(), r_data.hex()))
+    
+    def set_get_rca(self, rca, data):
+        '''Call try_set_get_rca in a loop since sometimes the FEMC ignores us.
+           TODO: Custom exception type, bail on error codes.'''
+        loop = 0
+        loops = 10
+        while loop < loops:
+            if self.verbose and loop:
+                print('set_get_rca retry %s' % (loop))
+            try:
+                self.try_set_get_rca(rca, data)
+                return
+            except RuntimeError as e:
+                if self.verbose:
+                    print('set_get_rca %s' % (e))
+                loop += 1
+                if loop >= loops or str(e).startswith('error code'):
+                    raise
     
     # NOTE: The functions below could automatically infer data types,
     # but explicit typing might help catch some obscure errors.
