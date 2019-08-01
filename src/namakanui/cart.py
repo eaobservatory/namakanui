@@ -241,19 +241,19 @@ class Cart(object):
         if self.state['pd_enable'] and not self.sim_cold:
             sis_open_loop = []
             lna_enable = []
-            lna_led_enable = []
+            #lna_led_enable = [] # error -12: undefined RCA
             for po in range(2):
                 for sb in range(2):
                     sis_open_loop.append(self.femc.get_sis_open_loop(self.ca, po, sb))
                     lna_enable.append(self.femc.get_lna_enable(self.ca, po, sb))
-                    lna_led_enable.append(self.femc.get_lna_led_enable(self.ca, po, sb))
+                    #lna_led_enable.append(self.femc.get_lna_led_enable(self.ca, po, sb))
             self.state['sis_open_loop'] = sis_open_loop
             self.state['lna_enable'] = lna_enable
-            self.state['lna_led_enable'] = lna_led_enable
+            #self.state['lna_led_enable'] = lna_led_enable
         else:
             self.state['sis_open_loop'] = [0]*4
             self.state['lna_enable'] = [0]*4
-            self.state['lna_led_enable'] = [0]*4
+            #self.state['lna_led_enable'] = [0]*4
         
         if self.state['pd_enable'] and not self.sim_warm:
             self.state['yto_coarse'] = self.femc.get_cartridge_lo_yto_coarse_tune(self.ca)
@@ -449,16 +449,17 @@ class Cart(object):
         # if the temperature has gone high, zero PA/LNA, mixer/magnets.
         if not self.hot:
             self.hot = self.high_temperature()
-            if self.hot:
-                # suppress warning if simulating
+            if self.hot and self.state['pd_enable']:
+                if not self.sim_warm:
+                    self.log.warn('high temperature, setting pa to zero')
+                    self._set_pa([0.0]*4)
                 if not self.sim_cold:
-                    self.log.warn('high temperature, setting pa/lna/sis to zero')
-                self._ramp_sis_magnet_currents([0.0]*4)
-                for i in range(4):
-                    self._set_lna(i//2,i%2, [0.0]*9)
-                self.set_lna_enable(0)
-                self._ramp_sis_bias_voltages([0.0]*4)
-                self._set_pa([0.0]*4)
+                    self.log.warn('high temperature, setting lna/sis to zero')
+                    self._ramp_sis_magnet_currents([0.0]*4)
+                    for i in range(4):
+                        self._set_lna(i//2,i%2, [0.0]*9)
+                    self._set_lna_enable(0)
+                    self._ramp_sis_bias_voltages([0.0]*4)
         
         if do_publish:
             self.state['number'] += 1
@@ -494,7 +495,7 @@ class Cart(object):
         Returns True if this cartridge has SIS magnets, as indicated by the
         presence of MagnetParams in the config file.  If po/sb are given,
         will check the table at current lo_ghz and return False for zero
-        in the po/sb column (useful for e.g. band8, apparently).
+        in the po/sb column (useful for band6).
         '''
         if not self.magnet_table:
             return False
@@ -508,27 +509,13 @@ class Cart(object):
         '''
         Calls set_fe_mode on the FEMC.  Use 1 (TROUBLESHOOTING) for warm tests,
         otherwise use 0 (OPERATIONAL) to enable software interlocks.
-        TODO: publish?
+        TODO: Actually read back using get_fe_mode, in an update function.
         '''
         self.log.info('set_fe_mode(%s)', mode)
         mode = int(mode)
         if not self.sim_femc:
             self.femc.set_fe_mode(mode)
         self.state['fe_mode'] = mode
-    
-    
-    def set_lna_enable(self, enable):
-        '''
-        Calls set_lna_enable for all mixers and sets state.
-        TODO: publish?
-        '''
-        self.log.info('set_lna_enable(%s)', enable)
-        enable = int(bool(enable))
-        if not self.sim_femc:
-            for po in range(2):
-                for sb in range(2):
-                    self.femc.set_lna_enable(self.ca, po, sb, enable)
-        self.state['lna_enable'] = [enable]*4
     
     
     def tune(self, lo_ghz, voltage):
@@ -569,7 +556,7 @@ class Cart(object):
             
             # TODO: can we set LNA values before enabling?
             #       should we disable LNA while tuning?
-            self.set_lna_enable(1)
+            self._set_lna_enable(1)
             
             self._servo_pa()
             
@@ -627,7 +614,9 @@ class Cart(object):
             femc.set_cartridge_lo_pll_clear_unlock_detect_latch(self.ca)
             self.state['pll_unlock'] = 0
             # correction voltage might need longer to update, but check anyway
-            self.state['pll_corr_v'] = femc.get_cartridge_lo_pll_correction_voltage(self.ca)
+            cv = femc.get_cartridge_lo_pll_correction_voltage(self.ca)
+            self.state['pll_corr_v'] = cv
+            self.log.debug('_lock_pll already locked, corr_v %.2f', cv)
             return
         
         femc.set_cartridge_lo_pll_null_loop_integrator(self.ca, 1)
@@ -639,6 +628,7 @@ class Cart(object):
         while True:
             try_counts = coarse_counts + step
             if lo_counts <= try_counts <= hi_counts:
+                self.log.debug('_lock_pll try_counts %d', try_counts)
                 femc.set_cartridge_lo_pll_null_loop_integrator(self.ca, 1)
                 femc.set_cartridge_lo_yto_coarse_tune(self.ca, try_counts)
                 femc.set_cartridge_lo_pll_null_loop_integrator(self.ca, 0)
@@ -669,7 +659,9 @@ class Cart(object):
         if ldv > 3.0 and rfp < -0.5 and ifp < -0.5:  # good lock
             femc.set_cartridge_lo_pll_clear_unlock_detect_latch(self.ca)
             self.state['pll_unlock'] = 0
-            self.state['pll_corr_v'] = femc.get_cartridge_lo_pll_correction_voltage(self.ca)
+            cv = femc.get_cartridge_lo_pll_correction_voltage(self.ca)
+            self.state['pll_corr_v'] = cv
+            self.log.debug('_lock_pll locked, corr_v %.2f', cv)
             return
         
         self.state['pll_unlock'] = 1
@@ -701,24 +693,29 @@ class Cart(object):
         
         # TODO: FEND-40.00.00.00-089-D-MAN gives the FM tuning slope
         # as 2.5 MHz/Volt, but it might vary by cartridge.  Make configurable.
-        fm_slope = 0.0025  # GHz/Volt
+        # band 7, 20190731, _estimate_fm_slope:
+        # counts_per_volt=2.01629, yig_slope=0.00116215 GHz/count, fm_slope=0.00234322 GHz/volt
+        fm_slope = 0.0023  # GHz/Volt, conservative estimate
         yig_slope = (self.yig_hi - self.yig_lo) / 4095  # GHz/count
         counts_per_volt = fm_slope / yig_slope
         
-        # start with a large jump toward target voltage.
+        # quickly step toward target voltage (a large jump can lose the lock).
         # assume state is already up to date, don't query femc here.
         # NOTE: correction voltage decreases as yig counts increase.
         step = round((self.state['pll_corr_v'] - voltage) * counts_per_volt)
         coarse_counts = self.state['yto_coarse']
         try_counts = max(0,min(4095, coarse_counts + step))
-        if try_counts != coarse_counts:
-            coarse_counts = try_counts
+        step = sign(try_counts - coarse_counts)
+        self.log.debug('_adjust_fm quick-stepping from %d to %d counts...', coarse_counts, try_counts)
+        while try_counts != coarse_counts:
+            coarse_counts += step
             femc.set_cartridge_lo_yto_coarse_tune(self.ca, coarse_counts)
-            self.sleep(0.05)
         
         # single-step toward target voltage until sign changes
+        self.sleep(0.05)
         cv = femc.get_cartridge_lo_pll_correction_voltage(self.ca)
         ll = femc.get_cartridge_lo_pll_unlock_detect_latch(self.ca)
+        self.log.debug('_adjust_fm unlock %d, corr_v %.2f, slow-stepping...', ll, cv)
         relv = cv - voltage
         step = sign(relv)
         try_counts = max(0,min(4095, coarse_counts + step))
@@ -737,6 +734,7 @@ class Cart(object):
         self.state['pll_lock_v'] = femc.get_cartridge_lo_pll_lock_detect_voltage(self.ca)
         self.state['pll_ref_power'] = femc.get_cartridge_lo_pll_ref_total_power(self.ca)
         self.state['pll_if_power']  = femc.get_cartridge_lo_pll_if_total_power(self.ca)
+        self.log.debug('_adjust_fm unlock %d, corr_v %.2f, final counts %d', ll, cv, coarse_counts)
         if ll:
             lo_ghz = self.state['lo_ghz']
             raise RuntimeError(self.logname + ' lost lock while adjusting control voltage to %.2f at lo_ghz=%.9f' % (voltage, lo_ghz))
@@ -770,6 +768,7 @@ class Cart(object):
         cv = 0.0
         for i in range(n):
             cv += femc.get_cartridge_lo_pll_correction_voltage(self.ca)
+            self.sleep(0.01)
         cv /= n
         old_cv = cv
         
@@ -800,6 +799,7 @@ class Cart(object):
         cv = 0.0
         for i in range(n):
             cv += femc.get_cartridge_lo_pll_correction_voltage(self.ca)
+            self.sleep(0.01)
         cv /= n
         
         # TODO: counts_per_volt is what we want anyway, maybe just return it
@@ -899,7 +899,9 @@ class Cart(object):
             self.log.info('power(1): power-on...')
             if not self.sim_femc:
                 self.femc.set_pd_enable(self.ca, 1)
-                self.sleep(1)  # cartridge needs a second to wake up
+                self.state['pd_enable'] = 1  # in case initialise() fails
+                self.log.info('1.0s sleep for cart to wake up...')
+                self.sleep(1.0)  # cartridge needs some time to wake up
             self.initialise()  # calls _calc_sis_bias_error
             self._set_pa([0.0]*4)
             self.demagnetize_and_deflux()
@@ -910,13 +912,14 @@ class Cart(object):
             self.log.info('power-on complete.')
         elif self.state['pd_enable'] and not enable:  # power-off
             self.log.info('power(0): power-off...')
-            self.set_lna_enable(0)  # necessary?  set LNAs to 0 first?
+            self._set_lna_enable(0)  # necessary?  set LNAs to 0 first?
             self._set_pa([0.0]*4)
             self._ramp_sis_bias_voltages([0.0]*4)
             self._ramp_sis_magnet_currents([0.0]*4)
             if not self.sim_femc:
-                self.state['pd_enable'] = 0  # so background UPDATE doesn't choke
                 self.femc.set_pd_enable(self.ca, 0)
+                self.state['pd_enable'] = 0  # so background UPDATE doesn't choke
+                self.log.info('0.1s sleep for cart to power down...')
                 self.sleep(0.1)  # TODO: does cartridge need longer to power down?
             self.initialise()
             self.log.info('power-off complete.')
@@ -983,6 +986,8 @@ class Cart(object):
         
         if self.sim_cold:
             return
+        if not self.state['pd_enable']:
+            raise RuntimeError(self.logname + ' power disabled')
         if self.high_temperature():
             # high magnet currents can cause damage at room temperature
             self.log.info('high temperature, skipping demagnetize')
@@ -1034,6 +1039,8 @@ class Cart(object):
         
         if self.sim_cold:
             return
+        if not self.state['pd_enable']:
+            raise RuntimeError(self.logname + ' power disabled')
         if not self.has_sis_mixers():
             self.log.info('not SIS mixers, skipping mixer heating')
             return
@@ -1139,7 +1146,7 @@ class Cart(object):
                 self.sleep(.01)
         for i in range(4):
             sbv[i] = sbv[i]/n
-            self.bias_error[i] = sbv[i] - sis_setting[i]
+            self.bias_error[i] = sbv[i] - sis_setting
         self.log.info('SIS bias voltage setting offset: %s', self.bias_error)
         self._ramp_sis_bias_voltages([0.0]*4)
         # Cart._calc_sis_bias_error
@@ -1183,6 +1190,8 @@ class Cart(object):
         if self.sim_cold:
             self.state['sis_mag_c'] = ma
             return
+        if not self.state['pd_enable']:
+            raise RuntimeError(self.logname + ' power disabled')
         self._ramp_sis(ma, 'sis_mag_c', 0.1, self.femc.set_sis_magnet_current)
         # Cart._ramp_sis_magnet_currents
     
@@ -1200,6 +1209,8 @@ class Cart(object):
         if self.sim_cold:
             self.state['sis_v'] = mv
             return
+        if not self.state['pd_enable']:
+            raise RuntimeError(self.logname + ' power disabled')
         set_mv = [0.0]*4
         get_mv = [0.0]*4
         for i in range(4):
@@ -1236,6 +1247,8 @@ class Cart(object):
             self.state['pa_drain_v'] = pa[0:2]
             self.state['pa_gate_v'] = pa[2:4]
             return
+        if not self.state['pd_enable']:
+            raise RuntimeError(self.logname + ' power disabled')
         for po in range(2):
             self.femc.set_cartridge_lo_pa_pol_drain_voltage_scale(self.ca, po, pa[po])
             self.femc.set_cartridge_lo_pa_pol_gate_voltage(self.ca, po, pa[po+2])
@@ -1262,11 +1275,31 @@ class Cart(object):
             self.state['lna_drain_c'][lna_state_i:lna_state_i+3] = lna[3:6]
             self.state['lna_gate_v'][lna_state_i:lna_state_i+3] = lna[6:9]
             return
+        if not self.state['pd_enable']:
+            raise RuntimeError(self.logname + ' power disabled')
         for st in range(3):
             self.femc.set_lna_drain_voltage(self.ca, po, sb, st, lna[st])
             self.femc.set_lna_drain_current(self.ca, po, sb, st, lna[3+st])
         # Cart._set_lna
 
+
+    def _set_lna_enable(self, enable):
+        '''
+        Internal function, does not publish state.
+        Calls set_lna_enable for all mixers.
+        '''
+        self.log.info('_set_lna_enable(%s)', enable)
+        enable = int(bool(enable))
+        if self.sim_cold:
+            self.state['lna_enable'] = [enable]*4
+            return
+        if not self.state['pd_enable']:
+            raise RuntimeError(self.logname + ' power disabled')
+        for po in range(2):
+            for sb in range(2):
+                self.femc.set_lna_enable(self.ca, po, sb, enable)
+                self.state['lna_enable'][po*2 + sb] = enable  # TODO check in update
+        # Cart._set_lna_enable
 
 
 
