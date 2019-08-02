@@ -221,6 +221,10 @@ class Cart(object):
         # reset the hot flag so we zero params on first high_temperature()
         self.hot = False
         
+        # this needs to be set before update_all() since high temps
+        # will call _ramp_sis_bias_voltages to zero
+        self.bias_error = [0.0]*4
+
         self.update_all()  # fill out rest of state dict
         
         # if the cart is already powered, measure SIS bias error.
@@ -398,6 +402,7 @@ class Cart(object):
         if not self.hot:
             self.hot = self.high_temperature()
             if self.hot and self.state['pd_enable']:
+                self.log.debug('high temperature, cart temps: %s', self.state['cart_temp'])
                 if not self.sim_warm:
                     self.log.warn('high temperature, setting pa to zero')
                     self._set_pa([0.0]*4)
@@ -426,8 +431,15 @@ class Cart(object):
               Does this need to be done manually?
               Does the self.hot flag need to go into state for user?
               i.e. WAS_HOT, NEEDS_INIT
+        
+        NOTE: Normal order is  [4K, 110K, P0,  -1, 15K, P1]
+              but for band3 is [-1, 110K, P01, -1, 15K, WCA]
+              where the P01 mixers are in the 15K stage.
         '''
-        return any(not 0.0 < self.state['cart_temp'][te] < 30.0 for te in [0,2,4,5])
+        cart_temp = self.state['cart_temp']
+        if self.band == 3:
+            return any(not 0.0 < cart_temp[te] < 30.0 for te in [2,4])
+        return any(not 0.0 < cart_temp[te] < 30.0 for te in [0,2,4,5])
     
     
     def has_sis_mixers(self):
