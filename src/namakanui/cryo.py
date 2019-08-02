@@ -4,7 +4,7 @@ Monitoring and control for the Namakanui cryostat.
 Valves, pumps, pressures, temperatures, power supply.
 '''
 
-from namakanui.includeparser import IncludeParser
+from namakanui.ini import IncludeParser
 from namakanui.femc import FEMC
 from namakanui import sim
 import logging

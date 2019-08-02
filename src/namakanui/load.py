@@ -25,7 +25,7 @@ TODO: Make sure wheel is stopped if actions are kicked or errors occur.
 TODO: Can the motor be turned off and the wheel positioned by hand?
 '''
 
-from namakanui.includeparser import IncludeParser
+from namakanui.ini import IncludeParser
 from namakanui import sim
 import socket
 import time

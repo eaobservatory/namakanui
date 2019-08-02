@@ -1,0 +1,93 @@
+'''
+RMB 20181228
+IncludeParser is a ConfigParser derivative that supports an [include] section.
+Handles nested inclusions with absolute or relative paths.
+
+This module also provides functions for reading and interpolating tables.
+'''
+
+import sys
+import os
+import configparser
+import collections
+import bisect
+
+
+class IncludeParser(configparser.ConfigParser):
+    def __init__(self, inifilename):
+        '''
+        Parse given .ini file, handling [include] sections.
+        NOTE: This is the only overridden method. Using read(), read_string(),
+              or other ConfigParser methods will not [include] properly.
+        '''
+        configparser.ConfigParser.__init__(self)
+        inifilename = os.path.realpath(inifilename.strip())
+        inidone = set()
+        include = {inifilename}
+        while inidone < include:
+            fname = next(iter(include - inidone))
+            inidir = os.path.dirname(fname) + '/'
+            inistr = open(fname).read()
+            self.read_string(inistr, source='<%s>'%(fname))
+            inidone.add(fname)
+            if 'include' in self:
+                for fname in self['include']:
+                    fname = fname.strip()
+                    if fname.startswith('/'):
+                        fname = os.path.realpath(fname)
+                    else:
+                        fname = os.path.realpath(inidir + fname)
+                    include.add(fname)
+
+
+def read_table(config_section, name, dtype, fnames):
+    '''
+    Return a table from a section of the config file.  Arguments:
+        config_section: ConfigParser or dict instance to read from
+        name: Table name, must match config as shown below
+        dtype: Type to cast each table value as
+        fnames: List of field names
+    The table will be a list of namedtuples holding values of dtype.
+    The config file for "Name" should look like this:
+        [Section]
+        Names=37
+        Name01=42, 64, 11
+        ...
+        Name37=21, 45, 66
+    If the table is unsorted (ascending first column), raise RuntimeError.
+    '''
+    num = int(config_section[name + 's'])
+    table = []
+    ttype = collections.namedtuple(name, fnames)
+    prev = None
+    for i in range(1,num+1):
+        val = config_section[name + '%02d' % (i)]
+        tup = ttype(*[dtype(x.strip()) for x in val.split(',')])
+        if prev is not None and tup[0] < prev:
+            raise RuntimeError('[%s] %s table values are out of order' % (config_section.name, name))
+        prev = tup[0]
+        table.append(tup)
+    return table
+
+
+def interp_table(table, freqLO):
+    '''
+    Return a linearly-interpolated row in table at given freqLO GHz.
+    Assumes freqLO is the first column in the table.
+    If outside the table bounds, return the first or last row.
+    If table is empty, return None.
+    '''
+    if not table:
+        return None
+    if freqLO <= table[0][0]:
+        return table[0]
+    if freqLO >= table[-1][0]:
+        return table[-1]
+    j = bisect.bisect(table, (freqLO,))
+    i = j-1
+    if table[i].freqLO == table[j].freqLO:
+        return table[i]  # arbitrary, else divide by zero below
+    f = (freqLO - table[i].freqLO) / (table[j].freqLO - table[i].freqLO)
+    ttype = type(table[i])
+    return ttype(*[x + f*(y-x) for x,y in zip(table[i], table[j])])
+

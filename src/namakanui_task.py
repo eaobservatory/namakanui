@@ -23,7 +23,7 @@ import os
 import gc
 import time
 import subprocess
-from namakanui.includeparser import IncludeParser
+from namakanui.ini import IncludeParser
 import namakanui.cryo
 import namakanui.load
 # NOTE the reference signal generator interface should be more generic.
@@ -294,10 +294,11 @@ def CART_TUNE(msg):
     
     fyig = lo_ghz / (cold_mult[band] * warm_mult[band])
     fsig = (fyig*warm_mult[band] + agilent.floog*lock_polarity) / agilent.harmonic
-    log.info('setting agilent to %g GHz, %g dBm', fsig, agilent.dbm)
+    dbm = agilent.interp_dbm(band, lo_ghz)
+    log.info('setting agilent to %g GHz, %g dBm', fsig, dbm)
     # these "set" calls modify agilent.state, but do not publish
     agilent.set_hz(fsig*1e9)
-    agilent.set_dbm(agilent.dbm)
+    agilent.set_dbm(dbm)
     agilent.set_output(1)
     agilent.update(publish_only=True)
     time.sleep(0.05)  # wait 50ms; for small changes PLL might hold lock
