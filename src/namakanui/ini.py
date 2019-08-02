@@ -70,24 +70,26 @@ def read_table(config_section, name, dtype, fnames):
     return table
 
 
-def interp_table(table, freqLO):
+def interp_table(table, x):
     '''
-    Return a linearly-interpolated row in table at given freqLO GHz.
-    Assumes freqLO is the first column in the table.
+    Return a linearly-interpolated row in table at given x,
+    where x corresponds to the first column in the table.
     If outside the table bounds, return the first or last row.
     If table is empty, return None.
+    
+    NOTE: Only works for lists of collections.namedtuple.
     '''
     if not table:
         return None
-    if freqLO <= table[0][0]:
+    if x <= table[0][0]:
         return table[0]
-    if freqLO >= table[-1][0]:
+    if x >= table[-1][0]:
         return table[-1]
-    j = bisect.bisect(table, (freqLO,))
+    j = bisect.bisect(table, (x,))
     i = j-1
-    if table[i].freqLO == table[j].freqLO:
+    if table[i][0] == table[j][0]:
         return table[i]  # arbitrary, else divide by zero below
-    f = (freqLO - table[i].freqLO) / (table[j].freqLO - table[i].freqLO)
+    f = (x - table[i][0]) / (table[j][0] - table[i][0])
     ttype = type(table[i])
-    return ttype(*[x + f*(y-x) for x,y in zip(table[i], table[j])])
+    return ttype(*[a + f*(b-a) for a,b in zip(table[i], table[j])])
 
