@@ -791,12 +791,14 @@ class Cart(object):
         nom_pa = interp_table(self.pa_table, lo_ghz)[1:]
         nom_mixer = interp_table(self.mixer_table, lo_ghz)
         nom_curr = [nom_mixer[5]*.001, nom_mixer[7]*.001]  # table in uA, but readout in mA.
+        self.log.debug('_servo_pa nom_pa=%s, nom_curr=%s', nom_pa, nom_curr)
         step = 2.5/255
         for po in range(2):
             pa = nom_pa[po]
             win_curr = nom_curr[po] * 0.05  # +-5% window
             win_lo = nom_curr[po] - win_curr
             win_hi = nom_curr[po] + win_curr
+            self.log.debug('_servo_pa po %d current window [%.3f, %.3f] uA', po, win_lo*1e3, win_hi*1e3)
             win_dir = 0
             min_err = 1e300
             done = False
@@ -808,6 +810,7 @@ class Cart(object):
                     # TODO do we need a short sleep between reads?
                     curr += self.femc.get_sis_current(self.ca, po, 0)
                 curr /= n
+                self.log.debug('_servo_pa po %d pa %.2f curr %.3f uA', po, pa, curr*1e3)
                 if curr < win_lo:
                     pa += step
                 elif curr > win_hi:
@@ -1013,22 +1016,25 @@ class Cart(object):
         base_heater_current_1 = (base_heater_current_1 / n) + 1.0
         base_mixer_temp_0 = (base_mixer_temp_0 / n) + 0.2
         base_mixer_temp_1 = (base_mixer_temp_1 / n) + 0.2
-        self.log.debug('_mixer_heating: current thresholds: %g %g', base_heater_current_0, base_heater_current_1)
-        self.log.debug('_mixer_heating: kelvin thresholds: %g %g', base_mixer_temp_0, base_mixer_temp_1)
+        self.log.debug('_mixer_heating: current thresholds: %.3f %.3f', base_heater_current_0, base_heater_current_1)
+        self.log.debug('_mixer_heating: kelvin thresholds: %.2f %.2f', base_mixer_temp_0, base_mixer_temp_1)
         target_temp = 12.0  # kelvin
         if self.band == 8:
             target_temp = 20.0
         timeout = 30
         if self.band == 9:
             timeout = 3
-        timeout += time.time()  # wall time
+        now = time.time()
+        timeout += now  # wall time
+        debug_interval = .2
+        debug_time = now + debug_interval
         self.log.info('_mixer_heating: heating loop')
-        while time.time() < timeout:
+        while now < timeout:
             # TODO: publish state during this loop?  or otherwise log currents/temps?
             heater_current_0 = self.femc.get_sis_heater_current(self.ca, 0)
             heater_current_1 = self.femc.get_sis_heater_current(self.ca, 1)
             if heater_current_0 < base_heater_current_0 or heater_current_1 < base_heater_current_1:
-                #self.log.debug('_mixer_heating: toggling heaters')
+                self.log.debug('_mixer_heating: toggling heaters')
                 # heaters must be disabled, then enabled.
                 self.femc.set_sis_heater_enable(self.ca, 0, 0)
                 self.femc.set_sis_heater_enable(self.ca, 1, 0)
@@ -1037,12 +1043,17 @@ class Cart(object):
             self.sleep(0.02)
             mixer_temp_0 = self.femc.get_cartridge_lo_cartridge_temp(self.ca, 2)
             mixer_temp_1 = self.femc.get_cartridge_lo_cartridge_temp(self.ca, 5)
+            now = time.time()
+            if now >= debugtime:
+                debugtime = now + debug_interval
+                self.log.debug('_mixer_heating: currents [%.3f, %.3f], kelvins [%.2f, %.2f]',
+                               heater_current_0, heater_current_1, mixer_temp_0, mixer_temp_1)
             if mixer_temp_0 >= target_temp and mixer_temp_1 >= target_temp:
                 break
         # disable heaters
         self.femc.set_sis_heater_enable(self.ca, 0, 0)
         self.femc.set_sis_heater_enable(self.ca, 1, 0)
-        self.log.info('_mixer_heating: hot kelvins: %g %g', mixer_temp_0, mixer_temp_1)
+        self.log.info('_mixer_heating: heaters off, hot kelvins: %.2f %.2f', mixer_temp_0, mixer_temp_1)
         # TODO: complain if mixer temps are lower than target?
         timeout = time.time() + 300  # 5min
         self.log.info('_mixer_heating: cooldown loop')
@@ -1051,11 +1062,12 @@ class Cart(object):
             self.sleep(1)
             mixer_temp_0 = self.femc.get_cartridge_lo_cartridge_temp(self.ca, 2)
             mixer_temp_1 = self.femc.get_cartridge_lo_cartridge_temp(self.ca, 5)
+            self.log.debug('_mixer_heating: kelvins: %.2f %.2f', mixer_temp_0, mixer_temp_1)
             if mixer_temp_0 < base_mixer_temp_0 and mixer_temp_1 < base_mixer_temp_1:
                 break
-        self.log.info('_mixer_heating: cold kelvins: %g %g', mixer_temp_0, mixer_temp_1)
+        self.log.info('_mixer_heating: cold kelvins: %.2f %.2f', mixer_temp_0, mixer_temp_1)
         if mixer_temp_0 >= base_mixer_temp_0 or mixer_temp_1 >= base_mixer_temp_1:
-            raise RuntimeError(self.logname + ' _mixer_heating cooldown failed, (%g, %g) >= (%g, %g) K' % (mixer_temp_0, mixer_temp_1, base_mixer_temp_0, base_mixer_temp_1))
+            raise RuntimeError(self.logname + ' _mixer_heating cooldown failed, (%.2f, %.2f) >= (%.2f, %.2f) K' % (mixer_temp_0, mixer_temp_1, base_mixer_temp_0, base_mixer_temp_1))
         # Cart._mixer_heating
     
     
