@@ -947,6 +947,7 @@ class Cart(object):
             self.log.info('no SIS magnets for po=%d sb=%d, skipping demagnetize', po,sb)
             return
         
+        t0 = time.time()
         i_mag = [0,0,0,0,0, 30, 50, 50, 20, 50, 100][self.band]  # TODO make configurable
         sleep_secs = 0.1
         i_mag_dec = 1
@@ -975,6 +976,8 @@ class Cart(object):
             s = endpoint - time.time()
             if s > 0.001:
                 time.sleep(s)
+        t1 = time.time()
+        self.log.debug('_demagnetize: took %g seconds', t1-t0)
         # Cart._demagnetize
     
     
@@ -998,6 +1001,8 @@ class Cart(object):
         if self.high_temperature():
             self.log.info('high temperature, skipping mixer heating')
             return
+
+        t0 = time.time()
         self._ramp_sis_magnet_currents([0.0]*4)  # harmless if no SIS magnets
         # measure baseline pol0/1 heater current and mixer temp, 10x 50ms = 0.5s
         self.log.info('_mixer_heating: measuring baseline heater currents and mixer temps')
@@ -1044,8 +1049,8 @@ class Cart(object):
             mixer_temp_0 = self.femc.get_cartridge_lo_cartridge_temp(self.ca, 2)
             mixer_temp_1 = self.femc.get_cartridge_lo_cartridge_temp(self.ca, 5)
             now = time.time()
-            if now >= debugtime:
-                debugtime = now + debug_interval
+            if now >= debug_time:
+                debug_time = now + debug_interval
                 self.log.debug('_mixer_heating: currents [%.3f, %.3f], kelvins [%.2f, %.2f]',
                                heater_current_0, heater_current_1, mixer_temp_0, mixer_temp_1)
             if mixer_temp_0 >= target_temp and mixer_temp_1 >= target_temp:
@@ -1066,6 +1071,8 @@ class Cart(object):
             if mixer_temp_0 < base_mixer_temp_0 and mixer_temp_1 < base_mixer_temp_1:
                 break
         self.log.info('_mixer_heating: cold kelvins: %.2f %.2f', mixer_temp_0, mixer_temp_1)
+        t1 = time.time()
+        self.log.debug('_mixer_heating: took %g seconds', t1-t0)
         if mixer_temp_0 >= base_mixer_temp_0 or mixer_temp_1 >= base_mixer_temp_1:
             raise RuntimeError(self.logname + ' _mixer_heating cooldown failed, (%.2f, %.2f) >= (%.2f, %.2f) K' % (mixer_temp_0, mixer_temp_1, base_mixer_temp_0, base_mixer_temp_1))
         # Cart._mixer_heating
