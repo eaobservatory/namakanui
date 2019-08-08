@@ -164,7 +164,7 @@ class Agilent(object):
     def set_dbm(self, dbm):
         '''Set output amplitude in dBm.  Updates state, but does not publish.'''
         dbm = float(dbm)
-        self.set_cmd(':power', dbm, '%.7f')
+        self.set_cmd(':power', dbm, '%.2f')
         self.state['dbm'] = dbm
     
     def set_output(self, on):
