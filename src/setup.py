@@ -6,7 +6,10 @@ uae.git_version_file('namakanui/version.py')
 uae.setup(
     scripts = ['namakanui_task.py',
                'cartridge_task.py',
-               'fe_namakanui.py'],
+               'fe_namakanui.py',
+               'dbm_table.py',
+               'mixer_iv.py',
+               'pa_sweep.py'],
     packages = ['namakanui'],
 )
 
