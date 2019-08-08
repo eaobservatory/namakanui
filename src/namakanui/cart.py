@@ -782,9 +782,15 @@ class Cart(object):
         
         NOTE: PAs should already be set to nominal values from tune().
         
-        TODO: I'd like to see the general shape of current vs drain curves.
-        In general, increased voltage produces increased mixer current,
-        but there might be local maxima to deal with.
+        Generally, increasing PA drain voltage results in greater (magnitude)
+        SIS mixer current.  However, the mixer current can be noisy enough
+        to result in small local minima/maxima.  The original algorithm looked
+        for a +-5% "window", but I think instead we can just step toward the
+        target mixer current until the error changes sign.
+
+        The documented step of 2.5/255 can result in quantization steps
+        for band7, I think due to float32 rounding.  We use a slightly
+        higher value to avoid aliasing.
         '''
         self.log.info('_servo_pa')
         
@@ -804,47 +810,38 @@ class Cart(object):
         nom_mixer = interp_table(self.mixer_table, lo_ghz)
         nom_curr = [nom_mixer[5]*.001, nom_mixer[7]*.001]  # table in uA, but readout in mA.
         self.log.debug('_servo_pa nom_pa=%s, nom_curr=%s', nom_pa, nom_curr)
-        step = 2.5/255
         for po in range(2):
+            # pa affects current magnitude,
+            # so for negative currents we must reverse our steps.
+            step = 0.009803923  #2.5/255;
+            if nom_curr[po] < 0.0:
+                step *= -1.0
             pa = nom_pa[po]
-            win_curr = nom_curr[po] * 0.05  # +-5% window
-            win_lo = nom_curr[po] - win_curr
-            win_hi = nom_curr[po] + win_curr
-            self.log.debug('_servo_pa po %d current window [%.3f, %.3f] uA', po, win_lo*1e3, win_hi*1e3)
-            win_dir = 0
             min_err = 1e300
-            done = False
-            while 0.0 < pa < 2.5 and not done:
+            min_err_pa = pa
+            step_dir = 0
+            while 0.0 <= pa <= 2.5:
                 # average mixer current
                 curr = 0.0
                 n = 10
                 for i in range(n):
-                    # TODO do we need a short sleep between reads?
                     curr += self.femc.get_sis_current(self.ca, po, 0)
                 curr /= n
                 self.log.debug('_servo_pa po %d pa %.2f curr %.3f uA', po, pa, curr*1e3)
-                if curr < win_lo:
-                    pa += step
-                elif curr > win_hi:
-                    pa -= step
-                else:
-                    # in the window, step until error increases, then step back.
-                    # assign step direction only once to prevent oscillation.
-                    diff_curr = nom_curr[po] - curr
-                    win_dir = win_dir or sign(diff_curr) or 1
-                    err = abs(diff_curr)
-                    if err < min_err:
-                        min_err = err
-                        pa += win_dir * step
-                    else:
-                        pa -= win_dir * step
-                        done = True
+                diff_curr = nom_curr[po] - curr
+                step_dir = step_dir or sign(diff_curr) or 1
+                err = abs(diff_curr)
+                if err < min_err:
+                    min_err = err
+                    min_err_pa = pa
+                if sign(diff_curr) != step_dir:
+                    break
+                pa += step_dir * step
                 self.femc.set_cartridge_lo_pa_pol_drain_voltage_scale(self.ca, po, pa)
-                # TODO do we need a small sleep to let sis current adjust?
-            if pa <= 0.0 or pa >= 2.5:
-                pa = nom_pa[po]
-                self.log.warn('_servo_pa[%d] failed, setting back to %g', po, pa)
-                self.femc.set_cartridge_lo_pa_pol_drain_voltage_scale(self.ca, po, pa)
+
+            pa = min_err_pa
+            self.femc.set_cartridge_lo_pa_pol_drain_voltage_scale(self.ca, po, pa)
+            self.log.debug('_servo_pa po %d pa %.2f min_err %.3f uA (done)', po, pa, min_err*1e3)
         # Cart._servo_pa
     
     
