@@ -20,14 +20,18 @@ NOTE: The stage is not homed automatically.  During GLT testing there were
       requiring supervision.  If Namakanui is configured differently, this
       class should be altered to allow automatic homing.
 
-TODO: Make sure wheel is stopped if actions are kicked or errors occur.
+NOTE: The motor be turned off and the load positioned by hand:
+      send cmd 'C:10' and spin the small wheel on the gear drive.
+      However, the controller loses its 'homed' status
+      and will no longer update the position count.
 
-TODO: Can the motor be turned off and the wheel positioned by hand?
+TODO: Command cheat sheet.
 '''
 
 from namakanui.ini import IncludeParser
 from namakanui import sim
 import socket
+import select
 import time
 import logging
 
@@ -53,6 +57,12 @@ class Load(object):
         self.logname = self.config['load']['logname']
         self.log = logging.getLogger(self.logname)
         
+        # I would query the controller for this if I could
+        self.speed = float(self.config['load']['speed'])
+        
+        # can query controller for this; do so in initialise
+        self.wrap = int(self.config['load']['wrap'])
+        
         # NOTE: reverse lookup does not allow synonymous positions
         self.positions = {n:int(p) for n,p in self.config['positions'].items()}
         self.positions_r = {p:n for n,p in self.positions.items()}
@@ -60,7 +70,19 @@ class Load(object):
         self.log.debug('__init__ %s, sim=%d', inifilename, self.simulate)
         self.initialise()
         # Load.__init__
+
+
+    def __del__(self):
+        self.log.debug('__del__')
+        self.close()
+
     
+    def close(self):
+        self.log.debug('close')
+        if hasattr(self, 's'):
+            self.s.close()
+            del self.s
+        
     
     def initialise(self):
         '''(Re)connect to the CMS port and call update().'''
@@ -70,13 +92,35 @@ class Load(object):
         self.simulate &= sim.SIM_LOAD
         
         if not self.simulate:
+            self.close()
             timeout = float(self.config['load']['timeout'])
             cms = self.config['load']['cms']
             port = int(self.config['load']['port'])
-            self.s = socket.socket()
-            self.s.settimeout(timeout)
-            self.s.connect((cms, port))
-            # make sure the motor is on
+            # the cms doesn't like to reconnect, so try a few times
+            self.log.debug('connecting to %s:%d', cms, port)
+            attempt = 0
+            max_attempts = 3
+            while attempt < max_attempts:
+                try:
+                    self.s = socket.socket()
+                    self.s.settimeout(timeout)
+                    self.s.connect((cms, port))
+                    break
+                except socket.error as e:
+                    attempt += 1
+                    if attempt >= max_attempts:
+                        self.log.error('giving up, error connecting to %s:%d: %s', cms, port, e)
+                        raise
+                    self.log.error('retrying after error connecting to %s:%d: %s', cms, port, e)
+                    self.sleep(0.5)
+            if attempt:
+                self.log.info('connected to %s:%d after %d attempts', cms, port, attempt+1)
+            # double-check the number of counts per full rotation
+            wrap = int(self.cmd('?:R\r\n')[1:])  # skip '+'
+            if wrap != self.wrap:
+                self.log.warning('wrap was set to %d, but controller reports %d', self.wrap, wrap)
+                self.wrap = wrap  # trust the controller
+            # make sure the motor is on.
             r = self.cmd('C:11\r\n')
             if r != 'OK\r\n':
                 raise RuntimeError('bad reply to C: %s' % (r))
@@ -123,15 +167,52 @@ class Load(object):
     
     
     def cmd(self, c):
-        '''Send command string c to controller and return reply.'''
+        '''Send command string c to controller and return reply.
+           TODO: pass in bytes everywhere, avoid encode/decode.
+        '''
+        # clear out any leftover junk on the socket before sending
+        while select.select([self.s],[],[],0.0)[0]:
+            self.s.recv(64)
+        c = c.encode()  # needs to be bytes
         self.log.debug('cmd: %s', c)
         self.s.sendall(c)
-        r = ''
-        while not '\r\n' in r:
+        r = b''
+        while not b'\r\n' in r:
             r += self.s.recv(64)
+        # if the controller is power-cycled, we get a 0xff byte.
+        # remove any such bytes from the reply string.
+        r = r.replace(b'\xff', b'')
         self.log.debug('reply: %s', r)
-        return r
+        return r.decode()
         # Load.cmd
+    
+    
+    def stop(self):
+        '''Decelerate and stop the motor.  Wait for ready status.'''
+        self.log.debug('stop')
+        
+        if self.simulate:
+            self.update()  # sets busy=0
+            return
+            
+        r = self.cmd('L:1\r\n')
+        if r != 'OK\r\n':
+            raise RuntimeError('bad reply to L: %s' % (r))
+        
+        # a foolish consistency
+        try:
+            # wait 3s for ready status
+            self.update()
+            timeout = time.time() + 3.0
+            while self.state['busy'] and time.time() < timeout:
+                self.sleep(0.5)
+                self.update()
+            if self.state['busy']:
+                raise RuntimeError('timeout waiting for axis ready')
+        finally:
+            self.cmd('L:1\r\n')  # why not
+        
+        # Load.stop
     
     
     def home(self):
@@ -139,30 +220,32 @@ class Load(object):
         self.log.debug('home')
         
         if self.simulate:
-            self.state['homed'] = 1
-            self.update()
+            self.update()  # sets homed=1
             return
         
-        # stop whatever we're doing
-        r = self.cmd('L:1\r\n')
-        if r != 'OK\r\n':
-            raise RuntimeError('bad reply to L: %s' % (r))
+        # stop whatever we're doing and wait for ready status
+        self.stop()
         
-        # TODO: does H need to wait for ready status?
-        r = self.cmd('H:1\r\n')
-        if r != 'OK\r\n':
-            raise RuntimeError('bad reply to H: %s' % (r))
-       
-        # wait 30s for completion
-        timeout = time.time() + 30
-        self.state['busy'] = 1
-        while self.state['busy'] and time.time() < timeout:
-            self.sleep(0.5)
-            self.update()
-        if self.state['busy']:
-            raise RuntimeError('timeout waiting for home completion')
-        if not self.state['homed']:
-            raise RuntimeError('home failed')
+        # be careful to stop the motor on any error
+        try:
+            # send the homing command
+            r = self.cmd('H:1\r\n')
+            if r != 'OK\r\n':
+                raise RuntimeError('bad reply to H: %s' % (r))
+           
+            # wait 30s for completion
+            timeout = time.time() + 30.0
+            self.state['busy'] = 1
+            while self.state['busy'] and time.time() < timeout:
+                self.sleep(0.5)
+                self.update()
+            if self.state['busy']:
+                raise RuntimeError('timeout waiting for home completion')
+            if not self.state['homed']:
+                raise RuntimeError('home failed')
+        finally:
+            self.cmd('L:1\r\n')  # make sure motor stops moving
+        
         # Load.home
     
     
@@ -173,50 +256,56 @@ class Load(object):
         if pos in self.positions:
             pos = self.positions[pos]
         pos = int(pos)
+        pos = pos % self.wrap  # prevent windup
+        
         if self.simulate:
             self.state['pos_counts'] = pos
             self.state['pos_name'] = self.positions_r.get(pos, 'undef')
             self.update()
             return
+        
         if not self.state['homed']:
             raise RuntimeError('stage not homed')
         
-        # stop whatever we're doing
-        r = self.cmd('L:1\r\n')
-        if r != 'OK\r\n':
-            raise RuntimeError('bad reply to L: %s' % (r))
+        # stop whatever we're doing and wait for ready status
+        self.stop()
         
-        # wait 5s for ready status
-        timeout = time.time() + 5
-        while self.state['busy'] and time.time() < timeout:
-            self.sleep(0.5)
-            self.update()
-        if self.state['busy']:
-            raise RuntimeError('timeout waiting for axis ready')
-        
-        # maybe we're already there?
+        # maybe we're already in position?
         if pos == self.state['pos_counts']:
             return
         
-        # send absolute position command and start move
+        # send absolute position command
         r = self.cmd('A:1+P%d\r\n' % (pos))
         if r != 'OK\r\n':
             raise RuntimeError('bad reply to A: %s' % (r))
-        r = self.cmd('G:\r\n')
-        if r != 'OK\r\n':
-            raise RuntimeError('bad reply to G: %s' % (r))
         
-        # wait 15s to finish
-        timeout = time.time() + 15
-        self.state['busy'] = 1
-        while self.state['busy'] and time.time() < timeout:
-            self.sleep(0.5)
-            self.update()
-        if self.state['busy']:
-            raise RuntimeError('timeout waiting for move completion')
-        end_pos = self.state['pos_counts']
-        if end_pos != pos:
-            raise RuntimeError('move ended at %d instead of %d' % (end_pos, pos))
+        # from now on we must be careful to stop on error
+        try:
+            # start the move
+            r = self.cmd('G:\r\n')
+            if r != 'OK\r\n':
+                raise RuntimeError('bad reply to G: %s' % (r))
+            
+            # wait for move to finish
+            dist = pos - self.state['pos_counts']
+            timeout = abs(dist) / self.speed + 3.0
+            self.log.debug('moving from %d to %d: distance %d counts, timeout %.2fs',
+                            self.state['pos_counts'], pos, dist, timeout)
+            timeout = time.time() + timeout  # wall time
+            self.state['busy'] = 1
+            while self.state['busy'] and time.time() < timeout:
+                self.sleep(0.5)
+                self.update()
+            if self.state['busy']:
+                raise RuntimeError('timeout waiting for move completion')
+            
+            # make sure we ended up in the right place
+            end_pos = self.state['pos_counts']
+            if end_pos != pos:
+                raise RuntimeError('move ended at %d instead of %d' % (end_pos, pos))
+        finally:
+            self.cmd('L:1\r\n')  # make sure motor stops moving
+        
         # Load.move
 
 
