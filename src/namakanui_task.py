@@ -13,7 +13,7 @@ but controls other hardware (load, cryostat) directly.
 This is an engineering control task, and is expect to run most of the time.
 The frontend (wrapper) tasks for ACSIS will remain separate.
 
-
+TODO: Add more control actions.
 '''
 
 import jac_sw
@@ -26,8 +26,8 @@ import subprocess
 from namakanui.ini import IncludeParser
 import namakanui.cryo
 import namakanui.load
-# NOTE the reference signal generator interface should be more generic.
 import namakanui.agilent
+import namakanui.ifswitch
 
 import argparse
 parser = argparse.ArgumentParser()
@@ -52,6 +52,7 @@ inifile = None
 agilent = None
 cryo = None
 load = None
+ifswitch = None
 
 # indexed by band number (int)
 cartridge_tasknames = {}  
@@ -67,7 +68,7 @@ def INITIALISE(msg):
         INITIALISE: The ini file path
         SIMULATE: Bitmask. If given, overrides config file settings.
     '''
-    global initialised, inifile, agilent, cryo, load
+    global initialised, inifile, agilent, cryo, load, ifswitch
     global cartridge_tasknames, cold_mult, warm_mult
     
     log.debug('INITIALISE(%s)', msg.arg)
@@ -135,16 +136,19 @@ def INITIALISE(msg):
     del agilent
     del cryo
     del load
+    del ifswitch
     agilent = None
     cryo = None
     load = None
+    ifswitch = None
     gc.collect()
     agilent = namakanui.agilent.Agilent(datapath+nconfig['agilent_ini'], drama.wait, drama.set_param, simulate)
     cryo = namakanui.cryo.Cryo(datapath+nconfig['cryo_ini'], drama.wait, drama.set_param, simulate)
     load = namakanui.load.Load(datapath+nconfig['load_ini'], drama.wait, drama.set_param, simulate)
+    ifswitch = namakanui.ifswitch.IFSwitch(datapath+nconfig['ifswitch_ini'], drama.wait, drama.set_param, simulate)
     
-    # rebuild the actual simulate bitmask for our own status
-    simulate = agilent.simulate | cryo.simulate | load.simulate
+    # rebuild the simulate bitmask from what was actually set
+    simulate = agilent.simulate | cryo.simulate | load.simulate | ifswitch.simulate
     for band in [3,6,7]:
         task = cartridge_tasknames[band]
         simulate |= drama.get(task, 'SIMULATE').wait(5).arg['SIMULATE']
@@ -169,6 +173,9 @@ def UPDATE(msg):
     Try updating everything in one call since it is simpler than staggering.
     
     TODO: wrap this in a try/catch block?
+    
+    TODO: small delay between updates to let DRAMA message loop run?
+          or stagger individual updates?
     '''
     delay = 10
     if msg.reason == drama.REA_KICK:
@@ -185,6 +192,7 @@ def UPDATE(msg):
     cryo.update()
     load.update()
     agilent.update()
+    ifswitch.update()
     drama.reschedule(delay)
     # UPDATE
 
@@ -194,16 +202,18 @@ def LOAD_HOME(msg):
        
        NOTE: This can twist up any wires running to the load stage,
              e.g. for a tone source. Supervise as needed.
-       
-       TODO: A kick will interrupt the wait/update loop,
-             but we need to make sure the wheel stops.
     '''
     log.debug('LOAD_HOME')
     if not initialised:
         raise drama.BadStatus(drama.APP_ERROR, 'task needs INITIALISE')
-    log.info('homing load...')
-    load.home()
-    log.info('load homed.')
+    if msg.reason == drama.REA_OBEY:
+        log.info('homing load...')
+        load.home()
+        log.info('load homed.')
+    else:
+        log.error('LOAD_HOME stopping load due to unexpected msg %s', msg)
+        load.stop()
+    # LOAD_HOME
 
 
 def load_move_args(POSITION):
@@ -216,11 +226,16 @@ def LOAD_MOVE(msg):
     log.debug('LOAD_MOVE(%s)', msg.arg)
     if not initialised:
         raise drama.BadStatus(drama.APP_ERROR, 'task needs INITIALISE')
-    args,kwargs = drama.parse_argument(msg.arg)
-    pos = load_move_args(*args,**kwargs)
-    log.info('moving load to %s...', pos)
-    load.move(pos)
-    log.info('load at %d, %s.', load.state['pos_counts'], load.state['pos_name'])
+    if msg.reason == drama.REA_OBEY:
+        args,kwargs = drama.parse_argument(msg.arg)
+        pos = load_move_args(*args,**kwargs)
+        log.info('moving load to %s...', pos)
+        load.move(pos)
+        log.info('load at %d, %s.', load.state['pos_counts'], load.state['pos_name'])
+    else:
+        log.error('LOAD_MOVE stopping load due to unexpected msg %s', msg)
+        load.stop()
+    # LOAD MOVE
 
 
 def cart_power_args(BAND, ENABLE):
@@ -268,8 +283,6 @@ def CART_TUNE(msg):
                      If not given, voltage will not be adjusted
                      following the initial lock.
        
-       TODO: Set IF switch.
-       
        TODO: lock polarity (below or above reference) could be a parameter.
              for now we just read back from the cartridge task.
     '''
@@ -284,6 +297,11 @@ def CART_TUNE(msg):
         raise drama.BadStatus(drama.INVARG, 'LO_GHZ %g not in [70,400]' % (lo_ghz))
     if voltage and not -10<=voltage<=10:
         raise drama.BadStatus(drama.INVARG, 'VOLTAGE %g not in [-10,10]' % (voltage))
+    
+    if ifswitch.get_band() != band:
+        log.info('setting IF switch to band %d', band)
+        agilent.set_dbm(-30.0)  # reduce reference signal power first
+        ifswitch.set_band(band)
     
     cartname = cartridge_tasknames[band]
     
