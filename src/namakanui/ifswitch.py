@@ -6,6 +6,9 @@ Uses the ADAM classes created by John Kuroda.
 
 The low-frequency lines (<12 GHz) are switched by Mini Circuits, MSP4T.
 The high-frequency lines (>18 GHz) are switched by a Keysight, 87104D.
+
+TODO: This could be a bit more generic, selecting Rx1, Rx2, Rx3 instead
+      of band 3, 6, 7.  But for now we'll keep it Namakanui-specific.
 '''
 
 from namakanui.ini import *
@@ -98,9 +101,9 @@ class IFSwitch(object):
 
     
     def update(self, do_publish=True):
-        '''Update and publish state.  Call every 10s or so.
-           NOTE: The ADAMs will time out and disconnect if we don't talk
-                 to them every minute or so.
+        '''Update and publish state.  Call every 10s.
+           NOTE: The 6260 will time out and disconnect if we don't
+                 talk to it every 30s or so.
         '''
         self.log.debug('update(%s)', do_publish)
         
@@ -130,10 +133,10 @@ class IFSwitch(object):
         # IFSwitch.raise_315
     
     
-    def switch(self, band):
+    def set_band(self, band):
         '''Switch to the desired receiver band, [3,6,7].
         '''
-        self.log.debug('switch(%s)', band)
+        self.log.debug('set_band(%s)', band)
         
         band = int(band)
         if band not in [3,6,7]:
@@ -156,14 +159,14 @@ class IFSwitch(object):
         
         # if things already look correct, do nothing
         if self.state['DO'] == outputs:
-            self.log.debug('switch: DO already %s', outputs)
+            self.log.debug('set_band: DO already %s', outputs)
             self.raise_315()  # ...but check on the 31.5 MHz lock first
             return
         
         # zero all outputs.  note that since the keysight switch is a latching
         # switch, this will not actually break the previous connection.
         # however, the next connection will be done break-before-make.
-        self.log.debug('switch: zeroing outputs')
+        self.log.debug('set_band: zeroing outputs')
         self.adam_6260.set_DO([0]*6)
         
         # wait a short time for the relays to open
@@ -173,7 +176,7 @@ class IFSwitch(object):
         # latching switch, it has an internal position sensor that cuts the
         # drive current once the relay is closed -- so we just leave the
         # desired bit enabled.
-        self.log.debug('switch: setting outputs to %s', outputs)
+        self.log.debug('set_band: setting outputs to %s', outputs)
         self.adam_6260.set_DO(outputs)
         
         # wait a short time for the relays to close
@@ -189,10 +192,20 @@ class IFSwitch(object):
         # might as well check this again too
         self.raise_315()
         
-        # IFSwitch.switch
+        # IFSwitch.set_band
 
 
-
+    def get_band(self):
+        '''Return current band (3,6,7) or 0 if unknown.'''
+        DO = self.state['DO']
+        if DO == [1,0,0,1,0,0]:
+            return 3
+        elif DO == [0,1,0,0,1,0]:
+            return 6
+        elif DO == [0,0,1,0,0,1]:
+            return 7
+        return 0
+        # IFSwitch.get_band
 
 
 
