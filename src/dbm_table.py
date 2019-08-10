@@ -69,7 +69,7 @@ def adjust_dbm(lo_ghz):
     agilent.set_hz(fsig*1e9)
     
     # find initial lock at low(ish) power
-    dbm = -12.0
+    dbm = -16.0
     while dbm <= 0.0:
         logging.info('lo_ghz %g, dbm %g', lo_ghz, dbm)
         agilent.set_dbm(dbm)
