@@ -91,15 +91,14 @@ ca = args.band - 1
 # matplotlib version
 logging.info('importing pylab...')
 from pylab import *
+
+# construct the list of mV settings
 mvs = []
 mv = args.mv_min
 while mv < args.mv_max:
     mvs.append(mv)
     mv += args.mv_step
 mvs.append(args.mv_max)
-
-mv = [[], [], [], []]
-ua = [[], [], [], []]
 
 #cart._ramp_sis_bias_voltages([mvs[0]]*4)
 def ramp(x):
@@ -121,35 +120,60 @@ def ramp(x):
 
 def sample(what=''):
     ramp(args.mv_min)
-    logging.info('sampling...')
+    logging.info('sampling %s...', what)
+    # also output to stdout for topcat
+    sys.stdout.write('#mV_%s mV01 uA01 mV02 uA02 mV11 uA11 mV12 uA12\n'%(what))
+    # progress every second is about every 50th sample
+    progress_step = 50
+    progress = progress_step
     mv = [[], [], [], []]
     ua = [[], [], [], []]
-    for smv in mvs:
+    for j,smv in enumerate(mvs):
         for po in range(2):
             for sb in range(2):
                 femc.set_sis_voltage(ca, po, sb, smv)
-        #time.sleep(.001)
+        time.sleep(.001)  # each smv takes ~20ms to sample anyway
         for po in range(2):
             for sb in range(2):
-                avg_curr = 0.0
+                avg_mv = 0.0
+                avg_ua = 0.0
                 n = 10
                 for i in range(n):
-                    avg_curr += femc.get_sis_current(ca,po,sb)*1e3
-                avg_curr /= n
-                mv[po*2 + sb].append(smv)#femc.get_sis_voltage(ca, po, sb))
-                ua[po*2 + sb].append(avg_curr)#femc.get_sis_current(ca, po, sb)*1e3)
-    logging.info('sampling done.')
+                    avg_ua += femc.get_sis_current(ca,po,sb)*1e3
+                    avg_mv += femc.get_sis_voltage(ca, po, sb)
+                avg_ua /= n
+                avg_mv /= n
+                sys.stdout.write('%.3f %.3f ' % (avg_mv, avg_ua))
+                mv[po*2 + sb].append(smv)  # TODO try avg_mv
+                ua[po*2 + sb].append(avg_ua)
+        sys.stdout.write('\n')
+        sys.stdout.flush()
+        if j == progress and j < len(smv)-10:
+            logging.info('sampling %s %.1f%%', what, j*100.0/len(smv))
+            progress += progress_step
+    logging.info('sampling %s done.', what)
     ramp(0.0)
     for po in range(2):
         for sb in range(2):
             plot(mv[po*2+sb], ua[po*2+sb], '-', label='%d%d_%s'%(po,sb+1,what))
 
-sample('pa_on')
-femc.set_cartridge_lo_pa_pol_drain_voltage_scale(ca, 0, 0.0)
-femc.set_cartridge_lo_pa_pol_drain_voltage_scale(ca, 1, 0.0)
-femc.set_cartridge_lo_pa_pol_gate_voltage(ca, 0, 0.0)
-femc.set_cartridge_lo_pa_pol_gate_voltage(ca, 1, 0.0)
-sample('pa_off')
+
+
+# if hot, just take one sample 
+try:
+    k = femc.get_cartridge_lo_cartridge_temp(ca, 2)  # first mixer
+except:
+    k = 0.0
+
+if k <= 0.0 or k >= 30.0:
+    sample('%.2fK'%(k))
+else:
+    sample('pa_on')  # we assume
+    femc.set_cartridge_lo_pa_pol_drain_voltage_scale(ca, 0, 0.0)
+    femc.set_cartridge_lo_pa_pol_drain_voltage_scale(ca, 1, 0.0)
+    femc.set_cartridge_lo_pa_pol_gate_voltage(ca, 0, 0.0)
+    femc.set_cartridge_lo_pa_pol_gate_voltage(ca, 1, 0.0)
+    sample('pa_off')
 title('band %d IV' % (args.band))
 xlabel('mV')
 ylabel('uA')
