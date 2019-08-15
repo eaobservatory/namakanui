@@ -18,6 +18,9 @@ You can also give "ini-X" for this parameter to start with the value
 interpolated from the table in the agilent.ini file, minus X dBm.
 In any case, the resulting value will be clamped to [-30,-6] dBm for safety.
 
+Once you've created an output file, it can be converted to an ini table:
+
+grep -v '^#' <file> | sort -n | awk '{ printf "dbm%02d=%s, %6s\n", NR, $1, $2 }'
 
 
 Usage:
@@ -154,7 +157,7 @@ def adjust_dbm(lo_ghz):
         logging.error('lost lock at %g', lo_ghz)
         return
     #print(lo_ghz, dbm, cart.state['pll_if_power'])
-    sys.stdout.write('%g %6.2f %.3f\n' % (lo_ghz, dbm, cart.state['pll_if_power']))
+    sys.stdout.write('%.3f %6.2f %.3f\n' % (lo_ghz, dbm, cart.state['pll_if_power']))
     sys.stdout.flush()
         
 
