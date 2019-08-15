@@ -12,8 +12,16 @@ This script instantiates a Cart instance directly, rather than
 communicating with a running engineering task via DRAMA.  The two
 probably shouldn't run at the same time.
 
+The <dbm> parameter gives the starting dBm setting at each frequency;
+I've used -12 dBm for the ASIAA IF switch and -16 dBm for Bill's IF switch.
+You can also give "ini-X" for this parameter to start with the value
+interpolated from the table in the agilent.ini file, minus X dBm.
+In any case, the resulting value will be clamped to [-30,-6] dBm for safety.
+
+
+
 Usage:
-dbm_table.py <band> <LO_GHz_start> <LO_GHz_end> <LO_GHz_step> <lock_polarity>
+dbm_table.py <band> <LO_GHz_start> <LO_GHz_end> <LO_GHz_step> <lock_polarity> <dbm>
 '''
 
 import jac_sw
@@ -37,6 +45,7 @@ parser.add_argument('LO_GHz_start', type=float)
 parser.add_argument('LO_GHz_end', type=float)
 parser.add_argument('LO_GHz_step', type=float)
 parser.add_argument('lock_polarity', choices=['below','above'])
+parser.add_argument('dbm')
 args = parser.parse_args()
 #print(args.band, args.LO_GHz_start, args.LO_GHz_end, args.LO_GHz_step)
 
@@ -46,6 +55,16 @@ if args.LO_GHz_step < 0.01:
 if args.LO_GHz_start > args.LO_GHz_end:
     logging.error('start/end out of order')
     sys.exit(1)
+
+use_ini = False
+try:
+    args.dbm = float(args.dbm)
+except:
+    if not args.dbm.startswith('ini'):
+        logging.error('invalid dbm, must be a number or "ini"')
+        sys.exit(1)
+    use_ini = True
+    args.dbm = float(args.dbm[3:] or '0')
 
 #sys.exit(0)
 
@@ -68,8 +87,16 @@ def adjust_dbm(lo_ghz):
     fsig = (fyig*cart.warm_mult + floog) / agilent.harmonic
     agilent.set_hz(fsig*1e9)
     
-    # find initial lock at low(ish) power
-    dbm = -16.0
+    # get starting dbm value
+    dbm = args.dbm
+    if use_ini:
+        dbm += agilent.interp_dbm(args.band, lo_ghz)
+    
+    if dbm < -30.0:
+        dbm = -30.0
+    elif dbm > -6.0:
+        dbm = -6.0
+    
     while dbm <= 0.0:
         logging.info('lo_ghz %g, dbm %g', lo_ghz, dbm)
         agilent.set_dbm(dbm)
