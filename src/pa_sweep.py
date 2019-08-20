@@ -33,17 +33,13 @@ binpath = os.path.dirname(os.path.realpath(sys.argv[0])) + '/'
 datapath = os.path.realpath(binpath + '../../data') + '/'
 
 parser = argparse.ArgumentParser()
-parser.add_argument('band', type=int)
+parser.add_argument('band', type=int, choices=[3,6,7])
 parser.add_argument('lo_ghz', type=float)
 parser.add_argument('lock_polarity', choices=['below','above'])
 # NOTE the documented value of 2.5/255 causes aliasing
 # due to float32 rounding (I think), so we use a slightly higher value.
 parser.add_argument('pa_step', type=float, nargs='?', default=0.009803923)
 args = parser.parse_args()
-
-if args.band not in [3,6,7]:
-    logging.error('bad band')
-    sys.exit(1)
 
 def mypub(n,s):
     pass

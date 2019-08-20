@@ -34,7 +34,7 @@ binpath = os.path.dirname(os.path.realpath(sys.argv[0])) + '/'
 datapath = os.path.realpath(binpath + '../../data') + '/'
 
 parser = argparse.ArgumentParser()
-parser.add_argument('band', type=int)
+parser.add_argument('band', type=int, choices=[3,6,7])
 parser.add_argument('mv_min', type=float)
 parser.add_argument('mv_max', type=float)
 parser.add_argument('mv_step', type=float)
