@@ -86,6 +86,13 @@ floog = agilent.floog * {'below':1.0, 'above':-1.0}[args.lock_polarity]
 
 
 def adjust_dbm(lo_ghz):
+    
+    # sanity check
+    lo_ghz_range = {3:[75,90], 6:[210,270], 7:[280,365]}[args.band]
+    if lo_ghz < lo_ghz_range[0] or lo_ghz > lo_ghz_range[1]:
+        logging.error('skipping lo_ghz %g, outside range %s for band %d', lo_ghz, lo_ghz_range, args.band)
+        return
+    
     delay = .05
     fyig = lo_ghz / (cart.cold_mult * cart.warm_mult)
     fsig = (fyig*cart.warm_mult + floog) / agilent.harmonic
