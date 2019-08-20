@@ -9,7 +9,8 @@ uae.setup(
                'fe_namakanui.py',
                'dbm_table.py',
                'mixer_iv.py',
-               'pa_sweep.py'],
+               'pa_sweep.py',
+               'tune.sh'],
     packages = ['namakanui'],
 )
 
