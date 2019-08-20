@@ -189,7 +189,7 @@ try_adjust_dbm(lo_ghz)
 # since this script is also used to tune the receiver, retune once we've
 # found the optimal IF power to servo the PA.
 cart.update_all()
-if not cart.state['pll_unlock']:
+if cart.state['lo_ghz'] == lo_ghz and not cart.state['pll_unlock']:
     logging.info('retuning at %g to adjust PA...', lo_ghz)
     try:
         cart.tune(lo_ghz, 0.0)
