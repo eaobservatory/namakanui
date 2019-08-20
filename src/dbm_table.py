@@ -43,7 +43,7 @@ binpath = os.path.dirname(os.path.realpath(sys.argv[0])) + '/'
 datapath = os.path.realpath(binpath + '../../data') + '/'
 
 parser = argparse.ArgumentParser()
-parser.add_argument('band', type=int)
+parser.add_argument('band', type=int, choices=[3,6,7])
 parser.add_argument('LO_GHz_start', type=float)
 parser.add_argument('LO_GHz_end', type=float)
 parser.add_argument('LO_GHz_step', type=float)
@@ -73,6 +73,7 @@ except:
 
 def mypub(n,s):
     pass
+
 
 agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, mypub, simulate=0)
 agilent.log.setLevel(logging.INFO)
@@ -107,7 +108,7 @@ def adjust_dbm(lo_ghz):
         try:
             cart.tune(lo_ghz, 0.0)
             break
-        except Exception as e:
+        except RuntimeError as e:
             logging.error('tune error: %s, IF power: %g', e, cart.state['pll_if_power'])
             dbm += 1.0
     time.sleep(delay)
@@ -131,7 +132,7 @@ def adjust_dbm(lo_ghz):
                 cart.tune(lo_ghz, 0.0)
                 time.sleep(delay)
                 cart.update_all()
-            except Exception as e:
+            except RuntimeError as e:
                 logging.error('tune error: %s', e)
                 break   
     
@@ -148,7 +149,7 @@ def adjust_dbm(lo_ghz):
                 cart.tune(lo_ghz, 0.0)
                 time.sleep(delay)
                 cart.update_all()
-            except Exception as e:
+            except RuntimeError as e:
                 logging.error('tune error: %s', e)
                 break
     
@@ -159,17 +160,42 @@ def adjust_dbm(lo_ghz):
     #print(lo_ghz, dbm, cart.state['pll_if_power'])
     sys.stdout.write('%.3f %6.2f %.3f\n' % (lo_ghz, dbm, cart.state['pll_if_power']))
     sys.stdout.flush()
-        
+
+
+def try_adjust_dbm(lo_ghz):
+    try:
+        adjust_dbm(lo_ghz):
+    except Exception as e:
+        agilent.set_dbm(-30.0)  # safe
+        logging.error('unhandled exception: %s', e)
+        raise
+
 
 sys.stdout.write('#lo_ghz dbm pll_if_power\n')  # topcat ascii
 lo_ghz = args.LO_GHz_start
 while lo_ghz < args.LO_GHz_end:
-    adjust_dbm(lo_ghz)
+    try_adjust_dbm(lo_ghz)
     lo_ghz += args.LO_GHz_step
 lo_ghz = args.LO_GHz_end
-adjust_dbm(lo_ghz)
+try_adjust_dbm(lo_ghz)
 
+# since this script is also used to tune the receiver, retune once we've
+# found the optimal IF power to servo the PA.
+cart.update_all()
+if not cart.state['pll_unlock']:
+    logging.info('retuning at %g to adjust PA...', lo_ghz)
+    try:
+        cart.tune(lo_ghz, 0.0)
+        time.sleep(0.1)
+        cart.update_all()
+        if cart.state['pll_unlock']:
+            agilent.set_dbm(-30.0)
+            logging.error('lost lock at %g', lo_ghz)
+    except Exception as e:
+        agilent.set_dbm(-30.0)  # safe
+        logging.error('final retune exception: %s', e)
 
+logging.info('done.')
 
 
 
