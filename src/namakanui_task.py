@@ -44,7 +44,11 @@ log = logging.getLogger(args.taskname)
 
 # always use sibling cartridge_task.py (vs one in $PATH)
 binpath = os.path.dirname(os.path.realpath(sys.argv[0])) + '/'
-datapath = os.path.realpath(binpath + '../../data') + '/'
+# HACK, should crawl up
+if 'install' in binpath:
+    datapath = os.path.realpath(binpath + '../../data') + '/'
+else:
+    datapath = os.path.realpath(binpath + '../data') + '/'
 
 initialised = False
 inifile = None

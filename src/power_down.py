@@ -18,7 +18,11 @@ logging.root.addHandler(logging.StreamHandler())
 logging.root.setLevel(logging.INFO)
 
 binpath = os.path.dirname(os.path.realpath(sys.argv[0])) + '/'
-datapath = os.path.realpath(binpath + '../../data') + '/'
+# HACK, should crawl up
+if 'install' in binpath:
+    datapath = os.path.realpath(binpath + '../../data') + '/'
+else:
+    datapath = os.path.realpath(binpath + '../data') + '/'
 
 def mypub(n,s):
     pass

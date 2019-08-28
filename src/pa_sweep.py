@@ -30,7 +30,11 @@ logging.info('importing pylab...')
 from pylab import *
 
 binpath = os.path.dirname(os.path.realpath(sys.argv[0])) + '/'
-datapath = os.path.realpath(binpath + '../../data') + '/'
+# HACK, should crawl up
+if 'install' in binpath:
+    datapath = os.path.realpath(binpath + '../../data') + '/'
+else:
+    datapath = os.path.realpath(binpath + '../data') + '/'
 
 parser = argparse.ArgumentParser()
 parser.add_argument('band', type=int, choices=[3,6,7])
