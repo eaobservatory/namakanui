@@ -84,6 +84,17 @@ cart.power(1)
 cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
 floog = agilent.floog * {'below':1.0, 'above':-1.0}[args.lock_polarity]
 
+# check to make sure this receiver is selected.
+# TODO: once Bill's switch is installed, control it directly.
+rp = cart.state['pll_ref_power']
+if rp < -3.0:
+    logging.error('PLL reference power (FLOOG, 31.5 MHz) is too strong (%.2f V).  Please attenuate.', rp)
+    sys.exit(1)
+if rp > -0.5:
+    logging.error('PLL reference power (FLOOG, 31.5 MHz) is too weak (%.2f V).', rp)
+    logging.error('Please make sure the IF switch has band %d selected.', args.band)
+    sys.exit(1)
+
 
 def adjust_dbm(lo_ghz):
     
@@ -144,8 +155,13 @@ def adjust_dbm(lo_ghz):
                 break   
     
     # slowly increase power to target
-    while cart.state['pll_if_power'] > -1.5 and dbm < 0.0 and not cart.state['pll_unlock']:
-        dbm += 0.1
+    while cart.state['pll_if_power'] > -1.5 and dbm < -0.1 and not cart.state['pll_unlock']:
+        if cart.state['pll_if_power'] > -1.0 and dbm < -0.3:
+            dbm += 0.3
+        elif cart.state['pll_if_power'] > -1.25 and dbm < -0.2:
+            dbm += 0.2
+        else:
+            dbm += 0.1
         agilent.set_dbm(dbm)
         time.sleep(delay)
         cart.update_all()
@@ -171,7 +187,7 @@ def adjust_dbm(lo_ghz):
 
 def try_adjust_dbm(lo_ghz):
     try:
-        adjust_dbm(lo_ghz):
+        adjust_dbm(lo_ghz)
     except Exception as e:
         agilent.set_dbm(-30.0)  # safe
         logging.error('unhandled exception: %s', e)
@@ -198,6 +214,7 @@ if cart.state['lo_ghz'] == lo_ghz and not cart.state['pll_unlock']:
         if cart.state['pll_unlock']:
             agilent.set_dbm(-30.0)
             logging.error('lost lock at %g', lo_ghz)
+        logging.info('band %d tuned to %g GHz, IF power: %g', args.band, lo_ghz, cart.state['pll_if_power'])
     except Exception as e:
         agilent.set_dbm(-30.0)  # safe
         logging.error('final retune exception: %s', e)
