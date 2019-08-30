@@ -9,11 +9,13 @@ uae.setup(
                'dbm_simplify.py',
                'fe_namakanui.py',
                'mixer_iv.py',
+               'namakanui_gui.py',
                'namakanui_task.py',
                'pa_sweep.py',
                'power_down.py',
                'temp_mon.py',
-               'tune.py'],
+               'tune.sh',
+               'tune_only.py'],
     packages = ['namakanui'],
 )
 
