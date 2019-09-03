@@ -151,6 +151,9 @@ def INITIALISE(msg):
     load = namakanui.load.Load(datapath+nconfig['load_ini'], drama.wait, drama.set_param, simulate)
     ifswitch = namakanui.ifswitch.IFSwitch(datapath+nconfig['ifswitch_ini'], drama.wait, drama.set_param, simulate)
     
+    # publish the load.positions table for the GUI
+    drama.set_param('LOAD_TABLE', load.positions)
+    
     # rebuild the simulate bitmask from what was actually set
     simulate = agilent.simulate | cryo.simulate | load.simulate | ifswitch.simulate
     for band in [3,6,7]:
@@ -199,6 +202,73 @@ def UPDATE(msg):
     ifswitch.update()
     drama.reschedule(delay)
     # UPDATE
+
+
+# TODO: my naming scheme isn't very consistent
+
+def set_sg_dbm_args(DBM):
+    return float(DBM)
+
+def SET_SG_DBM(msg):
+    '''Set Agilent output power in dBm.'''
+    log.debug('SET_SG_DBM(%s)', msg.arg)
+    if not initialised:
+        raise drama.BadStatus(drama.APP_ERROR, 'task needs INITIALISE')
+    args,kwargs = drama.parse_argument(msg.arg)
+    dbm = set_sg_dbm_args(*args,**kwargs)
+    if dbm < -130.0 or dbm > 0.0:
+        raise drama.BadStatus(drama.INVARG, 'DBM %g outside [-130, 0] range' % (dbm))
+    log.info('setting agilent dbm to %g', dbm)
+    agilent.set_dbm(dbm)
+
+def set_sg_hz_args(HZ):
+    return float(HZ)
+
+def SET_SG_HZ(msg):
+    '''Set Agilent output frequency in Hz.'''
+    log.debug('SET_SG_HZ(%s)', msg.arg)
+    if not initialised:
+        raise drama.BadStatus(drama.APP_ERROR, 'task needs INITIALISE')
+    args,kwargs = drama.parse_argument(msg.arg)
+    hz = set_sg_hz_args(*args,**kwargs)
+    if hz < 9e3 or hz > 32e9:
+        raise drama.BadStatus(drama.INVARG, 'HZ %g outside [9 KHz, 32 GHz] range' % (hz))
+    log.info('setting agilent hz to %g', hz)
+    agilent.set_hz(hz)
+
+def set_sg_out_args(OUT):
+    return int(bool(OUT))
+
+def SET_SG_OUT(msg):
+    '''Set Agilent output on (1) or off (0).'''
+    log.debug('SET_SG_OUT(%s)', msg.arg)
+    if not initialised:
+        raise drama.BadStatus(drama.APP_ERROR, 'task needs INITIALISE')
+    args,kwargs = drama.parse_argument(msg.arg)
+    out = set_sg_out_args(*args,**kwargs)
+    log.info('setting agilent output to %d', out)
+    agilent.set_output(out)
+
+
+def set_band_args(msg, BAND):
+    return int(BAND)
+
+def SET_BAND(msg):
+    '''Set IFSwitch band to BAND.  If this would change the selection,
+       first sets Agilent to -30 dBm to avoid high power to mixer.'''
+    log.debug('SET_BAND(%s)', msg.arg)
+    if not initialised:
+        raise drama.BadStatus(drama.APP_ERROR, 'task needs INITIALISE')
+    args,kwargs = drama.parse_argument(msg.arg)
+    band = set_band_args(*args,**kwargs)
+    if band not in [3,6,7]:
+        raise drama.BadStatus(drama.INVARG, 'BAND %d not one of [3,6,7]' % (band))
+    if ifswitch.get_band() != band:
+        log.info('setting IF switch to band %d', band)
+        agilent.set_dbm(-30.0)  # reduce reference signal power first
+        ifswitch.set_band(band)
+    else:
+        log.info('IF switch already at band %d', band)
 
 
 def LOAD_HOME(msg):
@@ -343,6 +413,7 @@ try:
                tidefile = datapath+'namakanui.tide',
                buffers = [32000, 8000, 8000, 2000],
                actions=[UPDATE, INITIALISE,
+                        SET_SG_DBM, SET_SG_HZ, SET_SG_OUT,
                         LOAD_HOME, LOAD_MOVE,
                         CART_POWER, CART_TUNE])
     log.info('%s entering main loop.', taskname)
