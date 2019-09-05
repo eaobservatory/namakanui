@@ -13,6 +13,7 @@ uae.setup(
                'namakanui_task.py',
                'pa_sweep.py',
                'power_down.py',
+               'set_load.py',
                'temp_mon.py',
                'tune.sh',
                'tune_only.py'],

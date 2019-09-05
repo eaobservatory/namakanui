@@ -9,7 +9,7 @@ The manual can be found here (on malama):
 /export/smb/jcmteng/Instruments/GLTCryostat/externalManufactureDocs/GIP-101_UserManual.pdf
 
 Communication with the controller is via RS232 serial,
-so we connect through a CMS switch.
+so we connect through a CMS switch.  Default config is 9600b, 8N1.
 
 This class uses absolute positions given in the config file,
 rather than any of the programmed button positions -- since there are
