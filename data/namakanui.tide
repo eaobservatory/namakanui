@@ -16,3 +16,4 @@ field LAKESHORE.temp8   nmnCryo:ls:temp8  DBR_DOUBLE
 field VACUUM.s1       nmnCryo:adc:s1        DBR_STRING
 field VACUUM.p1       nmnCryo:adc:p1        DBR_DOUBLE
 field VACUUM.p1_calc  nmnCryo:adc:p1_calc   DBR_DOUBLE
+field VACUUM.unit     nmnCryo:adc:unit      DBR_STRING
