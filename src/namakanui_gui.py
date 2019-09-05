@@ -1067,32 +1067,12 @@ try:
     log.info('tk init')
     root = tk.Tk()
     root.title('Namakanui GUI: ' + taskname)
-    
-    # <Destroy> event callback to detect window close.
-    # this ought to be moved into the pydrama run() function.
-    destroy_once = 1
-    def on_destroy(event):
-        global destroy_once
-        if destroy_once:
-            destroy_once = 0
-            # don't want to raise here; it'll look like an error but
-            # the tk context will eat it anyway.
-            # could just call drama.Exit() without raising,
-            # which will do the blind_obey for us.
-            #raise drama.Exit('tk destroyed')
-            log.info('tk callback on_destroy sending %s EXIT', taskname)
-            drama.blind_obey(taskname, 'EXIT')
-    
-    root.bind("<Destroy>", on_destroy)
-    
     app = App(root)
+    
     log.info('drama.init(%s)', taskname)
     drama.init(taskname, buffers = [64000, 8000, 8000, 2000], actions=app.actions)
     app.start_monitors()
-    # try to give tk a head start or we get path timeouts.
-    # TODO move this into drama.run() too.
-    log.info('tk.update()')
-    root.update()
+    
     log.info('drama.run()...')
     drama.run()
 finally:
