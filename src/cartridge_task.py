@@ -157,7 +157,9 @@ def TUNE(msg):
 
 try:
     log.info('%s starting drama.', taskname)
-    drama.init(taskname, actions=[UPDATE, INITIALISE, POWER, TUNE])
+    drama.init(taskname,
+               buffers = [64000, 8000, 8000, 2000],
+               actions=[UPDATE, INITIALISE, POWER, TUNE])
     log.info('%s entering main loop.', taskname)
     drama.run()
 finally:

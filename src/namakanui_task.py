@@ -220,6 +220,7 @@ def SET_SG_DBM(msg):
         raise drama.BadStatus(drama.INVARG, 'DBM %g outside [-130, 0] range' % (dbm))
     log.info('setting agilent dbm to %g', dbm)
     agilent.set_dbm(dbm)
+    agilent.update(publish_only=True)
 
 def set_sg_hz_args(HZ):
     return float(HZ)
@@ -235,6 +236,7 @@ def SET_SG_HZ(msg):
         raise drama.BadStatus(drama.INVARG, 'HZ %g outside [9 KHz, 32 GHz] range' % (hz))
     log.info('setting agilent hz to %g', hz)
     agilent.set_hz(hz)
+    agilent.update(publish_only=True)
 
 def set_sg_out_args(OUT):
     return int(bool(OUT))
@@ -248,9 +250,10 @@ def SET_SG_OUT(msg):
     out = set_sg_out_args(*args,**kwargs)
     log.info('setting agilent output to %d', out)
     agilent.set_output(out)
+    agilent.update(publish_only=True)
 
 
-def set_band_args(msg, BAND):
+def set_band_args(BAND):
     return int(BAND)
 
 def SET_BAND(msg):
@@ -267,6 +270,7 @@ def SET_BAND(msg):
         log.info('setting IF switch to band %d', band)
         agilent.set_dbm(-30.0)  # reduce reference signal power first
         ifswitch.set_band(band)
+        agilent.update(publish_only=True)
     else:
         log.info('IF switch already at band %d', band)
 
@@ -411,9 +415,10 @@ try:
     log.info('%s starting drama.', taskname)
     drama.init(taskname,
                tidefile = datapath+'namakanui.tide',
-               buffers = [32000, 8000, 8000, 2000],
+               buffers = [64000, 8000, 8000, 2000],
                actions=[UPDATE, INITIALISE,
                         SET_SG_DBM, SET_SG_HZ, SET_SG_OUT,
+                        SET_BAND,
                         LOAD_HOME, LOAD_MOVE,
                         CART_POWER, CART_TUNE])
     log.info('%s entering main loop.', taskname)

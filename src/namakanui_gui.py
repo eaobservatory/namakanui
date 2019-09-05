@@ -28,44 +28,124 @@ import drama.retry
 
 from tkinter import ttk  # for Notebook (tabbed interface)
 import tkinter as tk
+from tkinter.scrolledtext import ScrolledText
 
 import sys
 import os
+import time
 taskname = 'NG_%d'%(os.getpid())
 
+# TODO add some way to change debug levels
 import drama.log
 import logging
 drama.log.setup()
 log = logging.getLogger(taskname)
 log.setLevel(logging.INFO)
+#logging.root.setLevel(logging.DEBUG)
+#drama.retry.log.setLevel(logging.DEBUG)
+#drama.__drama__._log.setLevel(logging.DEBUG)
+
+
+# add a new log handler to log to the messages text area.
+# instantiated by the App.
+class TextboxHandler(logging.Handler):
+    def __init__(self, textbox):
+        self.textbox = textbox
+        textbox.tag_config("d", foreground='gray')
+        textbox.tag_config("i", foreground='green')
+        textbox.tag_config("w", foreground='yellow')
+        textbox.tag_config("e", foreground='red')
+        self.tagdict = {logging.DEBUG:'d', logging.INFO:'i', logging.WARNING:'w', logging.ERROR:'e'}
+        super().__init__()
+        
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            tag = self.tagdict.get(record.levelno, 'd')
+            vbar_pos = self.textbox.vbar.get()[1]  # startfrac, endfrac
+            at_bottom = (vbar_pos==0) or (vbar_pos==1)  # 0 means empty
+            self.textbox.insert('end', msg, tag)
+            if at_bottom:
+                self.textbox.see('end')  # scroll to bottom
+            #if record.levelno < _logging.WARNING:  # TODO green/red
+        except tk.TclError:
+            # ignore; the window was probably closed.
+            pass
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except:
+            self.handleError(record)
+
 
 namakanui_taskname = 'NAMAKANUI'
 
 
 
-def grid_value(parent, row, column, sticky=''):
+def grid_value(parent, row, column, sticky='', label=False, width=8):
     '''
     Create a label at row/col and return the textvariable.
     Note you must still grid_columnconfigure and grid_rowconfigure yourself.
+    
+    tk.Label widgets can't be selected for copying/pasting,
+    so use a 'readonly' Entry widget instead.
     '''
     textvar = tk.StringVar()
     textvar.set('')
-    tk.Label(parent, textvariable=textvar).grid(row=row, column=column, sticky=sticky)
+    if label:
+        tk.Label(parent, textvariable=textvar).grid(row=row, column=column, sticky=sticky)
+    else:
+        e = tk.Entry(parent, textvariable=textvar, width=width, justify='right', state='readonly')
+        e.grid(row=row, column=column, sticky='nsew')#sticky=sticky)
     return textvar
 
 
-def grid_label(parent, text, row, last=False):
+def grid_label(parent, text, row, width=8):
     '''
-    Set up a [text value] row and return the textvariable.
+    Set up a [text: value] row and return the textvariable.
     Note you must still grid_columnconfigure and grid_rowconfigure yourself.
     TODO: probably want to save these labels so we can turn them red.
     '''
-    n = ''
-    if last:
-        n = 'n'
-    tk.Label(parent, text=text).grid(row=row, column=0, sticky='nw')#n+'w')
-    return grid_value(parent, row=row, column=1, sticky='ne')#n+'e')
+    tk.Label(parent, text=text).grid(row=row, column=0, sticky='nw')
+    return grid_value(parent, row=row, column=1, sticky='ne', width=width)
     
+
+class CryoFrame(tk.Frame):
+    def __init__(self, master=None):
+        super().__init__(master)
+        self.master = master
+        self.setup()
+    
+    def setup(self):
+        self.pack(fill='x')
+        tk.Label(self, text='edwards').grid(row=0, column=0, sticky='nw')
+        self.edwards = tk.Label(self, text="NO", bg='red')
+        self.edwards.grid(row=0, column=1, sticky='ne')
+        tk.Label(self, text='lakeshore').grid(row=1, column=0, sticky='nw')
+        self.lakeshore = tk.Label(self, text="NO", bg='red')
+        self.lakeshore.grid(row=1, column=1, sticky='ne')
+        self.v_vacuum_unit = grid_value(self, 2, 0, 'nw', label=True)
+        self.v_vacuum_s1 = grid_value(self, 2, 1, 'ne')
+        self.v_temp1 = grid_label(self, 'coldhead', 3)
+        self.v_temp2 = grid_label(self, '4K', 4)
+        self.v_temp3 = grid_label(self, '15K', 5)
+        self.v_temp4 = grid_label(self, '90K', 6)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(6, weight=1)
+    
+    def vacuum_changed(self, state):
+        self.edwards['text'] = "YES"
+        self.edwards['bg'] = 'green'
+        self.v_vacuum_unit.set(state['unit'])
+        self.v_vacuum_s1.set(state['s1'])
+    
+    def lakeshore_changed(self, state):
+        self.lakeshore['text'] = "YES"
+        self.lakeshore['bg'] = 'green'
+        self.v_temp1.set('%.3f'%(state['temp1']))
+        self.v_temp2.set('%.3f'%(state['temp2']))
+        self.v_temp3.set('%.3f'%(state['temp3']))
+        self.v_temp4.set('%.3f'%(state['temp4']))
 
 
 class LoadFrame(tk.Frame):
@@ -79,15 +159,18 @@ class LoadFrame(tk.Frame):
         self.pack(fill='x', expand=1)
         status_frame = tk.Frame(self)
         status_frame.pack(fill='x')
-        self.v_number = grid_label(status_frame, 'number', 0)
-        self.v_simulate = grid_label(status_frame, 'simulate', 1)  # TODO sim_text as tooltip
-        self.v_pos_counts = grid_label(status_frame, 'pos_counts', 2)
-        self.v_pos_name = grid_label(status_frame, 'pos_name', 3)
-        self.v_busy = grid_label(status_frame, 'busy', 4)
-        self.v_homed = grid_label(status_frame, 'homed', 5, last=True)
+        tk.Label(status_frame, text='connected').grid(row=0, column=0, sticky='nw')
+        self.connected = tk.Label(status_frame, text="NO", bg='red')
+        self.connected.grid(row=0, column=1, sticky='ne')
+        self.v_number = grid_label(status_frame, 'number', 1)
+        self.v_simulate = grid_label(status_frame, 'simulate', 2)  # TODO sim_text as tooltip
+        self.v_pos_counts = grid_label(status_frame, 'pos_counts', 3)
+        self.v_pos_name = grid_label(status_frame, 'pos_name', 4)
+        self.v_busy = grid_label(status_frame, 'busy', 5)
+        self.v_homed = grid_label(status_frame, 'homed', 6)
         status_frame.grid_columnconfigure(0, weight=1)
         status_frame.grid_columnconfigure(1, weight=1)
-        status_frame.grid_rowconfigure(5, weight=1)
+        status_frame.grid_rowconfigure(6, weight=1)
         cmd_frame = tk.Frame(self)
         cmd_frame.pack(side='right')#fill='x')
         move_frame = tk.Frame(cmd_frame)
@@ -115,6 +198,8 @@ class LoadFrame(tk.Frame):
         # LoadFrame.setup
         
     def mon_changed(self, state):
+        self.connected['text'] = "YES"
+        self.connected['bg'] = 'green'
         self.v_number.set('%d'%(state['number']))
         self.v_simulate.set('0x%x'%(state['simulate']))  # TODO tooltip, warning
         self.v_pos_counts.set('%d'%(state['pos_counts']))
@@ -124,7 +209,7 @@ class LoadFrame(tk.Frame):
     
     def table_changed(self, state):
         # update the position select combo box
-        self.combo['values'] = state.keys()
+        self.combo['values'] = list(state.keys())
         
     # LoadFrame
 
@@ -137,21 +222,24 @@ class AgilentFrame(tk.Frame):
     
     def setup(self):
         # number simulate sim_text hz dbm output
-        self.pack()
+        self.pack(fill='x')
         status_frame = tk.Frame(self)
         status_frame.pack(fill='x')
-        self.v_number = grid_label(status_frame, 'number', 0)
-        self.v_simulate = grid_label(status_frame, 'simulate', 1)  # TODO sim_text as tooltip
-        self.v_dbm = grid_label(status_frame, 'dbm', 2)
-        self.v_hz = grid_label(status_frame, 'hz', 3)
-        self.v_output = grid_label(status_frame, 'output', 4, last=True)
+        tk.Label(status_frame, text='connected').grid(row=0, column=0, sticky='nw')
+        self.connected = tk.Label(status_frame, text="NO", bg='red')
+        self.connected.grid(row=0, column=1, sticky='ne')
+        self.v_number = grid_label(status_frame, 'number', 1)
+        self.v_simulate = grid_label(status_frame, 'simulate', 2)  # TODO sim_text as tooltip
+        self.v_dbm = grid_label(status_frame, 'dbm', 3)
+        self.v_hz = grid_label(status_frame, 'hz', 4, width=13)
+        self.v_output = grid_label(status_frame, 'output', 5)
         status_frame.grid_columnconfigure(0, weight=1)
         status_frame.grid_columnconfigure(1, weight=1)
-        status_frame.grid_rowconfigure(4, weight=1)
+        status_frame.grid_rowconfigure(5, weight=1)
         # set DBM, HZ, OUTPUT
         cmd_frame = tk.Frame(self)
         cmd_frame.pack(side='right')
-        dh_frame = tk.Frame(self)
+        dh_frame = tk.Frame(cmd_frame)
         dh_frame.pack(fill='x')
         #tk.Label(dh_frame, text='dBm: ').grid(row=0, column=0, sticky='w')
         dbm_entry = tk.Entry(dh_frame, width=13, bg='white')
@@ -173,14 +261,14 @@ class AgilentFrame(tk.Frame):
         dh_frame.grid_columnconfigure(1, weight=1)
         dh_frame.grid_columnconfigure(2, weight=1)
         dh_frame.grid_rowconfigure(2, weight=1)
-        out_frame = tk.Frame(self)
+        out_frame = tk.Frame(cmd_frame)
         out_frame.pack(fill='x')
         #tk.Label(out_frame, text='Output:   ').pack(side='left')
         self.on_button = tk.Button(out_frame, text='ON')
-        self.on_button.pack(side='left', fill='x', expand=1)
-        tk.Label(out_frame, text='   ').pack(side='left')  # spacer
+        self.on_button.pack(side='left')
+        #tk.Label(out_frame, text='   ').pack(side='left')  # spacer
         self.off_button = tk.Button(out_frame, text='OFF')
-        self.off_button.pack(side='right', fill='x', expand=1)
+        self.off_button.pack(side='right')
         def on_callback():
             drama.blind_obey(taskname, "SET_SG_OUT", 1)
         def off_callback():
@@ -190,9 +278,11 @@ class AgilentFrame(tk.Frame):
         # AgilentFrame.setup
         
     def mon_changed(self, state):
+        self.connected['text'] = "YES"
+        self.connected['bg'] = 'green'
         self.v_number.set('%d'%(state['number']))
         self.v_simulate.set('0x%x'%(state['simulate']))  # TODO tooltip, warning
-        self.v_hz.set('%.3f'%(state['hz']))
+        self.v_hz.set('%.1f'%(state['hz']))
         self.v_dbm.set('%.2f'%(state['dbm']))
         self.v_output.set('%d'%(state['output']))  # TODO warning
     
@@ -211,13 +301,16 @@ class IFSwitchFrame(tk.Frame):
         self.pack(fill='x')
         status_frame = tk.Frame(self)
         status_frame.pack(fill='x')
-        self.v_number = grid_label(status_frame, 'number', 0)
-        self.v_simulate = grid_label(status_frame, 'simulate', 1)  # TODO sim_text as tooltip
-        self.v_do = grid_label(status_frame, 'DO', 2)
-        self.v_ai = grid_label(status_frame, 'AI', 3, last=True)
+        tk.Label(status_frame, text='connected').grid(row=0, column=0, sticky='nw')
+        self.connected = tk.Label(status_frame, text="NO", bg='red')
+        self.connected.grid(row=0, column=1, sticky='ne')
+        self.v_number = grid_label(status_frame, 'number', 1)
+        self.v_simulate = grid_label(status_frame, 'simulate', 2)  # TODO sim_text as tooltip
+        self.v_do = grid_label(status_frame, 'DO', 3)
+        self.v_ai = grid_label(status_frame, 'AI', 4)
         status_frame.grid_columnconfigure(0, weight=1)
         status_frame.grid_columnconfigure(1, weight=1)
-        status_frame.grid_rowconfigure(3, weight=1)
+        status_frame.grid_rowconfigure(4, weight=1)
         cmd_frame = tk.Frame(self)
         cmd_frame.pack(side='right')
         tk.Label(cmd_frame, text='Band: ').pack(side='left')
@@ -235,10 +328,13 @@ class IFSwitchFrame(tk.Frame):
         self.b7_button.pack(side='left')
     
     def mon_changed(self, state):
+        self.connected['text'] = "YES"
+        self.connected['bg'] = 'green'
         self.v_number.set('%d'%(state['number']))
         self.v_simulate.set('0x%x'%(state['simulate']))  # TODO tooltip, warning
-        self.v_do.set('%s'%(state['DO']))
-        self.v_ai.set('%s'%(state['AI']))  # bad idea
+        #self.v_do.set('%s'%(state['DO']))
+        self.v_do.set('%s'%(''.join([str(x) for x in state['DO']])))
+        self.v_ai.set('%.3f'%(state['AI'][0]))
     
     # IFSwitchFrame
         
@@ -266,13 +362,16 @@ class BandFrame(tk.Frame):
         
         # status subframe
         status_frame = tk.LabelFrame(c0, text='Status')
-        self.v_number = grid_label(status_frame, 'number', 0)
-        self.v_simulate = grid_label(status_frame, 'simulate', 1)  # TODO sim_text as tooltip
-        self.v_fe_mode = grid_label(status_frame, 'fe_mode', 2)  # TODO warn?
-        self.v_ppcomm_time = grid_label(status_frame, 'ppcomm_time', 3)
+        tk.Label(status_frame, text='connected').grid(row=0, column=0, sticky='nw')
+        self.connected = tk.Label(status_frame, text="NO", bg='red')
+        self.connected.grid(row=0, column=1, sticky='ne')
+        self.v_number = grid_label(status_frame, 'number', 1)
+        self.v_simulate = grid_label(status_frame, 'simulate', 2)  # TODO sim_text as tooltip
+        self.v_fe_mode = grid_label(status_frame, 'fe_mode', 3)  # TODO warn?
+        self.v_ppcomm_time = grid_label(status_frame, 'ppcomm_time', 4)
         status_frame.grid_columnconfigure(0, weight=1)
         status_frame.grid_columnconfigure(1, weight=1)
-        status_frame.grid_rowconfigure(3, weight=1)
+        status_frame.grid_rowconfigure(4, weight=1)
         
         # power subframe
         power_frame = tk.LabelFrame(c0, text='Power')
@@ -286,7 +385,7 @@ class BandFrame(tk.Frame):
         power_status.grid_columnconfigure(1, weight=1)
         power_status.grid_rowconfigure(3, weight=1)
         power_buttons = tk.Frame(power_frame)
-        power_buttons.pack()
+        power_buttons.pack(side='right')
         self.power_on_button = tk.Button(power_buttons, text='Enable')#, state='disabled')
         self.power_off_button = tk.Button(power_buttons, text='Disable')#, state='disabled')
         self.power_on_button.pack(side='left')
@@ -338,8 +437,8 @@ class BandFrame(tk.Frame):
         self.v_amc_drain_e_c = grid_value(amc_frame, 3, 2, 'e')
         self.v_amc_gate_e_v = grid_value(amc_frame, 3, 3, 'e')
         tk.Label(amc_frame, text='D').grid(row=4, column=0, sticky='ne')
-        self.v_amc_drain_d_v = grid_value(amc_frame, 4, 1, 'ne')
-        self.v_amc_drain_d_c = grid_value(amc_frame, 4, 2, 'ne')
+        self.v_amc_mult_d_v = grid_value(amc_frame, 4, 1, 'ne')
+        self.v_amc_mult_d_c = grid_value(amc_frame, 4, 2, 'ne')
         amc_frame.grid_columnconfigure(0, weight=1)
         amc_frame.grid_columnconfigure(1, weight=1)
         amc_frame.grid_columnconfigure(2, weight=1)
@@ -358,16 +457,16 @@ class BandFrame(tk.Frame):
         
         # PLL, including LO, YIG
         pll_frame = tk.LabelFrame(c1, text='PLL')
-        self.v_lo_ghz = grid_label(pll_frame, 'LO GHz', 0)
+        self.v_lo_ghz = grid_label(pll_frame, 'LO GHz', 0, width=14)
         self.v_yig_ghz = grid_label(pll_frame, 'YTO GHz', 1)
         self.v_yto_coarse = grid_label(pll_frame, 'YTO counts', 2)
-        self.v_yig_heater_c = grid_label(pll_frame, 'YTO heater mA', 3)
+        self.v_yig_heater_c = grid_label(pll_frame, 'YTO heater', 3)
         self.v_pll_loop_bw = grid_label(pll_frame, 'loop BW', 4)
         self.v_pll_sb_lock = grid_label(pll_frame, 'lock SB', 5)
-        self.v_pll_null_int = grid_label(pll_frame, 'null integrator', 6)
+        self.v_pll_null_int = grid_label(pll_frame, 'null intg.', 6)
         self.v_pll_lock_v = grid_label(pll_frame, 'lock V', 7)
         self.v_pll_corr_v = grid_label(pll_frame, 'corr V', 8)
-        self.v_pll_unlock = grid_label(pll_frame, 'unlock latch', 9)
+        self.v_pll_unlock = grid_label(pll_frame, 'unlocked', 9)
         self.v_pll_ref_power = grid_label(pll_frame, 'ref power', 10)
         self.v_pll_if_power = grid_label(pll_frame, 'IF power', 11)
         pll_frame.grid_columnconfigure(0, weight=1)
@@ -451,11 +550,11 @@ class BandFrame(tk.Frame):
         
         # TUNE command entry and button.  fixed at VOLTAGE=0.
         tune_frame = tk.LabelFrame(c2, text='Tune')
-        tk.Label(tune_frame, text='LO GHz: ').pack(side='left')
-        tune_entry = tk.Entry(tune_frame, width=14, bg='white')
-        tune_entry.pack(side='left', fill='x')
         self.tune_button = tk.Button(tune_frame, text='TUNE')
         self.tune_button.pack(side='right')
+        tune_entry = tk.Entry(tune_frame, width=14, bg='white')
+        tune_entry.pack(side='right')
+        tk.Label(tune_frame, text='LO GHz: ').pack(side='right')
         def tune_callback():
             drama.blind_obey(taskname, "TUNE", BAND=self.band, LO_GHZ=float(tune_entry.get()), VOLTAGE=0.0)
         self.tune_button['command'] = tune_callback
@@ -468,7 +567,7 @@ class BandFrame(tk.Frame):
         amc_frame.pack(fill='both', expand=1)
         
         temp_frame.pack(fill='x')
-        pll_frame.pack(fill='both', expand=1)
+        pll_frame.pack(fill='x')#both', expand=1)
         
         lna_frame.pack(fill='x')
         sis_frame.pack(fill='x')
@@ -479,6 +578,8 @@ class BandFrame(tk.Frame):
         
     
     def mon_changed(self, state):
+        self.connected['text'] = "YES"
+        self.connected['bg'] = 'green'
         self.v_number.set('%d'%(state['number']))
         self.v_simulate.set('0x%x'%(state['simulate']))  # TODO tooltip, warning
         # more or less alphabetical order
@@ -563,8 +664,14 @@ class App(tk.Frame):
     def __init__(self, master=None):
         super().__init__(master)
         self.master = master
-        self.pack()
+        self.pack(fill='both', expand=1)
         self.setup()
+        
+        msg_formatter = logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s\n')
+        self.msg_handler = TextboxHandler(self.messages)
+        self.msg_handler.setFormatter(msg_formatter)
+        logging.root.addHandler(self.msg_handler)
+        
         self.actions = [self.MON_MAIN, self.MON_B3, self.MON_B6, self.MON_B7,
                         self.POWER, self.TUNE, self.LOAD_MOVE, self.LOAD_HOME,
                         self.SET_SG_DBM, self.SET_SG_HZ, self.SET_SG_OUT,
@@ -575,6 +682,8 @@ class App(tk.Frame):
         self.retry_load_table = drama.retry.RetryMonitor(namakanui_taskname, 'LOAD_TABLE')
         self.retry_agilent = drama.retry.RetryMonitor(namakanui_taskname, 'AGILENT')
         self.retry_ifswitch = drama.retry.RetryMonitor(namakanui_taskname, 'IFSWITCH')
+        self.retry_vacuum = drama.retry.RetryMonitor(namakanui_taskname, 'VACUUM')
+        self.retry_lakeshore = drama.retry.RetryMonitor(namakanui_taskname, 'LAKESHORE')
         
         # temporary tasknames; will be set on TASKNAMES update
         self.retry_b3 = drama.retry.RetryMonitor('B3_DUMMY', 'DYN_STATE')
@@ -582,35 +691,80 @@ class App(tk.Frame):
         self.retry_b7 = drama.retry.RetryMonitor('B7_DUMMY', 'DYN_STATE')
         
         # App.__init__
+    
+    #def __del__(self):
+    #    logging.root.removeHandler(self.msg_handler)
 
     def setup(self):
-        nam_frame = tk.Frame(self)
-        nam_frame.pack(side='left', fill='y')
+        # frame to hold task frames separate from message_frame
+        task_frame = tk.Frame(self)
+        task_frame.pack()
         
-        load_parent = tk.LabelFrame(nam_frame, text='LOAD')
+        # columns of NAMAKANUI task frames
+        tk.Label(task_frame, text=' ').pack(side='left')  # spacer
+        c0 = tk.Frame(task_frame)
+        c1 = tk.Frame(task_frame)
+        c0.pack(side='left', fill='y')
+        tk.Label(task_frame, text=' ').pack(side='left')  # spacer
+        c1.pack(side='left', fill='y')
+        
+        # NAMAKANUI task frame
+        #nam_frame = tk.Frame(task_frame)
+        #nam_frame.pack(side='left', fill='y')
+        
+        cryo_parent = tk.LabelFrame(c0, text='CRYO')
+        cryo_parent.pack(fill='x')
+        self.cryo_frame = CryoFrame(cryo_parent)
+        
+        tk.Label(c0, text=' ').pack()  # spacer
+        
+        load_parent = tk.LabelFrame(c0, text='LOAD')
         load_parent.pack(fill='x')
         self.load_frame = LoadFrame(load_parent)
         
-        agilent_parent = tk.LabelFrame(nam_frame, text='AGILENT')
+        agilent_parent = tk.LabelFrame(c1, text='AGILENT')
         agilent_parent.pack(fill='x')
         self.agilent_frame = AgilentFrame(agilent_parent)
         
-        ifswitch_parent = tk.LabelFrame(nam_frame, text='IFSWITCH')
+        tk.Label(c1, text=' ').pack()  # spacer
+        
+        ifswitch_parent = tk.LabelFrame(c1, text='IFSWITCH')
         ifswitch_parent.pack(fill='x')
         self.ifswitch_frame = IFSwitchFrame(ifswitch_parent)
         
-        # spacer
-        space_label = tk.Label(self, text=' ')
-        space_label.pack(side='left')
+        tk.Label(task_frame, text=' ').pack(side='left')  # spacer
         
-        notebook = ttk.Notebook(self)
-        self.b3_frame = BandFrame(3, notebook)
-        self.b6_frame = BandFrame(6, notebook)
-        self.b7_frame = BandFrame(7, notebook)
-        notebook.add(self.b3_frame, text='B3')
-        notebook.add(self.b6_frame, text='B6')
-        notebook.add(self.b7_frame, text='B7')
-        notebook.pack(side='right')
+        # CARTRIDGE tasks, tabbed interface
+        self.notebook = ttk.Notebook(task_frame)
+        self.b3_frame = BandFrame(3, self.notebook)
+        self.b6_frame = BandFrame(6, self.notebook)
+        self.b7_frame = BandFrame(7, self.notebook)
+        self.notebook.add(self.b3_frame, text='B3')
+        self.notebook.add(self.b6_frame, text='B6')
+        self.notebook.add(self.b7_frame, text='B7')
+        self.notebook.pack(side='left')
+        
+        # rebind <<NotebookTabChanged>> event to avoid autoselecting first Entry
+        def handle_tab_changed(event):
+            # get the focused widget and clear its selection
+            try:
+                f = event.widget.focus_get()
+                f.selection_clear()
+            except AttributeError:
+                pass
+            # defocus by focusing on something else
+            self.master.focus()
+        
+        self.notebook.bind("<<NotebookTabChanged>>", handle_tab_changed)
+        
+        tk.Label(task_frame, text=' ').pack(side='left')  # spacer
+        
+        # scrolled text for message window
+        message_frame = tk.LabelFrame(self, text='MESSAGES')
+        message_frame.pack(fill='both', expand=1)
+        self.messages = ScrolledText(message_frame, height=8, bg='black', fg='gray')
+        self.messages.pack(fill='both', expand=1)
+        #self.messages.insert('end', 'test')
         
         # App.setup
         
@@ -622,9 +776,11 @@ class App(tk.Frame):
     def MON_MAIN(self, msg):
         '''Calls handle() on all NAMAKANUI RetryMonitors.'''
         
+        log.debug('MON_MAIN msg: %s', msg)
+        
         if self.retry_tasknames.handle(msg):
             # tasknames changed; cancel old monitors if connected
-            for b,r in [[3,self.retry_b3], [6,self.retry_b6], [7,self.retry_b7]]:
+            for t,b,r in [[0,3,self.retry_b3], [1,6,self.retry_b6], [2,7,self.retry_b7]]:
                 new_taskname = msg.arg['B%d'%(b)]
                 if r.task == new_taskname:
                     continue
@@ -632,6 +788,14 @@ class App(tk.Frame):
                     r.cancel()
                 r.task = new_taskname
                 drama.blind_obey(taskname, 'MON_B%d'%(b))
+                self.notebook.tab(t, text=new_taskname)
+                
+        
+        if self.retry_vacuum.handle(msg):
+            self.cryo_frame.vacuum_changed(msg.arg)
+        
+        if self.retry_lakeshore.handle(msg):
+            self.cryo_frame.lakeshore_changed(msg.arg)
         
         if self.retry_load.handle(msg):
             self.load_frame.mon_changed(msg.arg)
@@ -644,6 +808,23 @@ class App(tk.Frame):
         
         if self.retry_ifswitch.handle(msg):
             self.ifswitch_frame.mon_changed(msg.arg)
+            
+        # set disconnected indicators on all frames
+        if not self.retry_vacuum.connected:
+            self.cryo_frame.edwards['text'] = "NO"
+            self.cryo_frame.edwards['bg'] = 'red'
+        if not self.retry_lakeshore.connected:
+            self.cryo_frame.lakeshore['text'] = "NO"
+            self.cryo_frame.lakeshore['bg'] = 'red'
+        if not self.retry_load.connected:
+            self.load_frame.connected['text'] = "NO"
+            self.load_frame.connected['bg'] = 'red'
+        if not self.retry_agilent.connected:
+            self.agilent_frame.connected['text'] = "NO"
+            self.agilent_frame.connected['bg'] = 'red'
+        if not self.retry_ifswitch.connected:
+            self.ifswitch_frame.connected['text'] = "NO"
+            self.ifswitch_frame.connected['bg'] = 'red'
         
         # TODO handle disconnected state
         
@@ -655,20 +836,63 @@ class App(tk.Frame):
     def MON_B3(self, msg):
         if self.retry_b3.handle(msg):
             self.b3_frame.mon_changed(msg.arg)
-        # TODO handle disconnected state
+        if not self.retry_b3.connected:
+            self.b3_frame.connected['text'] = "NO"
+            self.b3_frame.connected['bg'] = 'red'
         drama.reschedule(5.0)
     
     def MON_B6(self, msg):
         if self.retry_b6.handle(msg):
             self.b6_frame.mon_changed(msg.arg)
-        # TODO handle disconnected state
+        if not self.retry_b6.connected:
+            self.b6_frame.connected['text'] = "NO"
+            self.b6_frame.connected['bg'] = 'red'
         drama.reschedule(5.0)
     
     def MON_B7(self, msg):
         if self.retry_b7.handle(msg):
             self.b7_frame.mon_changed(msg.arg)
-        # TODO handle disconnected state
+        if not self.retry_b7.connected:
+            self.b7_frame.connected['text'] = "NO"
+            self.b7_frame.connected['bg'] = 'red'
         drama.reschedule(5.0)
+    
+    def check_msg(self, msg, name):
+        '''Log the reply to a drama.obey command.
+           Return True if we should keep waiting for a completion message.
+        '''
+        if msg.reason == drama.REA_MESSAGE:
+            log.info('%s: %s', msg.arg['TASKNAME'], '\n'.join(msg.arg['MESSAGE']))
+            return True
+        elif msg.reason == drama.REA_ERROR:
+            # join MESSAGE array according to associated STATUS value
+            sm = {}
+            for s,m in zip(msg.arg['STATUS'], msg.arg['MESSAGE']):
+                if s in sm:
+                    sm[s] += '\n' + m
+                else:
+                    sm[s] = m
+            t = msg.arg['TASKNAME']
+            for s,m in sm.items():
+                status = ''
+                if s:
+                    status = ' (%d: %s)' % (s, drama.get_status_string(s))
+                log.error('%s: %s%s', t, m, status)
+            return True
+        elif msg.reason == drama.REA_RESCHED:
+            log.error('timeout waiting for %s', name)
+        elif msg.reason != drama.REA_COMPLETE:
+            log.error('unexpected msg from %s: %s', name, msg)
+        elif msg.status:
+            log.error('bad status from %s: %d: %s', name, msg.status, drama.get_status_string(msg.status))
+        return False
+        # App.check_msg
+    
+    def wait_loop(self, transid, timeout, name):
+        '''Wait timeout seconds for transid to complete.'''
+        wall_timeout = time.time() + timeout
+        while(self.check_msg(transid.wait(wall_timeout-time.time()), name)):
+            pass
     
     def power_args(self, BAND, ENABLE):
         return int(BAND), int(ENABLE)
@@ -682,11 +906,9 @@ class App(tk.Frame):
         frame.power_on_button['state'] = 'disabled'
         frame.power_off_button['state'] = 'disabled'
         try:
-            msg = drama.obey(namakanui_taskname, "CART_POWER", BAND=band, ENABLE=enable).wait(120)
-            if msg.reason != drama.REA_COMPLETE:
-                log.error('unexpected msg from CART_POWER: %s', msg)
-            elif msg.status:
-                log.error('bad status from CART_POWER: %d: %s', msg.status, drama.get_status_string(msg.status))
+            drama.interested()  # in MsgOut/ErsOut
+            tid = drama.obey(namakanui_taskname, "CART_POWER", BAND=band, ENABLE=enable)
+            self.wait_loop(tid, 120, "CART_POWER")
         except:
             log.exception('exception in POWER')
             raise
@@ -705,11 +927,9 @@ class App(tk.Frame):
         frame = {3:self.b3_frame, 6:self.b6_frame, 7:self.b7_frame}[band]
         frame.tune_button['state'] = 'disabled'
         try:
-            msg = drama.obey(namakanui_taskname, "CART_TUNE", BAND=band, LO_GHZ=lo_ghz, VOLTAGE=voltage).wait(30)
-            if msg.reason != drama.REA_COMPLETE:
-                log.error('unexpected msg from CART_TUNE: %s', msg)
-            elif msg.status:
-                log.error('bad status from CART_TUNE: %d: %s', msg.status, drama.get_status_string(msg.status))
+            drama.interested()
+            tid = drama.obey(namakanui_taskname, "CART_TUNE", BAND=band, LO_GHZ=lo_ghz, VOLTAGE=voltage)
+            self.wait_loop(tid, 30, "CART_TUNE")
         except:
             log.exception('exception in TUNE')
             raise
@@ -722,15 +942,13 @@ class App(tk.Frame):
     
     def LOAD_MOVE(self, msg):
         args,kwargs = drama.parse_argument(msg.arg)
-        pos = self.tune_args(*args,**kwargs)
+        pos = self.move_args(*args,**kwargs)
         self.load_frame.move_button['state'] = 'disabled'
         self.load_frame.home_button['state'] = 'disabled'
         try:
-            msg = drama.obey(namakanui_taskname, "LOAD_MOVE", POSITION=pos).wait(30)
-            if msg.reason != drama.REA_COMPLETE:
-                log.error('unexpected msg from LOAD_MOVE: %s', msg)
-            elif msg.status:
-                log.error('bad status from LOAD_MOVE: %d: %s', msg.status, drama.get_status_string(msg.status))
+            drama.interested()
+            tid = drama.obey(namakanui_taskname, "LOAD_MOVE", POSITION=pos)
+            self.wait_loop(tid, 30, "LOAD_MOVE")
         except:
             log.exception('exception in LOAD_MOVE')
             raise
@@ -743,11 +961,9 @@ class App(tk.Frame):
         self.load_frame.move_button['state'] = 'disabled'
         self.load_frame.home_button['state'] = 'disabled'
         try:
-            msg = drama.obey(namakanui_taskname, "LOAD_HOME").wait(30)
-            if msg.reason != drama.REA_COMPLETE:
-                log.error('unexpected msg from LOAD_HOME: %s', msg)
-            elif msg.status:
-                log.error('bad status from LOAD_HOME: %d: %s', msg.status, drama.get_status_string(msg.status))
+            drama.interested()
+            tid = drama.obey(namakanui_taskname, "LOAD_HOME")
+            self.wait_loop(tid, 30, "LOAD_HOME")
         except:
             log.exception('exception in LOAD_MOVE')
             raise
@@ -769,11 +985,9 @@ class App(tk.Frame):
         dbm = self.dbm_args(*args,**kwargs)
         self.agilent_frame.dbm_button['state'] = 'disabled'
         try:
-            msg = drama.obey(namakanui_taskname, "SET_SG_DBM", DBM=dbm).wait(5)
-            if msg.reason != drama.REA_COMPLETE:
-                log.error('unexpected msg from SET_SG_DBM: %s', msg)
-            elif msg.status:
-                log.error('bad status from SET_SG_DBM: %d: %s', msg.status, drama.get_status_string(msg.status))
+            drama.interested()
+            tid = drama.obey(namakanui_taskname, "SET_SG_DBM", DBM=dbm)
+            self.wait_loop(tid, 5, "SET_SG_DBM")
         except:
             log.exception('exception in SET_SG_DBM')
             raise
@@ -792,11 +1006,9 @@ class App(tk.Frame):
         hz = self.hz_args(*args,**kwargs)
         self.agilent_frame.hz_button['state'] = 'disabled'
         try:
-            msg = drama.obey(namakanui_taskname, "SET_SG_HZ", HZ=hz).wait(5)
-            if msg.reason != drama.REA_COMPLETE:
-                log.error('unexpected msg from SET_SG_HZ: %s', msg)
-            elif msg.status:
-                log.error('bad status from SET_SG_HZ: %d: %s', msg.status, drama.get_status_string(msg.status))
+            drama.interested()
+            tid = drama.obey(namakanui_taskname, "SET_SG_HZ", HZ=hz)
+            self.wait_loop(tid, 5, "SET_SG_HZ")
         except:
             log.exception('exception in SET_SG_HZ')
             raise
@@ -810,18 +1022,18 @@ class App(tk.Frame):
     def SET_SG_OUT(self, msg):
         args,kwargs = drama.parse_argument(msg.arg)
         out = self.out_args(*args,**kwargs)
-        self.agilent_frame.out_button['state'] = 'disabled'
+        self.agilent_frame.on_button['state'] = 'disabled'
+        self.agilent_frame.off_button['state'] = 'disabled'
         try:
-            msg = drama.obey(namakanui_taskname, "SET_SG_OUT", OUT=out).wait(5)
-            if msg.reason != drama.REA_COMPLETE:
-                log.error('unexpected msg from SET_SG_OUT: %s', msg)
-            elif msg.status:
-                log.error('bad status from SET_SG_OUT: %d: %s', msg.status, drama.get_status_string(msg.status))
+            drama.interested()
+            tid = drama.obey(namakanui_taskname, "SET_SG_OUT", OUT=out)
+            self.wait_loop(tid, 5, "SET_SG_OUT")
         except:
             log.exception('exception in SET_SG_OUT')
             raise
         finally:
-            self.agilent_frame.out_button['state'] = 'normal'
+            self.agilent_frame.on_button['state'] = 'normal'
+            self.agilent_frame.off_button['state'] = 'normal'
         # App.SET_SG_OUT
     
     def band_args(self, BAND):
@@ -837,11 +1049,9 @@ class App(tk.Frame):
         self.ifswitch_frame.b6_button['state'] = 'disabled'
         self.ifswitch_frame.b7_button['state'] = 'disabled'
         try:
-            msg = drama.obey(namakanui_taskname, "SET_BAND", BAND=band).wait(5)
-            if msg.reason != drama.REA_COMPLETE:
-                log.error('unexpected msg from SET_BAND: %s', msg)
-            elif msg.status:
-                log.error('bad status from SET_BAND: %d: %s', msg.status, drama.get_status_string(msg.status))
+            drama.interested()
+            tid = drama.obey(namakanui_taskname, "SET_BAND", BAND=band)
+            self.wait_loop(tid, 5, "SET_BAND")
         except:
             log.exception('exception in SET_BAND')
             raise
@@ -857,10 +1067,32 @@ try:
     log.info('tk init')
     root = tk.Tk()
     root.title('Namakanui GUI: ' + taskname)
+    
+    # <Destroy> event callback to detect window close.
+    # this ought to be moved into the pydrama run() function.
+    destroy_once = 1
+    def on_destroy(event):
+        global destroy_once
+        if destroy_once:
+            destroy_once = 0
+            # don't want to raise here; it'll look like an error but
+            # the tk context will eat it anyway.
+            # could just call drama.Exit() without raising,
+            # which will do the blind_obey for us.
+            #raise drama.Exit('tk destroyed')
+            log.info('tk callback on_destroy sending %s EXIT', taskname)
+            drama.blind_obey(taskname, 'EXIT')
+    
+    root.bind("<Destroy>", on_destroy)
+    
     app = App(root)
     log.info('drama.init(%s)', taskname)
-    drama.init(taskname, actions=app.actions)
-    #app.start_monitors()
+    drama.init(taskname, buffers = [64000, 8000, 8000, 2000], actions=app.actions)
+    app.start_monitors()
+    # try to give tk a head start or we get path timeouts.
+    # TODO move this into drama.run() too.
+    log.info('tk.update()')
+    root.update()
     log.info('drama.run()...')
     drama.run()
 finally:
