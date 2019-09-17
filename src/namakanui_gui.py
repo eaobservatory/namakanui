@@ -79,34 +79,97 @@ class TextboxHandler(logging.Handler):
 
 namakanui_taskname = 'NAMAKANUI'
 
+state_bg_key = {'normal':'bg', 'disabled':'disabledbackground', 'readonly':'readonlybackground'}
+bg_values = ['red', '']
+
+class SetMixin(object):
+    '''Mixin class to provide a 'set' function for Label and Entry widgets.'''
+    
+    def __init__(self, *args, **kwargs):
+        self.textvariable = kwargs.get('textvariable', tk.StringVar())
+        kwargs['textvariable'] = self.textvariable
+        super().__init__(*args, **kwargs)
+        # for now, assume state won't change to save time in set()
+        self.bg_key = state_bg_key[self['state']]
+    
+    def set(self, value, okay=None):
+        '''
+        Set widget text to value, and background color from bool(okay).
+        Examples:
+            widget.set('0x%x'%(state['simulate']), not state['simulate'])
+            widget.set('%.2f'%(state['temperature']), 10.0 <= state['temperature'] <= 30.0)
+        '''
+        self.textvariable.set(value)
+        if okay is not None:
+            self[self.bg_key] = bg_values[int(bool(okay))]
+    
+    def bg(self, color):
+        '''Set background color for assumed state.'''
+        self[self.bg_key] = color
+        
+
+class SetLabel(SetMixin, tk.Label):
+    pass
+
+class SetEntry(SetMixin, tk.Entry):
+    pass
+
+## add a "set" method to tkinter.Label
+#class SetLabel(tk.Label):
+    #def bg(self, color):
+        #self[state_bg_key[self['state']]] = color
+    
+    #def set(self, s):
+        #self['text'] = s
+
+## add a "set" method to tkinter.Entry with internal textvariable,
+## since delete + insert doesn't seem to work without an explicit update.
+#class SetEntry(tk.Entry):
+    #def __init__(self, *args, **kwargs):
+        #super().__init__(*args, **kwargs)
+        ##print('%r.__init__(%s, %s)'%(self,args,kwargs))
+        #if self['textvariable']:
+            #print('already has textvariable')
+            #self.textvariable = kwargs['textvariable']
+        #else:
+            #self.textvariable = tk.StringVar()
+            #self['textvariable'] = self.textvariable
+    
+    #def bg(self, color):
+        #self[state_bg_key[self['state']]] = color
+    
+    #def set(self, s):
+        ##self.delete(0, tk.END)
+        ##self.insert(0, s)
+        ##print('%r.set(%s)'%(self,s))
+        #self.textvariable.set(s)
 
 
 def grid_value(parent, row, column, sticky='', label=False, width=8):
     '''
-    Create a label at row/col and return the textvariable.
+    Create a SetLabel or SetEntry at row/col and return the widget.
     Note you must still grid_columnconfigure and grid_rowconfigure yourself.
     
     tk.Label widgets can't be selected for copying/pasting,
-    so use a 'readonly' Entry widget instead.
+    so by default we use a 'readonly' Entry widget instead.
     '''
-    textvar = tk.StringVar()
-    textvar.set('')
     if label:
-        tk.Label(parent, textvariable=textvar).grid(row=row, column=column, sticky=sticky)
+        widget = SetLabel(parent)
+        widget.grid(row=row, column=column, sticky=sticky)
     else:
-        e = tk.Entry(parent, textvariable=textvar, width=width, justify='right', state='readonly')
-        e.grid(row=row, column=column, sticky='nsew')#sticky=sticky)
-    return textvar
+        widget = SetEntry(parent, width=width, justify='right', state='readonly')
+        widget.grid(row=row, column=column, sticky='nsew')#sticky=sticky)
+    return widget
 
 
-def grid_label(parent, text, row, width=8):
+def grid_label(parent, text, row, width=8, label=False):
     '''
     Set up a [text: value] row and return the textvariable.
     Note you must still grid_columnconfigure and grid_rowconfigure yourself.
     TODO: probably want to save these labels so we can turn them red.
     '''
     tk.Label(parent, text=text).grid(row=row, column=0, sticky='nw')
-    return grid_value(parent, row=row, column=1, sticky='ne', width=width)
+    return grid_value(parent, row=row, column=1, sticky='ne', width=width, label=label)
     
 
 class CryoFrame(tk.Frame):
@@ -117,9 +180,12 @@ class CryoFrame(tk.Frame):
     
     def setup(self):
         self.pack(fill='x')
-        tk.Label(self, text='edwards').grid(row=0, column=0, sticky='nw')
-        self.edwards = tk.Label(self, text="NO", bg='red')
-        self.edwards.grid(row=0, column=1, sticky='ne')
+        self.edwards = grid_label(self, 'edwards', 0, label=True)
+        self.edwards.set('NO', False)
+        #self.edwards.bg('red')
+        #tk.Label(self, text='edwards').grid(row=0, column=0, sticky='nw')
+        #self.edwards = tk.Label(self, text="NO", bg='red')
+        #self.edwards.grid(row=0, column=1, sticky='ne')
         tk.Label(self, text='lakeshore').grid(row=1, column=0, sticky='nw')
         self.lakeshore = tk.Label(self, text="NO", bg='red')
         self.lakeshore.grid(row=1, column=1, sticky='ne')
@@ -134,18 +200,34 @@ class CryoFrame(tk.Frame):
         self.grid_rowconfigure(6, weight=1)
     
     def vacuum_changed(self, state):
-        self.edwards['text'] = "YES"
-        self.edwards['bg'] = 'green'
-        self.v_vacuum_unit.set(state['unit'])
+        #print(state)
+        #print(type(self.v_vacuum_unit))
+        #self.edwards['text'] = "YES"
+        #self.edwards['bg'] = 'green'
+        self.edwards.set("YES")
+        self.edwards.bg('green')
+        pressure_unit = state['unit']
+        if not pressure_unit or pressure_unit == 'none':
+            pressure_unit = 'pressure'
+        self.v_vacuum_unit.set(pressure_unit)
         self.v_vacuum_s1.set(state['s1'])
+        try:
+            s1 = float(state['s1'])
+            if not 0.0 < s1 < 1e-6:
+                raise ValueError
+            self.v_vacuum_s1.bg('')
+        except (ValueError, TypeError):
+            self.v_vacuum_s1.bg('red')
     
     def lakeshore_changed(self, state):
+        #print(state)
+        #print(type(self.v_temp1))
         self.lakeshore['text'] = "YES"
         self.lakeshore['bg'] = 'green'
-        self.v_temp1.set('%.3f'%(state['temp1']))
-        self.v_temp2.set('%.3f'%(state['temp2']))
-        self.v_temp3.set('%.3f'%(state['temp3']))
-        self.v_temp4.set('%.3f'%(state['temp4']))
+        self.v_temp1.set('%.3f'%(state['temp1']), 0.0 < state['temp1'] < 4.0)
+        self.v_temp2.set('%.3f'%(state['temp2']), 0.0 < state['temp2'] < 5.0)
+        self.v_temp3.set('%.3f'%(state['temp3']), 0.0 < state['temp3'] < 25.0)
+        self.v_temp4.set('%.3f'%(state['temp4']), 0.0 < state['temp4'] < 115.0)
 
 
 class LoadFrame(tk.Frame):
@@ -201,11 +283,13 @@ class LoadFrame(tk.Frame):
         self.connected['text'] = "YES"
         self.connected['bg'] = 'green'
         self.v_number.set('%d'%(state['number']))
-        self.v_simulate.set('0x%x'%(state['simulate']))  # TODO tooltip, warning
+        self.v_simulate.set('0x%x'%(state['simulate']), state['simulate']==0)  # TODO tooltip
         self.v_pos_counts.set('%d'%(state['pos_counts']))
         self.v_pos_name.set(state['pos_name'])
         self.v_busy.set('%d'%(state['busy']))
-        self.v_homed.set('%d'%(state['homed']))  # TODO warning
+        if state['busy']:
+            self.v_busy.bg('yellow')
+        self.v_homed.set('%d'%(state['homed']), state['homed'])
     
     def table_changed(self, state):
         # update the position select combo box
@@ -281,10 +365,10 @@ class AgilentFrame(tk.Frame):
         self.connected['text'] = "YES"
         self.connected['bg'] = 'green'
         self.v_number.set('%d'%(state['number']))
-        self.v_simulate.set('0x%x'%(state['simulate']))  # TODO tooltip, warning
+        self.v_simulate.set('0x%x'%(state['simulate']), state['simulate']==0)  # TODO tooltip
         self.v_hz.set('%.1f'%(state['hz']))
-        self.v_dbm.set('%.2f'%(state['dbm']))
-        self.v_output.set('%d'%(state['output']))  # TODO warning
+        self.v_dbm.set('%.2f'%(state['dbm']))  # TODO warning?  how?
+        self.v_output.set('%d'%(state['output']), state['output'])
     
     # AgilentFrame
 
@@ -331,10 +415,11 @@ class IFSwitchFrame(tk.Frame):
         self.connected['text'] = "YES"
         self.connected['bg'] = 'green'
         self.v_number.set('%d'%(state['number']))
-        self.v_simulate.set('0x%x'%(state['simulate']))  # TODO tooltip, warning
-        #self.v_do.set('%s'%(state['DO']))
-        self.v_do.set('%s'%(''.join([str(x) for x in state['DO']])))
-        self.v_ai.set('%.3f'%(state['AI'][0]))
+        self.v_simulate.set('0x%x'%(state['simulate']), state['simulate']==0)  # TODO tooltip
+        do = ''.join([str(x) for x in state['DO']])
+        okay = do in ('100100', '010010', '001001')
+        self.v_do.set(do, okay)
+        self.v_ai.set('%.3f'%(state['AI'][0]), 4.0 < state['AI'][0] < 6.0)
     
     # IFSwitchFrame
         
@@ -345,8 +430,10 @@ class BandFrame(tk.Frame):
         self.band = int(band)
         self.master = master
         self.tnames = ['4k', '110k', 'p0', 'spare', '15k', 'p1']
+        self.tokay = [(0,5), (70,115), (0,5), (-2,2), (5,30), (0,5)]
         if self.band == 3:
             self.tnames = ['spare', '110k', 'p01', 'spare', '15k', 'wca']
+            self.tokay = [(-2,2), (70,115), (0,30), (-2,2), (0,30), (253,323)]
         self.setup()
     
     def setup(self):
@@ -576,14 +663,15 @@ class BandFrame(tk.Frame):
         # BandFrame.setup
         
         
-    
+    # TODO: maybe ignore 'okay' for all other fields if simulated.
     def mon_changed(self, state):
         self.connected['text'] = "YES"
         self.connected['bg'] = 'green'
         self.v_number.set('%d'%(state['number']))
-        self.v_simulate.set('0x%x'%(state['simulate']))  # TODO tooltip, warning
+        self.v_simulate.set('0x%x'%(state['simulate']), state['simulate']==0)  # TODO tooltip, warning
         # more or less alphabetical order
-        self.v_amc_5v.set(state['amc_5v'])
+        self.v_amc_5v.set(state['amc_5v'], 4.0 < state['amc_5v'] < 6.0)  # TODO tighten up
+        # TODO warnings for AMC values?
         self.v_amc_drain_a_c.set('%.3f'%(state['amc_drain_a_c']))
         self.v_amc_drain_a_v.set('%.3f'%(state['amc_drain_a_v']))
         self.v_amc_drain_b_c.set('%.3f'%(state['amc_drain_b_c']))
@@ -596,14 +684,17 @@ class BandFrame(tk.Frame):
         self.v_amc_mult_d_c.set('%.3f'%(state['amc_mult_d_c']))
         self.v_amc_mult_d_v.set('%.3f'%(state['amc_mult_d_v']))
         
-        self.v_pll_temp.set('%.3f'%(state['pll_temp']))
+        self.v_pll_temp.set('%.3f'%(state['pll_temp']), -20.0 < state['pll_temp'] < 50.0)  # TODO tighten up; use K
         for i,v in enumerate(state['cart_temp']):
-            self.v_cart_temp[i].set('%.3f'%(v))
+            okay = self.tokay[i][0] < v < self.tokay[i][1]
+            self.v_cart_temp[i].set('%.3f'%(v), okay)
         
+        # TODO need a way to set this, and it really should default to 0 for cold system.
         self.v_fe_mode.set('%d'%(state['fe_mode']))
         
         for i in range(4):  # p0s1 ... p1s2
-            self.v_lna_enable[i].set('%d'%(state['lna_enable'][i]))
+            self.v_lna_enable[i].set('%d'%(state['lna_enable'][i]), state['lna_enable'][i])
+            # TODO okay values for these?
             self.v_lna_vd0[i].set('%.3f'%(state['lna_drain_v'][i*3+0]))
             self.v_lna_vd1[i].set('%.3f'%(state['lna_drain_v'][i*3+1]))
             self.v_lna_vd2[i].set('%.3f'%(state['lna_drain_v'][i*3+2]))
@@ -614,16 +705,19 @@ class BandFrame(tk.Frame):
             self.v_lna_vg1[i].set('%.3f'%(state['lna_gate_v'][i*3+1]))
             self.v_lna_vg2[i].set('%.3f'%(state['lna_gate_v'][i*3+2]))
         
-        self.v_lo_ghz.set('%.9f'%(state['lo_ghz']))
-        self.v_pa_3v.set('%.3f'%(state['pa_3v']))
-        self.v_pa_5v.set('%.3f'%(state['pa_5v']))
+        self.v_lo_ghz.set('%.9f'%(state['lo_ghz']), 70 < state['lo_ghz'] < 370)  # TODO band-specific
         
+        # TODO tighten these up
+        self.v_pa_3v.set('%.3f'%(state['pa_3v']), 2 < state['pa_3v'] < 4)
+        self.v_pa_5v.set('%.3f'%(state['pa_5v']), 4 < state['pa_5v'] < 6)
+        
+        # TODO warning?  at least pa_drain_v?
         for i in range(2):
             self.v_pa_drain_v[i].set('%.3f'%(state['pa_drain_v'][i]))
             self.v_pa_drain_c[i].set('%.3f'%(state['pa_drain_c'][i]))
             self.v_pa_gate_v[i].set('%.3f'%(state['pa_gate_v'][i]))
         
-        self.v_pd_enable.set('%d'%(state['pd_enable']))
+        self.v_pd_enable.set('%d'%(state['pd_enable']), state['pd_enable'])
         if not self.power_action:
             if state['pd_enable']:
                 self.power_on_button['state'] = 'disabled'
@@ -632,26 +726,30 @@ class BandFrame(tk.Frame):
                 self.power_on_button['state'] = 'normal'
                 self.power_off_button['state'] = 'disabled'
         
-        self.v_pll_lock_v.set('%.3f'%(state['pll_lock_v']))
-        self.v_pll_corr_v.set('%.3f'%(state['pll_corr_v']))
-        self.v_pll_if_power.set('%.3f'%(state['pll_if_power']))
-        self.v_pll_ref_power.set('%.3f'%(state['pll_ref_power']))
+        self.v_pll_lock_v.set('%.3f'%(state['pll_lock_v']), 3 < state['pll_lock_v'])
+        # for now we will always want correction voltage close to zero;
+        # this might change later if we do fancy frequency switching stuff.
+        self.v_pll_corr_v.set('%.3f'%(state['pll_corr_v']), -5 < state['pll_corr_v'] < 5)
+        self.v_pll_if_power.set('%.3f'%(state['pll_if_power']), -3.0 < state['pll_if_power'] < -0.5)
+        self.v_pll_ref_power.set('%.3f'%(state['pll_ref_power']), -3.0 < state['pll_ref_power'] < -0.5)
         
-        self.v_pll_loop_bw.set('%d'%(state['pll_loop_bw']))
-        self.v_pll_null_int.set('%d'%(state['pll_null_int']))
+        self.v_pll_loop_bw.set('%d'%(state['pll_loop_bw']))  # TODO warn?
+        self.v_pll_null_int.set('%d'%(state['pll_null_int']), state['pll_null_int']==0)
         self.v_pll_sb_lock.set('%d'%(state['pll_sb_lock']))
-        self.v_pll_unlock.set('%d'%(state['pll_unlock']))
+        self.v_pll_unlock.set('%d'%(state['pll_unlock']), state['pll_unlock']==0)
         
-        self.v_ppcomm_time.set('%.6f'%(state['ppcomm_time']))
+        # TODO what is the typical ping time in practice?
+        self.v_ppcomm_time.set('%.6f'%(state['ppcomm_time']), 0 < state['ppcomm_time'] < 0.002)
         
         for i in range(4):
+            # TODO warnings, band-specific
             self.v_sis_open_loop[i].set('%d'%(state['sis_open_loop'][i]))
             self.v_sis_c[i].set('%.3f'%(state['sis_c'][i]))
             self.v_sis_v[i].set('%.3f'%(state['sis_v'][i]))
             self.v_sis_mag_c[i].set('%.3f'%(state['sis_mag_c'][i]))
             self.v_sis_mag_v[i].set('%.3f'%(state['sis_mag_v'][i]))
         
-        self.v_yig_ghz.set('%.9f'%(state['yig_ghz']))
+        self.v_yig_ghz.set('%.9f'%(state['yig_ghz']), 11 < state['yig_ghz'] < 22)
         self.v_yig_heater_c.set('%.3f'%(state['yig_heater_c']))
         self.v_yto_coarse.set('%d'%(state['yto_coarse']))
         
@@ -825,8 +923,6 @@ class App(tk.Frame):
         if not self.retry_ifswitch.connected:
             self.ifswitch_frame.connected['text'] = "NO"
             self.ifswitch_frame.connected['bg'] = 'red'
-        
-        # TODO handle disconnected state
         
         drama.reschedule(15.0)  # NAMAKANUI.UPDATE is pretty slow
         
