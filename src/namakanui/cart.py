@@ -649,6 +649,11 @@ class Cart(object):
         if not self.state['pd_enable']:
             raise RuntimeError(self.logname + ' power disabled')
         
+        # deadband: skip adjustment if within +-1V of target
+        if abs(self.state['pll_corr_v'] - voltage) <= 1.0:
+            self.log.debug('_adjust_fm already at %.2fV, skipping.', self.state['pll_corr_v'])
+            return
+        
         femc = self.femc
         
         # TODO: FEND-40.00.00.00-089-D-MAN gives the FM tuning slope
