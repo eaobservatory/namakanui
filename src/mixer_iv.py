@@ -38,7 +38,7 @@ else:
     datapath = os.path.realpath(binpath + '../data') + '/'
 
 parser = argparse.ArgumentParser()
-parser.add_argument('band', type=int, choices=[3,6,7])
+parser.add_argument('band', type=int, choices=[6,7])
 parser.add_argument('mv_min', type=float)
 parser.add_argument('mv_max', type=float)
 parser.add_argument('mv_step', type=float)
@@ -53,6 +53,12 @@ if args.mv_step > 0.05:
     mv_step = 0.05
 if args.mv_min > args.mv_max:
     logging.error('start/end out of order')
+    sys.exit(1)
+if band==6 and (args.mv_min < -15.0 or args.mv_max > 15.0):
+    logging.error('band 6 mv min/max outside [-15, 15] range')
+    sys.exit(1)
+if band==7 and (args.mv_min < -5.0 or args.mv_max > 5.0):
+    logging.error('band 7 mv min/max outside [-5, 5] range')
     sys.exit(1)
 
 #sys.exit(0)
@@ -136,6 +142,7 @@ def sample(what=''):
         for po in range(2):
             for sb in range(2):
                 femc.set_sis_voltage(ca, po, sb, smv)
+        sys.stdout.write('%.3f ' % (smv))
         time.sleep(.001)  # each smv takes ~20ms to sample anyway
         for po in range(2):
             for sb in range(2):
