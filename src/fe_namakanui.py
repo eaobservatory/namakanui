@@ -257,7 +257,7 @@ def configure(msg, wait_set, done_set):
     '''
     Callback for the CONFIGURE action.
     '''
-    log.info('configure: msg=%s, wait_set=%s, done_set=%s', msg, wait_set, done_set)
+    log.debug('configure: msg=%s, wait_set=%s, done_set=%s', msg, wait_set, done_set)
     
     global g_sideband, g_rest_freq, g_center_freq, g_doppler
     global g_freq_mult, g_freq_off_scale
@@ -400,7 +400,7 @@ def setup_sequence(msg, wait_set, done_set):
     '''
     Callback for SETUP_SEQUENCE action.
     '''
-    log.info('setup_sequence: msg=%s, wait_set=%s, done_set=%s', msg, wait_set, done_set)
+    log.debug('setup_sequence: msg=%s, wait_set=%s, done_set=%s', msg, wait_set, done_set)
     
     global g_sideband, g_rest_freq, g_center_freq, g_doppler
     global g_freq_mult, g_freq_off_scale
@@ -526,7 +526,7 @@ def sequence(msg):
     This lets us place monitors on the Namakanui engineering tasks
     without starting a background action from CONFIGURE or SETUP_SEQUENCE.
     '''
-    log.info('sequence: msg=%s', msg)
+    log.debug('sequence: msg=%s', msg)
     
     if msg.reason == drama.REA_OBEY:
         sequence.start = drama.get_param('START')
