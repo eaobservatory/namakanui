@@ -1,13 +1,9 @@
 '''
 Ryan Berthold 20181010
 
-TCP/IP socket interface to the Agilent N5173B signal generator,
+TCP/IP socket interface to the Agilent N5173B / E8257D signal generator,
 using SCPI command language.
 
-20181030 NOTE: The design board shows an Agilent 8257D.
-Is its command set substantially the same?  Or will I need to create
-a separate class?  Also if ASIAA uses a different signal generator
-for the GLT, need to develop a new control class (with same interface).
 '''
 
 from namakanui.ini import *
@@ -42,7 +38,7 @@ class Agilent(object):
         self.log = logging.getLogger(self.logname)
         self.ip = agconfig['ip']
         self.port = int(agconfig['port'])
-        self.dbm = float(agconfig['dbm'])
+        self.safe_dbm = float(agconfig['safe_dbm'])
         self.harmonic = int(agconfig['harmonic'])
         self.floog = float(agconfig['floog'])
         
@@ -52,7 +48,7 @@ class Agilent(object):
         
         self.log.debug('__init__ %s, sim=%d, %s:%d, dbm=%g, harmonic=%d, floog=%g',
                        inifilename, self.simulate, self.ip, self.port,
-                       self.dbm, self.harmonic, self.floog)
+                       self.safe_dbm, self.harmonic, self.floog)
         self.initialise()
     
     def __del__(self):
@@ -88,7 +84,7 @@ class Agilent(object):
             self.get_output()
         else:
             self.state['hz'] = 0.0
-            self.state['dbm'] = self.dbm
+            self.state['dbm'] = self.safe_dbm
             self.state['output'] = 0
         self.update(publish_only=True)
     

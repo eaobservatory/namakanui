@@ -16,7 +16,7 @@ The <dbm> parameter gives the starting dBm setting at each frequency;
 I've used -12 dBm for the ASIAA IF switch and -16 dBm for Bill's IF switch.
 You can also give "ini-X" for this parameter to start with the value
 interpolated from the table in the agilent.ini file, minus X dBm.
-In any case, the resulting value will be clamped to [-30,-6] dBm for safety.
+In any case, the resulting value will be clamped to [-20,-6] dBm for safety.
 
 Once you've created an output file, it can be converted to an ini table:
 
@@ -81,7 +81,7 @@ def mypub(n,s):
 
 agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, mypub, simulate=0)
 agilent.log.setLevel(logging.INFO)
-agilent.set_dbm(-30.0)
+agilent.set_dbm(agilent.safe_dbm)
 agilent.set_output(1)    
 cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, mypub, simulate=0)
 cart.power(1)
@@ -118,8 +118,8 @@ def adjust_dbm(lo_ghz):
     if use_ini:
         dbm += agilent.interp_dbm(args.band, lo_ghz)
     
-    if dbm < -30.0:
-        dbm = -30.0
+    if dbm < -20.0:
+        dbm = -20.0
     elif dbm > -6.0:
         dbm = -6.0
     
@@ -136,13 +136,13 @@ def adjust_dbm(lo_ghz):
     time.sleep(delay)
     cart.update_all()
     if cart.state['pll_unlock']:
-        agilent.set_dbm(-30.0)  # safe
+        agilent.set_dbm(agilent.safe_dbm)
         logging.error('failed to lock at %g', lo_ghz)
         return
     logging.info('LOCKED, dbm=%g, pll_if_power=%g', dbm, cart.state['pll_if_power'])
     
     # quickly reduce power if initial lock is too strong
-    while cart.state['pll_if_power'] < -1.5 and dbm > -30.0 and not cart.state['pll_unlock']:
+    while cart.state['pll_if_power'] < -1.5 and dbm > -20.0 and not cart.state['pll_unlock']:
         dbm -= 0.5
         agilent.set_dbm(dbm)
         time.sleep(delay)
@@ -181,7 +181,7 @@ def adjust_dbm(lo_ghz):
                 break
     
     if cart.state['pll_unlock']:
-        agilent.set_dbm(-30.0)  # safe
+        agilent.set_dbm(agilent.safe_dbm)
         logging.error('lost lock at %g', lo_ghz)
         return
     #print(lo_ghz, dbm, cart.state['pll_if_power'])
@@ -193,7 +193,7 @@ def try_adjust_dbm(lo_ghz):
     try:
         adjust_dbm(lo_ghz)
     except Exception as e:
-        agilent.set_dbm(-30.0)  # safe
+        agilent.set_dbm(agilent.safe_dbm)
         logging.error('unhandled exception: %s', e)
         raise
 
@@ -216,12 +216,16 @@ if cart.state['lo_ghz'] == lo_ghz and not cart.state['pll_unlock']:
         time.sleep(0.1)
         cart.update_all()
         if cart.state['pll_unlock']:
-            agilent.set_dbm(-30.0)
+            agilent.set_dbm(agilent.safe_dbm)
             logging.error('lost lock at %g', lo_ghz)
         logging.info('band %d tuned to %g GHz, IF power: %g', args.band, lo_ghz, cart.state['pll_if_power'])
     except Exception as e:
-        agilent.set_dbm(-30.0)  # safe
+        agilent.set_dbm(agilent.safe_dbm)
         logging.error('final retune exception: %s', e)
+
+# show the last dbm setting
+agilent.update()
+logging.info('final dbm: %.2f', agilent.state['dbm'])
 
 logging.info('done.')
 

@@ -47,7 +47,7 @@ def mypub(n,s):
 
 agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, mypub, simulate=0)
 agilent.log.setLevel(logging.INFO)
-agilent.set_dbm(-30.0)
+agilent.set_dbm(agilent.safe_dbm)
 agilent.set_output(1)
 cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, mypub, simulate=0)
 cart.power(1)
@@ -65,14 +65,14 @@ time.sleep(0.1)
 try:
     cart.tune(args.lo_ghz, 0.0)
 except RuntimeError as e:
-    agilent.set_dbm(-30.0)
+    agilent.set_dbm(agilent.safe_dbm)
     logging.error('tune error: %s, IF power: %g', e, cart.state['pll_if_power'])
     sys.exit(1)
 
 time.sleep(0.1)
 cart.update_all()
 if cart.state['pll_unlock']:
-    agilent.set_dbm(-30.0)
+    agilent.set_dbm(agilent.safe_dbm)
     logging.error('lost lock after tuning, IF power: %g', cart.state['pll_if_power'])
     sys.exit(1)
 

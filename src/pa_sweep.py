@@ -50,7 +50,7 @@ def mypub(n,s):
 
 agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, mypub, simulate=0)
 agilent.log.setLevel(logging.INFO)
-agilent.set_dbm(-30.0)
+agilent.set_dbm(agilent.safe_dbm)
 agilent.set_output(1)
 cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, mypub, simulate=0)
 cart.power(1)
@@ -70,7 +70,7 @@ logging.info('tuning cartridge...')
 try:
     cart.tune(args.lo_ghz, 0.0)
 except Exception as e:
-    agilent.set_dbm(-30.0)
+    agilent.set_dbm(agilent.safe_dbm)
     logging.error('tune error: %s, IF power: %g', e, cart.state['pll_if_power'])
     sys.exit(1)
 
@@ -132,7 +132,7 @@ logging.info('sweep done, retuning...')
 try:
     cart.tune(args.lo_ghz, 0.0)
 except Exception as e:
-    agilent.set_dbm(-30.0)
+    agilent.set_dbm(agilent.safe_dbm)
     logging.error('tune error: %s, IF power: %g', e, cart.state['pll_if_power'])
 
 logging.info('done, plotting...')

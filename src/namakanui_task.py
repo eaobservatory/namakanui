@@ -258,7 +258,7 @@ def set_band_args(BAND):
 
 def SET_BAND(msg):
     '''Set IFSwitch band to BAND.  If this would change the selection,
-       first sets Agilent to -30 dBm to avoid high power to mixer.'''
+       first sets Agilent to a safe level to avoid high power to mixer.'''
     log.debug('SET_BAND(%s)', msg.arg)
     if not initialised:
         raise drama.BadStatus(drama.APP_ERROR, 'task needs INITIALISE')
@@ -268,7 +268,7 @@ def SET_BAND(msg):
         raise drama.BadStatus(drama.INVARG, 'BAND %d not one of [3,6,7]' % (band))
     if ifswitch.get_band() != band:
         log.info('setting IF switch to band %d', band)
-        agilent.set_dbm(-30.0)  # reduce reference signal power first
+        agilent.set_dbm(agilent.safe_dbm)  # reduce reference signal power first
         ifswitch.set_band(band)
         agilent.update(publish_only=True)
     else:
@@ -378,7 +378,7 @@ def CART_TUNE(msg):
     
     if ifswitch.get_band() != band:
         log.info('setting IF switch to band %d', band)
-        agilent.set_dbm(-30.0)  # reduce reference signal power first
+        agilent.set_dbm(agilent.safe_dbm)  # reduce reference signal power first
         ifswitch.set_band(band)
     
     cartname = cartridge_tasknames[band]
