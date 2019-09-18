@@ -490,20 +490,23 @@ class BandFrame(tk.Frame):
         pa_frame = tk.LabelFrame(c0, text='PA')
         tk.Label(pa_frame, text='P0').grid(row=0, column=1, sticky='e')
         tk.Label(pa_frame, text='P1').grid(row=0, column=2, sticky='e')
-        tk.Label(pa_frame, text='Vd').grid(row=1, column=0, sticky='e')
-        tk.Label(pa_frame, text='Id').grid(row=2, column=0, sticky='e')
-        tk.Label(pa_frame, text='Vg').grid(row=3, column=0, sticky='ne')
+        tk.Label(pa_frame, text='Vs').grid(row=1, column=0, sticky='e')
+        tk.Label(pa_frame, text='Vd').grid(row=2, column=0, sticky='e')
+        tk.Label(pa_frame, text='Id').grid(row=3, column=0, sticky='e')
+        tk.Label(pa_frame, text='Vg').grid(row=4, column=0, sticky='ne')
+        self.v_pa_drain_s = []
         self.v_pa_drain_v = []
         self.v_pa_drain_c = []
         self.v_pa_gate_v = []
         for i in range(2):
-            self.v_pa_drain_v.append(grid_value(pa_frame, 1, i+1, 'e'))
-            self.v_pa_drain_c.append(grid_value(pa_frame, 2, i+1, 'e'))
-            self.v_pa_gate_v.append(grid_value(pa_frame, 3, i+1, 'ne'))
+            self.v_pa_drain_s.append(grid_value(pa_frame, 1, i+1, 'e'))
+            self.v_pa_drain_v.append(grid_value(pa_frame, 2, i+1, 'e'))
+            self.v_pa_drain_c.append(grid_value(pa_frame, 3, i+1, 'e'))
+            self.v_pa_gate_v.append(grid_value(pa_frame, 4, i+1, 'ne'))
         pa_frame.grid_columnconfigure(0, weight=1)
         pa_frame.grid_columnconfigure(1, weight=1)
         pa_frame.grid_columnconfigure(2, weight=1)
-        pa_frame.grid_rowconfigure(3, weight=1)
+        pa_frame.grid_rowconfigure(4, weight=1)
         
         # AMC, presented in a table with friendlier labels.
         # might save a little space by putting 5v in the LabelFrame.
@@ -713,6 +716,7 @@ class BandFrame(tk.Frame):
         
         # TODO warning?  at least pa_drain_v?
         for i in range(2):
+            self.v_pa_drain_s[i].set('%.3f'%(state['pa_drain_s'][i]))
             self.v_pa_drain_v[i].set('%.3f'%(state['pa_drain_v'][i]))
             self.v_pa_drain_c[i].set('%.3f'%(state['pa_drain_c'][i]))
             self.v_pa_gate_v[i].set('%.3f'%(state['pa_gate_v'][i]))

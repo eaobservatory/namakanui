@@ -302,6 +302,10 @@ class Cart(object):
             self.state['pa_drain_v'] = [0.0]*2
             self.state['pa_drain_c'] = [0.0]*2
         
+        # pa drain voltage scale set values
+        if 'pa_drain_s' not in self.state:
+            self.state['pa_drain_s'] = [0.0]*2
+        
         if self.state['pd_enable'] and not self.sim_cold:
             sis_v = []
             sis_c = []
@@ -843,9 +847,11 @@ class Cart(object):
                     break
                 pa += step_dir * step
                 self.femc.set_cartridge_lo_pa_pol_drain_voltage_scale(self.ca, po, pa)
+                self.state['pa_drain_s'][po] = pa
 
             pa = min_err_pa
             self.femc.set_cartridge_lo_pa_pol_drain_voltage_scale(self.ca, po, pa)
+            self.state['pa_drain_s'][po] = pa
             self.log.debug('_servo_pa po %d pa %.2f min_err %.3f uA (done)', po, pa, min_err*1e3)
         # Cart._servo_pa
     
@@ -1226,12 +1232,14 @@ class Cart(object):
         self.log.debug('_set_pa(%s)', pa)
         if self.sim_warm:
             self.state['pa_drain_v'] = pa[0:2]
+            self.state['pa_drain_s'] = pa[0:2]
             self.state['pa_gate_v'] = pa[2:4]
             return
         if not self.state['pd_enable']:
             raise RuntimeError(self.logname + ' power disabled')
         for po in range(2):
             self.femc.set_cartridge_lo_pa_pol_drain_voltage_scale(self.ca, po, pa[po])
+            self.state['pa_drain_s'][po] = pa[po]
             self.femc.set_cartridge_lo_pa_pol_gate_voltage(self.ca, po, pa[po+2])
         # Cart._set_pa
 
