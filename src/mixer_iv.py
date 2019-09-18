@@ -54,10 +54,10 @@ if args.mv_step > 0.05:
 if args.mv_min > args.mv_max:
     logging.error('start/end out of order')
     sys.exit(1)
-if band==6 and (args.mv_min < -15.0 or args.mv_max > 15.0):
+if args.band==6 and (args.mv_min < -15.0 or args.mv_max > 15.0):
     logging.error('band 6 mv min/max outside [-15, 15] range')
     sys.exit(1)
-if band==7 and (args.mv_min < -5.0 or args.mv_max > 5.0):
+if args.band==7 and (args.mv_min < -5.0 or args.mv_max > 5.0):
     logging.error('band 7 mv min/max outside [-5, 5] range')
     sys.exit(1)
 
@@ -159,8 +159,8 @@ def sample(what=''):
                 ua[po*2 + sb].append(avg_ua)
         sys.stdout.write('\n')
         sys.stdout.flush()
-        if j == progress and j < len(smv)-10:
-            logging.info('sampling %s %.1f%%', what, j*100.0/len(smv))
+        if j == progress and j < len(mvs)-10:
+            logging.info('sampling %s %.1f%%', what, j*100.0/len(mvs))
             progress += progress_step
     logging.info('sampling %s done.', what)
     ramp(0.0)
