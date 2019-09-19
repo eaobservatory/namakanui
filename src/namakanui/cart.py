@@ -1233,14 +1233,16 @@ class Cart(object):
         if self.sim_warm:
             self.state['pa_drain_v'] = pa[0:2]
             self.state['pa_drain_s'] = pa[0:2]
-            self.state['pa_gate_v'] = pa[2:4]
+            if len(pa) > 2:
+                self.state['pa_gate_v'] = pa[2:4]
             return
         if not self.state['pd_enable']:
             raise RuntimeError(self.logname + ' power disabled')
         for po in range(2):
             self.femc.set_cartridge_lo_pa_pol_drain_voltage_scale(self.ca, po, pa[po])
             self.state['pa_drain_s'][po] = pa[po]
-            self.femc.set_cartridge_lo_pa_pol_gate_voltage(self.ca, po, pa[po+2])
+            if len(pa) > 2:
+                self.femc.set_cartridge_lo_pa_pol_gate_voltage(self.ca, po, pa[po+2])
         # Cart._set_pa
 
 
