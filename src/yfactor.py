@@ -184,6 +184,27 @@ yf_index = 18
 # depends on actual value of ppcomm_time.
 ua_n = 10
 
+
+# TODO: define a custom error type and raise/catch it like an adult
+
+
+def if_setup(adjust):
+    # LEVEL_ADJUST 0=setup_only, 1=setup_and_level, 2=level_only
+    # BIT_MASK is DCMs to use: bit0=DCM0, bit1=DCM1, ... bit31=DCM31.
+    setup_type = ['setup_only', 'setup_and_level', 'level_only']
+    logging.info('setup IFTASK, LEVEL_ADJUST %d: %s', adjust, setup_type[adjust])
+    # use DCMS 8-11, 12-15, 20-23, 24-27
+    bitmask = 0xf<<8 | 0xf<<12 | 0xf<<20 | 0xf<<24
+    # TODO configurable IF_FREQ?  will 6 be default for both bands?
+    msg = drama.obey('IFTASK@if-micro', 'TEST_SETUP',
+                     NASM_SET='R_CABIN', BAND_WIDTH=1000, QUAD_MODE=4,
+                     IF_FREQ=6, LEVEL_ADJUST=adjust, BIT_MASK=bitmask).wait(5)
+    if msg.reason != drama.REA_COMPLETE or msg.status != 0:
+        logging.error('bad reply from IFTASK.TEST_SETUP: %s', msg)
+        return 1
+    return 0
+
+
 def iv(target, rows):
     if target == 'hot':
         p_index = hot_p_index
@@ -193,6 +214,14 @@ def iv(target, rows):
     sys.stderr.write('%s: '%(target))
     sys.stderr.flush()
     
+    # at the start of a HOT row, re-tune and re-level the power meters
+    # at the nominal values.  do not relevel on SKY or y-factor won't work.
+    if target == 'hot':
+        cart.tune(lo_ghz, 0.0)
+        cart.update_all()
+        if if_setup(2):  # level only
+            return 1
+    
     cart._ramp_sis_bias_voltages([mvs[0]*4)
     for i,mv in enumerate(mvs):
         if (i+1) % 10 == 0:
@@ -200,8 +229,16 @@ def iv(target, rows):
             sys.stderr.flush()
             cart.update_all()  # for anyone monitoring
         for po in range(2):
-            for sb in range(2):
-                cart.femc.set_sis_voltage(cart.ca, po, sb, mv)
+            #for sb in range(2):
+            #    cart.femc.set_sis_voltage(cart.ca, po, sb, mv)
+            
+            # flip bias voltage for band 6 USB
+            if band == 6:
+                cart.femc.set_sis_voltage(cart.ca, po, 0, -mv)
+                cart.femc.set_sis_voltage(cart.ca, po, 1,  mv)
+            else:
+                cart.femc.set_sis_voltage(cart.ca, po, 0, mv)
+                cart.femc.set_sis_voltage(cart.ca, po, 1, mv)
         rows[i][mv_index] = mv
         # start IFTASK action while we average the mixer current readings
         transid = drama.obey("IFTASK@if-micro", "WRITE_TP2", FILE="NONE", ITIME=0.1)
@@ -209,7 +246,7 @@ def iv(target, rows):
             for po in range(2):
                 for sb in range(2):
                     ua = cart.femc.get_sis_current(cart.ca,po,sb)*1e3
-                    rows[i][ua_avg_index + po*2 + sb] += ua
+                    rows[i][ua_avg_index + po*2 + sb] += abs(ua)  # for band 6
                     rows[i][ua_dev_index + po*2 + sb] += ua*ua
         # get IFTASK reply
         msg = transid.wait(5)
@@ -223,13 +260,17 @@ def iv(target, rows):
     
     return 0
     # iv
-            
-    
+
+
 
 # the rest of this needs to be DRAMA to be able to talk to IFTASK.
 # TODO: could actually publish parameters.  also we need a task name.
 def MAIN(msg):
     # TODO obey/kick check
+    
+    if if_setup(1):  # setup and level
+        drama.Exit('MAIN done')
+        return
     
     for k,pa in enumerate(pas):
         logging.info('========= PA: %g (%.2f%%) =========', pa, 100*k/len(pas))
@@ -266,6 +307,7 @@ def MAIN(msg):
         
     # finally retune the receiver to get settings back to nominal
     cart.tune(lo_ghz, 0.0)
+    drama.Exit('MAIN done')
     # MAIN
         
 

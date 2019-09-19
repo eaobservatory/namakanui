@@ -16,7 +16,8 @@ uae.setup(
                'set_load.py',
                'temp_mon.py',
                'tune.sh',
-               'tune_only.py'],
+               'tune_only.py',
+               'yfactor.py'],
     packages = ['namakanui'],
 )
 
