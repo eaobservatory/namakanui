@@ -52,12 +52,13 @@ import argparse
 import namakanui.cart
 import namakanui.agilent
 import namakanui.ifswitch
+import namakanui.load
 import namakanui.femc
 import logging
 
 taskname = 'YF_%d'%(os.getpid())
 
-logging.root.setLevel(logging.DEBUG)
+logging.root.setLevel(logging.INFO)
 logging.root.addHandler(logging.StreamHandler())
 
 binpath = os.path.dirname(os.path.realpath(sys.argv[0])) + '/'
@@ -198,21 +199,20 @@ def if_setup(adjust):
     # TODO configurable IF_FREQ?  will 6 be default for both bands?
     msg = drama.obey('IFTASK@if-micro', 'TEST_SETUP',
                      NASM_SET='R_CABIN', BAND_WIDTH=1000, QUAD_MODE=4,
-                     IF_FREQ=6, LEVEL_ADJUST=adjust, BIT_MASK=bitmask).wait(5)
+                     IF_FREQ=6, LEVEL_ADJUST=adjust, BIT_MASK=bitmask).wait(60)
     if msg.reason != drama.REA_COMPLETE or msg.status != 0:
         logging.error('bad reply from IFTASK.TEST_SETUP: %s', msg)
         return 1
     return 0
 
 
-def iv(target, rows):
+def iv(target, rows, pa):
     if target == 'hot':
         p_index = hot_p_index
     else:
         p_index = sky_p_index
     load.move('b%d_%s'%(band,target))
-    sys.stderr.write('%s: '%(target))
-    sys.stderr.flush()
+    
     
     # at the start of a HOT row, re-tune and re-level the power meters
     # at the nominal values.  do not relevel on SKY or y-factor won't work.
@@ -222,42 +222,118 @@ def iv(target, rows):
         if if_setup(2):  # level only
             return 1
     
-    cart._ramp_sis_bias_voltages([mvs[0]*4)
+    # do this here because of the retuning
+    cart._set_pa([pa,pa])
+    
+    sys.stderr.write('%s: '%(target))
+    sys.stderr.flush()
+    
+    # NOTE: The two SIS mixers in each polarization module are not really USB and LSB.
+    # Rather the input to one is phase-shifted relative to the other, and their 
+    # signals are then combined to produce USB and LSB outputs.  So to check the
+    # power output and Y-factor from each mixer individually, the other one needs
+    # to have its output disabled by setting its bias voltage to zero.
+    # Since we still need to smoothly ramp SIS bias voltage for large changes,
+    # we therefore do two separate loops for sis1 and sis2.
+    
+    # TODO: Once we have the mixers optimized individually, we might still need
+    # to optimize their combined outputs.  This will require a 2D scan of
+    # mixer bias voltage for each PA setting.
+    
+    #cart._ramp_sis_bias_voltages([mvs[0]]*4)  # BUG! wrong sign for band 6! big jump!
+    #for i,mv in enumerate(mvs):
+        #if (i+1) % 10 == 0:
+            #sys.stderr.write('%.2f%% '%(100*i/len(mvs)))
+            #sys.stderr.flush()
+            #cart.update_all()  # for anyone monitoring
+        #for po in range(2):
+            ##for sb in range(2):
+            ##    cart.femc.set_sis_voltage(cart.ca, po, sb, mv)
+            
+            ## flip bias voltage for band 6 USB
+            #if band == 6:
+                #cart.femc.set_sis_voltage(cart.ca, po, 0, -mv)
+                #cart.femc.set_sis_voltage(cart.ca, po, 1,  mv)
+            #else:
+                #cart.femc.set_sis_voltage(cart.ca, po, 0, mv)
+                #cart.femc.set_sis_voltage(cart.ca, po, 1, mv)
+        #rows[i][mv_index] = mv
+        ## start IFTASK action while we average the mixer current readings
+        #transid = drama.obey("IFTASK@if-micro", "WRITE_TP2", FILE="NONE", ITIME=0.1)
+        #for j in range(ua_n):
+            #for po in range(2):
+                #for sb in range(2):
+                    #ua = cart.femc.get_sis_current(cart.ca,po,sb)*1e3
+                    #rows[i][ua_avg_index + po*2 + sb] += abs(ua)  # for band 6
+                    #rows[i][ua_dev_index + po*2 + sb] += ua*ua
+        ## get IFTASK reply
+        #msg = transid.wait(5)
+        #if msg.reason != drama.REA_COMPLETE or msg.status != 0:
+            #logging.error('bad reply from IFTASK.WRITE_TP2: %s', msg)
+            #return 1
+        #rows[i][p_index + 0] = msg.arg['POWER20']
+        #rows[i][p_index + 1] = msg.arg['POWER24']
+        #rows[i][p_index + 2] = msg.arg['POWER12']
+        #rows[i][p_index + 3] = msg.arg['POWER8']
+    
+    # sis1
+    sb = 0
+    mult = 1.0
+    if band == 6:
+        mult = -1.0
+    cart._ramp_sis_bias_voltages([mult*mvs[0], 0.0, mult*mvs[0], 0.0])
     for i,mv in enumerate(mvs):
-        if (i+1) % 10 == 0:
-            sys.stderr.write('%.2f%% '%(100*i/len(mvs))
+        if (i+1) % 20 == 0:
+            sys.stderr.write('%.2f%% '%(0.0 + 50*i/len(mvs)))
             sys.stderr.flush()
             cart.update_all()  # for anyone monitoring
         for po in range(2):
-            #for sb in range(2):
-            #    cart.femc.set_sis_voltage(cart.ca, po, sb, mv)
-            
-            # flip bias voltage for band 6 USB
-            if band == 6:
-                cart.femc.set_sis_voltage(cart.ca, po, 0, -mv)
-                cart.femc.set_sis_voltage(cart.ca, po, 1,  mv)
-            else:
-                cart.femc.set_sis_voltage(cart.ca, po, 0, mv)
-                cart.femc.set_sis_voltage(cart.ca, po, 1, mv)
+            cart.femc.set_sis_voltage(cart.ca, po, sb, mult*mv)
         rows[i][mv_index] = mv
         # start IFTASK action while we average the mixer current readings
         transid = drama.obey("IFTASK@if-micro", "WRITE_TP2", FILE="NONE", ITIME=0.1)
         for j in range(ua_n):
             for po in range(2):
-                for sb in range(2):
-                    ua = cart.femc.get_sis_current(cart.ca,po,sb)*1e3
-                    rows[i][ua_avg_index + po*2 + sb] += abs(ua)  # for band 6
-                    rows[i][ua_dev_index + po*2 + sb] += ua*ua
+                ua = cart.femc.get_sis_current(cart.ca,po,sb)*1e3
+                rows[i][ua_avg_index + po*2 + sb] += abs(ua)  # for band 6
+                rows[i][ua_dev_index + po*2 + sb] += ua*ua
         # get IFTASK reply
         msg = transid.wait(5)
         if msg.reason != drama.REA_COMPLETE or msg.status != 0:
             logging.error('bad reply from IFTASK.WRITE_TP2: %s', msg)
             return 1
         rows[i][p_index + 0] = msg.arg['POWER20']
-        rows[i][p_index + 1] = msg.arg['POWER24']
         rows[i][p_index + 2] = msg.arg['POWER12']
-        rows[i][p_index + 3] = msg.arg['POWER8']
     
+    # sis2
+    sb = 1
+    cart._ramp_sis_bias_voltages([0.0, mvs[0], 0.0, mvs[0]])
+    for i,mv in enumerate(mvs):
+        if (i+1) % 20 == 0:
+            sys.stderr.write('%.2f%% '%(50.0 + 50*i/len(mvs)))
+            sys.stderr.flush()
+            cart.update_all()  # for anyone monitoring
+        for po in range(2):
+            cart.femc.set_sis_voltage(cart.ca, po, sb, mv)
+        rows[i][mv_index] = mv
+        # start IFTASK action while we average the mixer current readings
+        transid = drama.obey("IFTASK@if-micro", "WRITE_TP2", FILE="NONE", ITIME=0.1)
+        for j in range(ua_n):
+            for po in range(2):
+                ua = cart.femc.get_sis_current(cart.ca,po,sb)*1e3
+                rows[i][ua_avg_index + po*2 + sb] += ua
+                rows[i][ua_dev_index + po*2 + sb] += ua*ua
+        # get IFTASK reply
+        msg = transid.wait(5)
+        if msg.reason != drama.REA_COMPLETE or msg.status != 0:
+            logging.error('bad reply from IFTASK.WRITE_TP2: %s', msg)
+            return 1
+        rows[i][p_index + 1] = msg.arg['POWER24']
+        rows[i][p_index + 3] = msg.arg['POWER8']
+        
+    
+    sys.stderr.write('\n')
+    sys.stderr.flush()
     return 0
     # iv
 
@@ -267,47 +343,46 @@ def iv(target, rows):
 # TODO: could actually publish parameters.  also we need a task name.
 def MAIN(msg):
     # TODO obey/kick check
-    
-    if if_setup(1):  # setup and level
+    try:
+        if if_setup(1):  # setup and level
+            return
+        
+        for k,pa in enumerate(pas):
+            logging.info('========= PA: %g (%.2f%%) =========', pa, 100*k/len(pas))
+            #cart._set_pa([pa,pa])  since iv retunes we do this there
+            
+            # need to save output rows since they have both hot and sky data.
+            rows = [None]*len(mvs)
+            for i in range(len(rows)):
+                rows[i] = [0.0]*22  # TODO unmagic
+                rows[i][pa_index] = pa
+            
+            if iv('hot', rows, pa):
+                break
+            if iv('sky', rows, pa):
+                break
+            
+            n = ua_n*2
+            for r in rows:
+                for j in range(4):
+                    # calculate mixer current avg/dev.
+                    # iv just saves sum(x) and sum(x^2);
+                    # remember stddev is sqrt(E(x^2) - E(x)^2)
+                    avg = r[ua_avg_index + j] / n
+                    dev = (r[ua_dev_index + j]/n - avg**2)**.5
+                    r[ua_avg_index + j] = avg
+                    r[ua_dev_index + j] = dev
+                    
+                    # calculate y-factors
+                    r[yf_index + j] = r[hot_p_index + j] / r[sky_p_index + j]
+                    
+                # write out the data
+                sys.stdout.write(' '.join('%g'%x for x in r) + '\n')
+                sys.stdout.flush()
+    finally:
+        # retune the receiver to get settings back to nominal
+        cart.tune(lo_ghz, 0.0)
         drama.Exit('MAIN done')
-        return
-    
-    for k,pa in enumerate(pas):
-        logging.info('========= PA: %g (%.2f%%) =========', pa, 100*k/len(pas))
-        cart._set_pa([pa,pa])
-        
-        # need to save output rows since they have both hot and sky data.
-        rows = [None]*len(mvs)
-        for i in range(len(rows)):
-            rows[i] = [0.0]*22  # TODO unmagic
-            rows[i][pa_index] = pa
-        
-        if iv('hot', rows):
-            break
-        if iv('sky', rows):
-            break
-        
-        n = ua_n*2
-        for r in rows:
-            for j in range(4):
-                # calculate mixer current avg/dev.
-                # iv just saves sum(x) and sum(x^2);
-                # remember stddev is sqrt(E(x^2) - E(x)^2)
-                avg = r[ua_avg_index + j] / n
-                dev = (r[ua_dev_index + j]/n - avg**2)**.5
-                r[ua_avg_index + j] = avg
-                r[ua_dev_index + j] = dev
-                
-                # calculate y-factors
-                r[yf_index + j] = r[hot_p_index + j] / r[sky_p_index + j]
-                
-            # write out the data
-            sys.stdout.write(' '.join('%g'%x for x in r) + '\n')
-            sys.stdout.flush()
-        
-    # finally retune the receiver to get settings back to nominal
-    cart.tune(lo_ghz, 0.0)
-    drama.Exit('MAIN done')
     # MAIN
         
 
