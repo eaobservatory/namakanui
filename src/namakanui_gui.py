@@ -289,6 +289,8 @@ class LoadFrame(tk.Frame):
         self.v_busy.set('%d'%(state['busy']))
         if state['busy']:
             self.v_busy.bg('yellow')
+        else:
+            self.v_busy.bg('')
         self.v_homed.set('%d'%(state['homed']), state['homed'])
     
     def table_changed(self, state):
@@ -536,7 +538,7 @@ class BandFrame(tk.Frame):
         amc_frame.grid_rowconfigure(4, weight=1)
         
         # cart temperatures, broken out (including pll).  TODO skip spares.
-        temp_frame = tk.LabelFrame(c1, text='Temperature')
+        temp_frame = tk.LabelFrame(c1, text='Temperature (K)')
         self.v_pll_temp = grid_label(temp_frame, 'pll', 0)
         self.v_cart_temp = []
         for i,n in enumerate(self.tnames):
@@ -673,7 +675,7 @@ class BandFrame(tk.Frame):
         self.v_number.set('%d'%(state['number']))
         self.v_simulate.set('0x%x'%(state['simulate']), state['simulate']==0)  # TODO tooltip, warning
         # more or less alphabetical order
-        self.v_amc_5v.set(state['amc_5v'], 4.0 < state['amc_5v'] < 6.0)  # TODO tighten up
+        self.v_amc_5v.set('%.3f'%(state['amc_5v']), 4.0 < state['amc_5v'] < 6.0)  # TODO tighten up
         # TODO warnings for AMC values?
         self.v_amc_drain_a_c.set('%.3f'%(state['amc_drain_a_c']))
         self.v_amc_drain_a_v.set('%.3f'%(state['amc_drain_a_v']))
@@ -687,7 +689,7 @@ class BandFrame(tk.Frame):
         self.v_amc_mult_d_c.set('%.3f'%(state['amc_mult_d_c']))
         self.v_amc_mult_d_v.set('%.3f'%(state['amc_mult_d_v']))
         
-        self.v_pll_temp.set('%.3f'%(state['pll_temp']), -20.0 < state['pll_temp'] < 50.0)  # TODO tighten up; use K
+        self.v_pll_temp.set('%.3f'%(state['pll_temp']+273.15), -20.0 < state['pll_temp'] < 50.0)  # TODO tighten up
         for i,v in enumerate(state['cart_temp']):
             okay = self.tokay[i][0] < v < self.tokay[i][1]
             self.v_cart_temp[i].set('%.3f'%(v), okay)
@@ -711,7 +713,7 @@ class BandFrame(tk.Frame):
         self.v_lo_ghz.set('%.9f'%(state['lo_ghz']), 70 < state['lo_ghz'] < 370)  # TODO band-specific
         
         # TODO tighten these up
-        self.v_pa_3v.set('%.3f'%(state['pa_3v']), 2 < state['pa_3v'] < 4)
+        self.v_pa_3v.set('%.3f'%(state['pa_3v']), 2 < abs(state['pa_3v']) < 4)
         self.v_pa_5v.set('%.3f'%(state['pa_5v']), 4 < state['pa_5v'] < 6)
         
         # TODO warning?  at least pa_drain_v?
@@ -748,7 +750,7 @@ class BandFrame(tk.Frame):
         for i in range(4):
             # TODO warnings, band-specific
             self.v_sis_open_loop[i].set('%d'%(state['sis_open_loop'][i]))
-            self.v_sis_c[i].set('%.3f'%(state['sis_c'][i]))
+            self.v_sis_c[i].set('%.3f'%(state['sis_c'][i]*1e3))  # mA to uA
             self.v_sis_v[i].set('%.3f'%(state['sis_v'][i]))
             self.v_sis_mag_c[i].set('%.3f'%(state['sis_mag_c'][i]))
             self.v_sis_mag_v[i].set('%.3f'%(state['sis_mag_v'][i]))
