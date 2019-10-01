@@ -120,8 +120,8 @@ def adjust_dbm(lo_ghz):
     
     if dbm < -20.0:
         dbm = -20.0
-    elif dbm > -6.0:
-        dbm = -6.0
+    elif dbm > -1.0:
+        dbm = -1.0
     
     while dbm <= 0.0:
         logging.info('lo_ghz %g, dbm %g', lo_ghz, dbm)
@@ -185,7 +185,7 @@ def adjust_dbm(lo_ghz):
         logging.error('lost lock at %g', lo_ghz)
         return
     #print(lo_ghz, dbm, cart.state['pll_if_power'])
-    sys.stdout.write('%.3f %6.2f %.3f\n' % (lo_ghz, dbm, cart.state['pll_if_power']))
+    sys.stdout.write('%.3f %6.2f %.3f %.3f %.3f\n' % (lo_ghz, dbm, cart.state['pll_if_power'], cart.state['pa_drain_s'][0], cart.state['pa_drain_s'][1]))
     sys.stdout.flush()
 
 
@@ -198,7 +198,7 @@ def try_adjust_dbm(lo_ghz):
         raise
 
 
-sys.stdout.write('#lo_ghz dbm pll_if_power\n')  # topcat ascii
+sys.stdout.write('#lo_ghz dbm pll_if_power pa_0 pa_1\n')  # topcat ascii
 lo_ghz = args.LO_GHz_start
 while lo_ghz < args.LO_GHz_end:
     try_adjust_dbm(lo_ghz)
