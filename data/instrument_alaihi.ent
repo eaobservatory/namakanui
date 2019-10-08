@@ -43,12 +43,12 @@ which the receptor is sensitive.
        <etal>0.9</etal>
    </waveBand>
 
-   <receptor id="NA1" health="ON" x="0.0" y="0.0" pol_type="Circular" band="W">
-      <sensitivity reference="NA1" value="1.0"/>
+   <receptor id="NA0" health="ON" x="0.0" y="0.0" pol_type="Circular" band="W">
+      <sensitivity reference="NA0" value="1.0"/>
       <handedness value="left" />
    </receptor>
-   <receptor id="NA2" health="ON" x="0.0" y="0.0" pol_type="Circular" band="W">
-      <sensitivity reference="NA1" value="1.0"/>
+   <receptor id="NA1" health="ON" x="0.0" y="0.0" pol_type="Circular" band="W">
+      <sensitivity reference="NA0" value="1.0"/>
       <handedness value="right" />
    </receptor>
 </INSTRUMENT>

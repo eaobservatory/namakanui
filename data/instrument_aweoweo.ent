@@ -43,23 +43,23 @@ which the receptor is sensitive.
        <etal>0.9</etal>
    </waveBand>
 
-   <receptor id="NW1L" health="ON" x="0.0" y="0.0" pol_type="Linear" band="B">
-      <sensitivity reference="NW1L" value="1.0"/>
+   <receptor id="NW0L" health="ON" x="0.0" y="0.0" pol_type="Linear" band="B">
+      <sensitivity reference="NW0L" value="1.0"/>
       <angle units="rad" value="0.0" />
       <sideband value="LSB" />
    </receptor>
-   <receptor id="NW1U" health="ON" x="0.0" y="0.0" pol_type="Linear" band="B">
-      <sensitivity reference="NW1L" value="1.0"/>
+   <receptor id="NW0U" health="ON" x="0.0" y="0.0" pol_type="Linear" band="B">
+      <sensitivity reference="NW0L" value="1.0"/>
       <angle units="rad" value="0.0" />
       <sideband value="USB" />
    </receptor>
-   <receptor id="NW2L" health="ON" x="0.0" y="0.0" pol_type="Linear" band="B">
-      <sensitivity reference="NW1L" value="1.0"/>
+   <receptor id="NW1L" health="ON" x="0.0" y="0.0" pol_type="Linear" band="B">
+      <sensitivity reference="NW0L" value="1.0"/>
       <angle units="rad" value="1.570796" />
       <sideband value="LSB" />
    </receptor>
-   <receptor id="NW2U" health="ON" x="0.0" y="0.0" pol_type="Linear" band="B">
-      <sensitivity reference="NW1L" value="1.0"/>
+   <receptor id="NW1U" health="ON" x="0.0" y="0.0" pol_type="Linear" band="B">
+      <sensitivity reference="NW0L" value="1.0"/>
       <angle units="rad" value="1.570796" />
       <sideband value="USB" />
    </receptor>

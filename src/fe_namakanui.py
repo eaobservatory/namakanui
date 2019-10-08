@@ -79,18 +79,18 @@ g_state = {
 # fill in initial RECEPTOR values; may be modified by INITIALISE
 # TODO: maybe at this point these should just be empty strings
 if g_band == 3:
-    g_state['RECEPTOR_ID1'] = 'NA1'
-    g_state['RECEPTOR_ID2'] = 'NA2'
+    g_state['RECEPTOR_ID1'] = 'NA0'
+    g_state['RECEPTOR_ID2'] = 'NA1'
 if g_band == 6:
-    g_state['RECEPTOR_ID1'] = 'NU1L'
-    g_state['RECEPTOR_ID2'] = 'NU1U'
-    g_state['RECEPTOR_ID3'] = 'NU2L'
-    g_state['RECEPTOR_ID4'] = 'NU2U'
+    g_state['RECEPTOR_ID1'] = 'NU0L'
+    g_state['RECEPTOR_ID2'] = 'NU0U'
+    g_state['RECEPTOR_ID3'] = 'NU1L'
+    g_state['RECEPTOR_ID4'] = 'NU1U'
 if g_band == 7:
-    g_state['RECEPTOR_ID1'] = 'NW1L'
-    g_state['RECEPTOR_ID2'] = 'NW1U'
-    g_state['RECEPTOR_ID3'] = 'NW2L'
-    g_state['RECEPTOR_ID4'] = 'NW2U'
+    g_state['RECEPTOR_ID1'] = 'NW0L'
+    g_state['RECEPTOR_ID2'] = 'NW0U'
+    g_state['RECEPTOR_ID3'] = 'NW1L'
+    g_state['RECEPTOR_ID4'] = 'NW1U'
 g_state['RECEPTOR_VAL1'] = 'ON'
 g_state['RECEPTOR_VAL2'] = 'ON'
 if g_band in [6,7]:
@@ -171,9 +171,9 @@ def initialise(msg):
         for i,r in enumerate(inst['receptor']):
             ID = r['id']
             VAL = r['health']  # ON or OFF
-            valid_ids = {3: ['NA1', 'NA2'],
-                         6: ['NU1L', 'NU2L', 'NU1U', 'NU2U'],
-                         7: ['NW1L', 'NW2L', 'NW1U', 'NW2U']}
+            valid_ids = {3: ['NA0', 'NA1'],
+                         6: ['NU0L', 'NU1L', 'NU0U', 'NU1U'],
+                         7: ['NW0L', 'NW1L', 'NW0U', 'NW1U']}
             if ID not in valid_ids[g_band]:
                 raise drama.BadStatus(WRAP__WRONG_RECEPTOR_IN_INITIALISE,
                     'bad INSTRUMENT.receptor.id %s' % (ID))
