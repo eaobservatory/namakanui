@@ -689,7 +689,9 @@ class BandFrame(tk.Frame):
         self.v_amc_mult_d_c.set('%.3f'%(state['amc_mult_d_c']))
         self.v_amc_mult_d_v.set('%.3f'%(state['amc_mult_d_v']))
         
-        self.v_pll_temp.set('%.3f'%(state['pll_temp']+273.15), -20.0 < state['pll_temp'] < 50.0)  # TODO tighten up
+        self.v_pll_temp.set('%.3f'%(state['pll_temp']+273.15), -20.0 < state['pll_temp'] < 45.0)
+        if 40 <= state['pll_temp'] < 45.0:
+            self.v_pll_temp.bg('yellow')
         for i,v in enumerate(state['cart_temp']):
             okay = self.tokay[i][0] < v < self.tokay[i][1]
             self.v_cart_temp[i].set('%.3f'%(v), okay)
