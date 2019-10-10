@@ -217,7 +217,7 @@ class Load(object):
     
     def home(self):
         '''Home the stage and wait for completion.'''
-        self.log.debug('home')
+        self.log.info('home')
         
         if self.simulate:
             self.update()  # sets homed=1
@@ -251,7 +251,7 @@ class Load(object):
     
     def move(self, pos):
         '''Move to pos (name or counts) and wait for completion.'''
-        self.log.debug('move(%s)', pos)
+        self.log.info('move(%s)', pos)
         
         if pos in self.positions:
             pos = self.positions[pos]
