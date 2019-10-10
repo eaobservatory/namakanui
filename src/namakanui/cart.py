@@ -537,9 +537,18 @@ class Cart(object):
         Internal function only, does not publish state.
         Lock the PLL to produce the given LO frequency.
         The reference signal generator must already be set properly.
-        Raises RuntimeError on lock failure.
+        Raises ValueError for bad lo_ghz, or RuntimeError on lock failure.
         '''
-        yig_ghz = lo_ghz / (self.cold_mult * self.warm_mult)
+        # check lo_ghz against valid range.  we might be able to use
+        # the correction voltage to tune slightly outside (2.3 MHz/volt),
+        # but in practice _adjust_fm(0) will lose the lock.
+        total_mult = self.cold_mult * self.warm_mult
+        lo_min = self.yig_lo * total_mult
+        lo_max = self.yig_hi * total_mult
+        if not (lo_min <= lo_ghz <= lo_max):
+            raise ValueError('%s _lock_pll lo_ghz %g not in [%g, %g] range' % (self.logname, lo_ghz, lo_min, lo_max))
+        
+        yig_ghz = lo_ghz / total_mult
         yig_step = (self.yig_hi - self.yig_lo) / 4095  # GHz per count
         coarse_counts = max(0,min(4095, int((yig_ghz - self.yig_lo) / yig_step) ))
         window_counts = int(0.05 / yig_step) + 1  # 50 MHz, ~85 counts
@@ -800,6 +809,8 @@ class Cart(object):
         The documented step of 2.5/255 can result in quantization steps
         for band7, I think due to float32 rounding.  We use a slightly
         higher value to avoid aliasing.
+
+        20191004 HACK: Mixer 01 died, so servo the PA using sb2 instead.
         '''
         self.log.info('_servo_pa')
         
@@ -817,7 +828,9 @@ class Cart(object):
         lo_ghz = self.state['lo_ghz']
         nom_pa = interp_table(self.pa_table, lo_ghz)[1:]
         nom_mixer = interp_table(self.mixer_table, lo_ghz)
-        nom_curr = [nom_mixer[5]*.001, nom_mixer[7]*.001]  # table in uA, but readout in mA.
+        #nom_curr = [nom_mixer[5]*.001, nom_mixer[7]*.001]  # table in uA, but readout in mA.
+        sb = 1
+        nom_curr = [nom_mixer[5+sb]*.001, nom_mixer[7+sb]*.001]  # table in uA, but readout in mA.
         self.log.debug('_servo_pa nom_pa=%s, nom_curr=%s', nom_pa, nom_curr)
         for po in range(2):
             # pa affects current magnitude,
@@ -834,7 +847,7 @@ class Cart(object):
                 curr = 0.0
                 n = 10
                 for i in range(n):
-                    curr += self.femc.get_sis_current(self.ca, po, 0)
+                    curr += self.femc.get_sis_current(self.ca, po, sb)
                 curr /= n
                 self.log.debug('_servo_pa po %d pa %.2f curr %.3f uA', po, pa, curr*1e3)
                 diff_curr = nom_curr[po] - curr
