@@ -37,18 +37,18 @@ which the receptor is sensitive.
 <INSTRUMENT NAME="FE_UU" SERIAL="UU" FOC_STATION="DIRECT" X="0.0" Y="0.0" WAVELENGTH="1235">
    <IF_CENTER_FREQ>6.0</IF_CENTER_FREQ>
    <bw units="Hz" value="4.0E9"/>
-   <smu_offset X="0.0" Y="0.0" Z="0.7"/>
-   <pointing_offset CA="-8.0" IE="73.0"/>
+   <smu_offset X="-0.02" Y="1.72" Z="0.46"/>
+   <pointing_offset IA="-2.66" IE="8.33" NPAE="16.16" CA="23.61" AN="0.1" AW="-1.26" TF="-0.88"/>
    <waveBand  band="A" label="A" units="Hz" centre="243E9" width="62E9">
        <etal>0.9</etal>
    </waveBand>
 
-   <receptor id="NU0L" health="ON" x="0.0" y="0.0" pol_type="Linear" band="A">
+   <receptor id="NU0L" health="OFF" x="0.0" y="0.0" pol_type="Linear" band="A">
       <sensitivity reference="NU0L" value="1.0"/>
       <angle units="rad" value="0.0" />
       <sideband value="LSB" />
    </receptor>
-   <receptor id="NU0U" health="ON" x="0.0" y="0.0" pol_type="Linear" band="A">
+   <receptor id="NU0U" health="OFF" x="0.0" y="0.0" pol_type="Linear" band="A">
       <sensitivity reference="NU0L" value="1.0"/>
       <angle units="rad" value="0.0" />
       <sideband value="USB" />
