@@ -88,6 +88,7 @@ parser.add_argument('lo_ghz', type=float)
 parser.add_argument('--mv')
 parser.add_argument('--pa')
 parser.add_argument('lock_polarity', nargs='?', choices=['below','above'], default='above')
+parser.add_argument('--level_only', action='store_true')
 args = parser.parse_args()
 
 def parse_range(s, what, min_step, max_step):
@@ -150,6 +151,9 @@ agilent.update()
 cart.tune(lo_ghz, 0.0)
 cart.update_all()
 
+# save the nominal sis bias voltages
+nom_v = cart.state['sis_v']
+
 # TODO: adjust agilent dbm to optimize pll_if_power?
 
 # init load controller and set to hot (ambient) load for this band
@@ -163,11 +167,20 @@ sys.stdout.write('# %s\n'%(sys.argv))
 sys.stdout.write('#\n')
 sys.stdout.write('#pa mv')
 mixers = ['01', '02', '11', '12']
+# TODO get clever about this if using more than 2 power readings per mixer
+#powers = ['01_cm20', '01_cm24', '02_cm20', '02_cm24', '11_cm12', '11_cm8', '12_cm12', '12_cm8']
+dcm_0 = list(range(20,28))
+dcm_1 = list(range(12,16)) + list(range(8,12))
+powers = []
+powers += ['01_dcm%d'%(x) for x in dcm_0]
+powers += ['02_dcm%d'%(x) for x in dcm_0]
+powers += ['11_dcm%d'%(x) for x in dcm_1]
+powers += ['12_dcm%d'%(x) for x in dcm_1]
 sys.stdout.write(' ' + ' '.join('ua_avg_'+m for m in mixers))
 sys.stdout.write(' ' + ' '.join('ua_dev_'+m for m in mixers))
-sys.stdout.write(' ' + ' '.join('hot_p_'+m for m in mixers))
-sys.stdout.write(' ' + ' '.join('sky_p_'+m for m in mixers))
-sys.stdout.write(' ' + ' '.join('yf_'+m for m in mixers))
+sys.stdout.write(' ' + ' '.join('hot_p_'+p for p in powers))
+sys.stdout.write(' ' + ' '.join('sky_p_'+p for p in powers))
+sys.stdout.write(' ' + ' '.join('yf_'+p for p in powers))
 sys.stdout.write('\n')
 sys.stdout.flush()
 
@@ -177,12 +190,12 @@ mv_index = 1
 ua_avg_index = 2
 ua_dev_index = 6
 hot_p_index = 10
-sky_p_index = 14
-yf_index = 18
+sky_p_index = hot_p_index + len(powers)
+yf_index = sky_p_index + len(powers)
 
 # number of mixer current readings to take per bias voltage (per load)
-# TODO might be able to double this without impacting runtime due to ITIME;
-# depends on actual value of ppcomm_time.
+# TODO might be able to increase this without impacting runtime due to ITIME,
+# but it depends on the actual value of ppcomm_time.
 ua_n = 10
 
 
@@ -195,15 +208,17 @@ def if_setup(adjust):
     setup_type = ['setup_only', 'setup_and_level', 'level_only']
     logging.info('setup IFTASK, LEVEL_ADJUST %d: %s', adjust, setup_type[adjust])
     # use DCMS 8-11, 12-15, 20-23, 24-27
+    # TODO: maybe only specify DCMs that we take POWER readings from.
     bitmask = 0xf<<8 | 0xf<<12 | 0xf<<20 | 0xf<<24
     # TODO configurable IF_FREQ?  will 6 be default for both bands?
     msg = drama.obey('IFTASK@if-micro', 'TEST_SETUP',
                      NASM_SET='R_CABIN', BAND_WIDTH=1000, QUAD_MODE=4,
-                     IF_FREQ=6, LEVEL_ADJUST=adjust, BIT_MASK=bitmask).wait(60)
+                     IF_FREQ=6, LEVEL_ADJUST=adjust, BIT_MASK=bitmask).wait(90)
     if msg.reason != drama.REA_COMPLETE or msg.status != 0:
         logging.error('bad reply from IFTASK.TEST_SETUP: %s', msg)
         return 1
     return 0
+
 
 
 def iv(target, rows, pa):
@@ -213,14 +228,20 @@ def iv(target, rows, pa):
         p_index = sky_p_index
     load.move('b%d_%s'%(band,target))
     
+    # TODO Maybe it's wrong to relevel for each PA; it makes it harder
+    # to compare power between PAs if the leveling is slightly different.
+    # Ambient temperature shouldn't be changing much compared to the
+    # difference between hot load and sky, either.
     
     # at the start of a HOT row, re-tune and re-level the power meters
     # at the nominal values.  do not relevel on SKY or y-factor won't work.
+    # actually re-leveling makes it difficult to compare power levels
+    # across sweeps, so skip it.  retuning is fine though.
     if target == 'hot':
         cart.tune(lo_ghz, 0.0)
         cart.update_all()
-        if if_setup(2):  # level only
-            return 1
+        #if if_setup(2):  # level only
+        #    return 1
     
     # do this here because of the retuning
     cart._set_pa([pa,pa])
@@ -240,48 +261,14 @@ def iv(target, rows, pa):
     # to optimize their combined outputs.  This will require a 2D scan of
     # mixer bias voltage for each PA setting.
     
-    #cart._ramp_sis_bias_voltages([mvs[0]]*4)  # BUG! wrong sign for band 6! big jump!
-    #for i,mv in enumerate(mvs):
-        #if (i+1) % 10 == 0:
-            #sys.stderr.write('%.2f%% '%(100*i/len(mvs)))
-            #sys.stderr.flush()
-            #cart.update_all()  # for anyone monitoring
-        #for po in range(2):
-            ##for sb in range(2):
-            ##    cart.femc.set_sis_voltage(cart.ca, po, sb, mv)
-            
-            ## flip bias voltage for band 6 USB
-            #if band == 6:
-                #cart.femc.set_sis_voltage(cart.ca, po, 0, -mv)
-                #cart.femc.set_sis_voltage(cart.ca, po, 1,  mv)
-            #else:
-                #cart.femc.set_sis_voltage(cart.ca, po, 0, mv)
-                #cart.femc.set_sis_voltage(cart.ca, po, 1, mv)
-        #rows[i][mv_index] = mv
-        ## start IFTASK action while we average the mixer current readings
-        #transid = drama.obey("IFTASK@if-micro", "WRITE_TP2", FILE="NONE", ITIME=0.1)
-        #for j in range(ua_n):
-            #for po in range(2):
-                #for sb in range(2):
-                    #ua = cart.femc.get_sis_current(cart.ca,po,sb)*1e3
-                    #rows[i][ua_avg_index + po*2 + sb] += abs(ua)  # for band 6
-                    #rows[i][ua_dev_index + po*2 + sb] += ua*ua
-        ## get IFTASK reply
-        #msg = transid.wait(5)
-        #if msg.reason != drama.REA_COMPLETE or msg.status != 0:
-            #logging.error('bad reply from IFTASK.WRITE_TP2: %s', msg)
-            #return 1
-        #rows[i][p_index + 0] = msg.arg['POWER20']
-        #rows[i][p_index + 1] = msg.arg['POWER24']
-        #rows[i][p_index + 2] = msg.arg['POWER12']
-        #rows[i][p_index + 3] = msg.arg['POWER8']
-    
     # sis1
     sb = 0
     mult = 1.0
     if band == 6:
         mult = -1.0
-    cart._ramp_sis_bias_voltages([mult*mvs[0], 0.0, mult*mvs[0], 0.0])
+    #cart._ramp_sis_bias_voltages([mult*mvs[0], 0.0, mult*mvs[0], 0.0])
+    # leave sis2 at NOMINAL values so mixers are more balanced
+    cart._ramp_sis_bias_voltages([mult*mvs[0], nom_v[1], mult*mvs[0], nom_v[3]])
     for i,mv in enumerate(mvs):
         if (i+1) % 20 == 0:
             sys.stderr.write('%.2f%% '%(0.0 + 50*i/len(mvs)))
@@ -302,12 +289,37 @@ def iv(target, rows, pa):
         if msg.reason != drama.REA_COMPLETE or msg.status != 0:
             logging.error('bad reply from IFTASK.WRITE_TP2: %s', msg)
             return 1
-        rows[i][p_index + 0] = msg.arg['POWER20']
-        rows[i][p_index + 2] = msg.arg['POWER12']
+        #rows[i][p_index + 0] = msg.arg['POWER20']
+        #rows[i][p_index + 2] = msg.arg['POWER12']
+        # read both a USB and LSB power for each mixer
+        #rows[i][p_index +  0] = msg.arg['POWER20']  # 1U
+        #rows[i][p_index +  1] = msg.arg['POWER24']  # 1L
+        #rows[i][p_index +  4] = msg.arg['POWER12']  # 2U
+        #rows[i][p_index +  5] = msg.arg['POWER8']   # 2L
+        # full blown
+        rows[i][p_index +  0] = msg.arg['POWER20']  # 1U
+        rows[i][p_index +  1] = msg.arg['POWER21']  # 1U
+        rows[i][p_index +  2] = msg.arg['POWER22']  # 1U
+        rows[i][p_index +  3] = msg.arg['POWER23']  # 1U
+        rows[i][p_index +  4] = msg.arg['POWER24']  # 1L
+        rows[i][p_index +  5] = msg.arg['POWER25']  # 1L
+        rows[i][p_index +  6] = msg.arg['POWER26']  # 1L
+        rows[i][p_index +  7] = msg.arg['POWER27']  # 1L
+        rows[i][p_index +  16] = msg.arg['POWER12']  # 2U
+        rows[i][p_index +  17] = msg.arg['POWER13']  # 2U
+        rows[i][p_index +  18] = msg.arg['POWER14']  # 2U
+        rows[i][p_index +  19] = msg.arg['POWER15']  # 2U
+        rows[i][p_index +  20] = msg.arg['POWER8']    # 2L
+        rows[i][p_index +  21] = msg.arg['POWER9']    # 2L
+        rows[i][p_index +  22] = msg.arg['POWER10']   # 2L
+        rows[i][p_index +  23] = msg.arg['POWER11']   # 2L
+        
     
     # sis2
     sb = 1
-    cart._ramp_sis_bias_voltages([0.0, mvs[0], 0.0, mvs[0]])
+    #cart._ramp_sis_bias_voltages([0.0, mvs[0], 0.0, mvs[0]])
+    # leave sis1 at NOMINAL values so mixers are more balanced
+    cart._ramp_sis_bias_voltages([nom_v[0], mvs[0], nom_v[2], mvs[0]])
     for i,mv in enumerate(mvs):
         if (i+1) % 20 == 0:
             sys.stderr.write('%.2f%% '%(50.0 + 50*i/len(mvs)))
@@ -328,8 +340,30 @@ def iv(target, rows, pa):
         if msg.reason != drama.REA_COMPLETE or msg.status != 0:
             logging.error('bad reply from IFTASK.WRITE_TP2: %s', msg)
             return 1
-        rows[i][p_index + 1] = msg.arg['POWER24']
-        rows[i][p_index + 3] = msg.arg['POWER8']
+        #rows[i][p_index + 1] = msg.arg['POWER24']
+        #rows[i][p_index + 3] = msg.arg['POWER8']
+        # read both a USB and LSB power for each mixer
+        #rows[i][p_index +  2] = msg.arg['POWER20']  # 1U
+        #rows[i][p_index +  3] = msg.arg['POWER24']  # 1L
+        #rows[i][p_index +  6] = msg.arg['POWER12']  # 2U
+        #rows[i][p_index +  7] = msg.arg['POWER8']   # 2L
+        # full blown
+        rows[i][p_index +  8]  = msg.arg['POWER20']  # 1U
+        rows[i][p_index +  9]  = msg.arg['POWER21']  # 1U
+        rows[i][p_index +  10] = msg.arg['POWER22']  # 1U
+        rows[i][p_index +  11] = msg.arg['POWER23']  # 1U
+        rows[i][p_index +  12] = msg.arg['POWER24']  # 1L
+        rows[i][p_index +  13] = msg.arg['POWER25']  # 1L
+        rows[i][p_index +  14] = msg.arg['POWER26']  # 1L
+        rows[i][p_index +  15] = msg.arg['POWER27']  # 1L
+        rows[i][p_index +  24] = msg.arg['POWER12']  # 2U
+        rows[i][p_index +  25] = msg.arg['POWER13']  # 2U
+        rows[i][p_index +  26] = msg.arg['POWER14']  # 2U
+        rows[i][p_index +  27] = msg.arg['POWER15']  # 2U
+        rows[i][p_index +  28] = msg.arg['POWER8']   # 2L
+        rows[i][p_index +  29] = msg.arg['POWER9']   # 2L
+        rows[i][p_index +  30] = msg.arg['POWER10']  # 2L
+        rows[i][p_index +  31] = msg.arg['POWER11']  # 2L
         
     
     sys.stderr.write('\n')
@@ -344,7 +378,8 @@ def iv(target, rows, pa):
 def MAIN(msg):
     # TODO obey/kick check
     try:
-        if if_setup(1):  # setup and level
+        if_arg = [1,2][int(args.level_only)]
+        if if_setup(if_arg):
             return
         
         for k,pa in enumerate(pas):
@@ -354,7 +389,7 @@ def MAIN(msg):
             # need to save output rows since they have both hot and sky data.
             rows = [None]*len(mvs)
             for i in range(len(rows)):
-                rows[i] = [0.0]*22  # TODO unmagic
+                rows[i] = [0.0]*(yf_index+len(powers))
                 rows[i][pa_index] = pa
             
             if iv('hot', rows, pa):
@@ -372,7 +407,8 @@ def MAIN(msg):
                     dev = (r[ua_dev_index + j]/n - avg**2)**.5
                     r[ua_avg_index + j] = avg
                     r[ua_dev_index + j] = dev
-                    
+                
+                for j in range(len(powers)):
                     # calculate y-factors
                     r[yf_index + j] = r[hot_p_index + j] / r[sky_p_index + j]
                     
@@ -380,6 +416,10 @@ def MAIN(msg):
                 sys.stdout.write(' '.join('%g'%x for x in r) + '\n')
                 sys.stdout.flush()
     finally:
+        # final timestamp
+        sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
+        sys.stdout.flush()
+        
         # retune the receiver to get settings back to nominal
         cart.tune(lo_ghz, 0.0)
         drama.Exit('MAIN done')
