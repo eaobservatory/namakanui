@@ -39,6 +39,7 @@ class Agilent(object):
         self.ip = agconfig['ip']
         self.port = int(agconfig['port'])
         self.safe_dbm = float(agconfig['safe_dbm'])
+        self.max_dbm = float(agconfig['max_dbm'])
         self.harmonic = int(agconfig['harmonic'])
         self.floog = float(agconfig['floog'])
         
@@ -160,6 +161,7 @@ class Agilent(object):
     def set_dbm(self, dbm):
         '''Set output amplitude in dBm.  Updates state, but does not publish.'''
         dbm = float(dbm)
+        dbm = min(dbm, self.max_dbm)
         self.set_cmd(':power', dbm, '%.2f')
         self.state['dbm'] = dbm
     

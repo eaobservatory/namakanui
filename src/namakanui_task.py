@@ -137,6 +137,8 @@ def INITIALISE(msg):
         warm_mult[band] = dyn_state['warm_mult']
     
     # now reinstantiate the local stuff
+    if load is not None:
+        load.close()
     del agilent
     del cryo
     del load
@@ -148,6 +150,8 @@ def INITIALISE(msg):
     gc.collect()
     agilent = namakanui.agilent.Agilent(datapath+nconfig['agilent_ini'], drama.wait, drama.set_param, simulate)
     cryo = namakanui.cryo.Cryo(datapath+nconfig['cryo_ini'], drama.wait, drama.set_param, simulate)
+    # wait a moment for load, jcms4 is fussy about reconnects
+    drama.wait(1)
     load = namakanui.load.Load(datapath+nconfig['load_ini'], drama.wait, drama.set_param, simulate)
     ifswitch = namakanui.ifswitch.IFSwitch(datapath+nconfig['ifswitch_ini'], drama.wait, drama.set_param, simulate)
     
@@ -363,6 +367,8 @@ def CART_TUNE(msg):
        
        TODO: lock polarity (below or above reference) could be a parameter.
              for now we just read back from the cartridge task.
+       
+       TODO: save dbm offset and use it for close frequencies.
     '''
     log.debug('CART_TUNE(%s)', msg.arg)
     if not initialised:
@@ -391,6 +397,7 @@ def CART_TUNE(msg):
     fyig = lo_ghz / (cold_mult[band] * warm_mult[band])
     fsig = (fyig*warm_mult[band] + agilent.floog*lock_polarity) / agilent.harmonic
     dbm = agilent.interp_dbm(band, lo_ghz)
+    dbm = min(dbm, agilent.max_dbm)
     log.info('setting agilent to %g GHz, %g dBm', fsig, dbm)
     # these "set" calls modify agilent.state, but do not publish
     agilent.set_hz(fsig*1e9)
@@ -404,10 +411,59 @@ def CART_TUNE(msg):
         vstr = ', %g V' % (voltage)
         band_kwargs["VOLTAGE"] = voltage
     log.info('band %d tuning to LO %g GHz%s...', band, lo_ghz, vstr)
-    msg = drama.obey(cartname, 'TUNE', **band_kwargs).wait()
-    if msg.status != 0:
-        raise drama.BadStatus(msg.status, '%s TUNE failed' % (cartname))
-    log.info('band %d tuned.', band)
+    
+    # during commissioning, the dBm lookup table has needed constant updates.
+    # tune in a loop, adjusting the dBm to get pll_if_power in proper range.
+    orig_dbm = dbm
+    dbm_max = min(agilent.max_dbm, dbm + 3.0)  # limit to 2x nominal power
+    tries = 0
+    while True:
+        tries += 1
+        msg = drama.obey(cartname, 'TUNE', **band_kwargs).wait()
+        if msg.reason != drama.REA_COMPLETE:
+            raise drama.BadStatus(drama.UNEXPMSG, '%s bad TUNE msg: %s' % (cartname, msg))
+        elif msg.status == drama.INVARG:
+            # frequency out of range
+            agilent.set_dbm(agilent.safe_dbm)
+            raise drama.BadStatus(msg.status, '%s TUNE failed' % (cartname))
+        elif msg.status != 0:
+            # tune failure, raise the power and try again
+            old_dbm = dbm
+            dbm += 1.0
+            if dbm > dbm_max:
+                dbm = dbm_max
+            if dbm == old_dbm or tries > 5:  # stuck at the limit, time to give up
+                agilent.set_dbm(orig_dbm)
+                raise drama.BadStatus(msg.status, '%s TUNE failed' % (cartname))
+            log.warning('band %d tune failed, retuning at %.2f dBm...', band, dbm)
+            agilent.set_dbm(dbm)
+            time.sleep(0.05)
+            continue
+        # we got a lock.  check the pll_if_power level.
+        # TODO don't assume pubname is DYN_STATE
+        dyn_state = drama.get(cartname, "DYN_STATE").wait().arg["DYN_STATE"]
+        pll_if_power = dyn_state['pll_if_power']
+        if tries > 5:  # avoid bouncing around forever
+            break
+        old_dbm = dbm
+        if pll_if_power < -2.5:  # power too high
+            dbm -= 0.5
+        elif pll_if_power > -0.7:  # power too low
+            dbm += 0.5
+        else:  # power is fine
+            break
+        if dbm > dbm_max:
+            dbm = dbm_max
+        elif dbm < -20.0:
+            dbm = -20.0
+        if dbm == old_dbm:  # stuck at the limit, so it'll have to do
+            break
+        log.warning('band %d bad pll_if_power %.2f; retuning at %.2f dBm...', band, pll_if_power, dbm)
+        agilent.set_dbm(dbm)
+        time.sleep(0.05)
+        
+    
+    log.info('band %d tuned to LO %g GHz, pll_if_power %.2f at %.2f dBm.', band, lo_ghz, pll_if_power, dbm)
     # CART_TUNE
 
 

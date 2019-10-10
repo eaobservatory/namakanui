@@ -25,6 +25,7 @@ grep -v '^#' <file> | sort -n | awk '{ printf "dbm%02d=%s, %6s\n", NR, $1, $2 }'
 
 Usage:
 dbm_table.py <band> <LO_GHz_start> <LO_GHz_end> <LO_GHz_step> <lock_polarity> <dbm>
+
 '''
 
 import jac_sw
@@ -120,10 +121,10 @@ def adjust_dbm(lo_ghz):
     
     if dbm < -20.0:
         dbm = -20.0
-    elif dbm > -1.0:
-        dbm = -1.0
+    elif dbm > agilent.max_dbm -1.0:
+        dbm = agilent.max_dbm -1.0
     
-    while dbm <= 0.0:
+    while dbm <= agilent.max_dbm:
         logging.info('lo_ghz %g, dbm %g', lo_ghz, dbm)
         agilent.set_dbm(dbm)
         time.sleep(delay)
@@ -159,10 +160,10 @@ def adjust_dbm(lo_ghz):
                 break   
     
     # slowly increase power to target
-    while cart.state['pll_if_power'] > -1.5 and dbm < -0.1 and not cart.state['pll_unlock']:
-        if cart.state['pll_if_power'] > -1.0 and dbm < -0.3:
+    while cart.state['pll_if_power'] > -1.5 and dbm < agilent.max_dbm-0.1 and not cart.state['pll_unlock']:
+        if cart.state['pll_if_power'] > -1.0 and dbm < agilent.max_dbm-0.3:
             dbm += 0.3
-        elif cart.state['pll_if_power'] > -1.25 and dbm < -0.2:
+        elif cart.state['pll_if_power'] > -1.25 and dbm < agilent.max_dbm-0.2:
             dbm += 0.2
         else:
             dbm += 0.1
