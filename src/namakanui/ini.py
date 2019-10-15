@@ -3,7 +3,8 @@ RMB 20181228
 IncludeParser is a ConfigParser derivative that supports an [include] section.
 Handles nested inclusions with absolute or relative paths.
 
-This module also provides functions for reading and interpolating tables.
+This module also provides functions for reading and interpolating tables,
+including those in topcat ascii format.
 '''
 
 import sys
@@ -65,6 +66,39 @@ def read_table(config_section, name, dtype, fnames):
         tup = ttype(*[dtype(x.strip()) for x in val.split(',')])
         if prev is not None and tup[0] < prev:
             raise RuntimeError('[%s] %s table values are out of order' % (config_section.name, name))
+        prev = tup[0]
+        table.append(tup)
+    return table
+
+
+def read_ascii(filename):
+    '''
+    Return a table from the given topcat-ascii filename.
+    The table will be a list of namedtuples holding values of type float.
+    If the table is unsorted (ascending first column), raise RuntimeError.
+    '''
+    header = ''
+    ttype = None
+    table = []
+    prev = None
+    for line in open(filename):
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith('#'):
+            line = line[1:].strip()
+            if not line:
+                continue
+            header = line
+            continue
+        if not ttype:
+            # name (and field names) must be valid python identifiers
+            name = filename.split('/')[-1].split('.')[0].strip()
+            #print('ttype args:', name, header)  # debug
+            ttype = collections.namedtuple(name, header)
+        tup = ttype(*[float(x) for x in line.split()])
+        if prev is not None and tup[0] < prev:
+            raise RuntimeError('%s table values are out of order' % (filename))
         prev = tup[0]
         table.append(tup)
     return table

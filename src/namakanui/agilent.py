@@ -10,6 +10,7 @@ from namakanui.ini import *
 from namakanui import sim
 import socket
 import logging
+import os
 
 
 class Agilent(object):
@@ -43,9 +44,11 @@ class Agilent(object):
         self.harmonic = int(agconfig['harmonic'])
         self.floog = float(agconfig['floog'])
         
+        datapath = os.path.dirname(inifilename) + '/'
         self.dbm_tables = {}  # indexed by band
         for b in [3,6,7]:
-            self.dbm_tables[b] = read_table(self.config['dbm_b%d'%(b)], 'dbm', float, ['lo', 'dbm'])
+            #self.dbm_tables[b] = read_table(self.config['dbm_b%d'%(b)], 'dbm', float, ['lo', 'dbm'])
+            self.dbm_tables[b] = read_ascii(datapath + agconfig['b%d_dbm'%(b)])
         
         self.log.debug('__init__ %s, sim=%d, %s:%d, dbm=%g, harmonic=%d, floog=%g',
                        inifilename, self.simulate, self.ip, self.port,
@@ -199,6 +202,6 @@ class Agilent(object):
 
     def interp_dbm(self, band, lo_ghz):
         '''Get interpolated dBm for this band and frequency.'''
-        return interp_table(self.dbm_tables[band], lo_ghz)[-1]
+        return interp_table(self.dbm_tables[band], lo_ghz).dbm
 
 
