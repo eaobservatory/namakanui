@@ -9,6 +9,7 @@ using SCPI command language.
 from namakanui.ini import *
 from namakanui import sim
 import socket
+import select
 import logging
 import os
 
@@ -116,6 +117,9 @@ class Agilent(object):
         self.log.debug('cmd: %s', cmd)
         reply = cmd.endswith(b'?')
         cmd += b'\n'
+        # clear out recv buffer before sending cmd
+        while select.select([self.s], [], [], 0)[0]:
+            self.s.recv(256)
         # packets are small, never expect this to fail -- be lazy.
         b = self.s.send(cmd)
         assert b == len(cmd)
