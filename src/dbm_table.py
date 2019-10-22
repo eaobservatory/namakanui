@@ -112,7 +112,7 @@ def adjust_dbm(lo_ghz):
     delay = .05
     fyig = lo_ghz / (cart.cold_mult * cart.warm_mult)
     fsig = (fyig*cart.warm_mult + floog) / agilent.harmonic
-    agilent.set_hz(fsig*1e9)
+    #agilent.set_hz(fsig*1e9)  # might not be safe here
     
     # get starting dbm value
     dbm = args.dbm
@@ -123,6 +123,16 @@ def adjust_dbm(lo_ghz):
         dbm = -20.0
     elif dbm > agilent.max_dbm -1.0:
         dbm = agilent.max_dbm -1.0
+    
+    # try to do this safely without going all the way back to safe_dbm.
+    # if increasing power output, set the frequency first.
+    # if decreasing power output, set the output power first.
+    if dbm > agilent.state['dbm']:
+        agilent.set_hz(fsig*1e9)
+        agilent.set_dbm(dbm)
+    else:
+        agilent.set_dbm(dbm)
+        agilent.set_hz(fsig*1e9)
     
     while dbm <= agilent.max_dbm:
         logging.info('lo_ghz %g, dbm %g', lo_ghz, dbm)

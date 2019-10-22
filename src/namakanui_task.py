@@ -399,9 +399,16 @@ def CART_TUNE(msg):
     dbm = agilent.interp_dbm(band, lo_ghz)
     dbm = min(dbm, agilent.max_dbm)
     log.info('setting agilent to %g GHz, %g dBm', fsig, dbm)
-    # these "set" calls modify agilent.state, but do not publish
-    agilent.set_hz(fsig*1e9)
-    agilent.set_dbm(dbm)
+    # try to do this safely while still maintaining the lock, if possible.
+    # if increasing power output, set the frequency first.
+    # if decreasing power output, set the output power first.
+    # these "set" calls modify agilent.state, but do not publish.
+    if dbm > agilent.state['dbm']:
+        agilent.set_hz(fsig*1e9)
+        agilent.set_dbm(dbm)
+    else:
+        agilent.set_dbm(dbm)
+        agilent.set_hz(fsig*1e9)
     agilent.set_output(1)
     agilent.update(publish_only=True)
     time.sleep(0.05)  # wait 50ms; for small changes PLL might hold lock
@@ -417,6 +424,7 @@ def CART_TUNE(msg):
     orig_dbm = dbm
     dbm_max = min(agilent.max_dbm, dbm + 3.0)  # limit to 2x nominal power
     tries = 0
+    max_tries = 5
     while True:
         tries += 1
         msg = drama.obey(cartname, 'TUNE', **band_kwargs).wait()
@@ -432,7 +440,7 @@ def CART_TUNE(msg):
             dbm += 1.0
             if dbm > dbm_max:
                 dbm = dbm_max
-            if dbm == old_dbm or tries > 5:  # stuck at the limit, time to give up
+            if dbm == old_dbm or tries > max_tries:  # stuck at the limit, time to give up
                 agilent.set_dbm(orig_dbm)
                 raise drama.BadStatus(msg.status, '%s TUNE failed' % (cartname))
             log.warning('band %d tune failed, retuning at %.2f dBm...', band, dbm)
@@ -443,7 +451,7 @@ def CART_TUNE(msg):
         # TODO don't assume pubname is DYN_STATE
         dyn_state = drama.get(cartname, "DYN_STATE").wait().arg["DYN_STATE"]
         pll_if_power = dyn_state['pll_if_power']
-        if tries > 5:  # avoid bouncing around forever
+        if tries > max_tries:  # avoid bouncing around forever
             break
         old_dbm = dbm
         if pll_if_power < -2.5:  # power too high
