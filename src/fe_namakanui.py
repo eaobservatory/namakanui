@@ -109,6 +109,10 @@ g_mech_tuning = 'NEVER'
 g_elec_tuning = 'NEVER'
 g_group = 0  # used by SETUP_SEQUENCE if mech/elec_tuning is "GROUP"
 
+# for eSMA/VLBI/EHT the receiver will be tuned manually.
+# this setting overrides tuning in configure and setup_sequence.
+g_esma_mode = 0
+
 
 # TODO: do we need this?  no cold load (yet)
 t_cold_freq = []
@@ -155,11 +159,15 @@ def initialise(msg):
     
     if msg.reason == drama.REA_OBEY:
         
-        xmlname = msg.arg.get('INITIALISE', '')
+        xmlname = msg.arg['INITIALISE']
         initxml = drama.obj_from_xml(xmlname)
         drama.set_param('INITIALISE', initxml)
         if log.isEnabledFor(logging.DEBUG):  # expensive formatting
             log.debug("INITIALISE:\n%s", pprint.pformat(initxml))
+        
+        global g_esma_mode
+        g_esma_mode = int(bool(msg.arg.get('ESMA_MODE', 0)))
+        drama.set_param('ESMA_MODE', numpy.int32(g_esma_mode))
         
         initxml = initxml['frontend_init']
         inst = initxml['INSTRUMENT']
@@ -261,7 +269,7 @@ def configure(msg, wait_set, done_set):
     
     global g_sideband, g_rest_freq, g_center_freq, g_doppler
     global g_freq_mult, g_freq_off_scale
-    global g_mech_tuning, g_elec_tuning, g_group
+    global g_mech_tuning, g_elec_tuning, g_group, g_esma_mode
     
     if msg.reason == drama.REA_OBEY:
         config = drama.get_param('CONFIGURATION')
@@ -311,11 +319,14 @@ def configure(msg, wait_set, done_set):
         drama.set_param('ELEC_TUNE', numpy.int32({'NEVER':0}.get(g_elec_tuning,1)))
         drama.set_param('REST_FREQUENCY', g_rest_freq)
         drama.set_param('SIDEBAND', g_sideband)
-        #drama.set_param('SB_MODE', fe['SB_MODE'])
-        drama.set_param('SB_MODE', 'SSB')  # debug
+        drama.set_param('SB_MODE', fe['SB_MODE'])
+        #drama.set_param('SB_MODE', 'SSB')  # debug
         
         og = ['ONCE', 'GROUP']
-        if g_mech_tuning in og or g_elec_tuning in og:
+        if g_esma_mode:
+            configure.tune = False
+            wait_set.add(ANTENNA_TASK)
+        elif g_mech_tuning in og or g_elec_tuning in og:
             configure.tune = True
             wait_set.add(ANTENNA_TASK)
         else:
@@ -368,14 +379,10 @@ def configure(msg, wait_set, done_set):
     
     g_state['DOPPLER'] = g_doppler
     
-    # TODO check for valid LO_FREQUENCY range
-    lo_freq = g_doppler*g_rest_freq - g_center_freq*g_freq_mult
-    g_state['LO_FREQUENCY'] = lo_freq
-    drama.set_param('LO_FREQ', lo_freq)
-    
     if configure.tune:
         # tune the receiver.
         # TODO: target control voltage for fast frequency switching.
+        lo_freq = g_doppler*g_rest_freq - g_center_freq*g_freq_mult
         voltage = 0.0
         g_state['LOCKED'] = 'NO'
         drama.set_param('LOCK_STATUS', numpy.int32(0))
@@ -384,6 +391,19 @@ def configure(msg, wait_set, done_set):
         check_message(msg, f'obey({NAMAKANUI_TASK},CART_TUNE,{g_band},{lo_freq},{voltage})')
         g_state['LOCKED'] = 'YES'
         drama.set_param('LOCK_STATUS', numpy.int32(1))
+    else:
+        # ask the receiver for its current status.
+        # NOTE: no lo_ghz, or being unlocked, is not necessarily an error here.
+        msg = drama.get(CART_TASK, 'DYN_STATE').wait(3)
+        check_message(msg, f'get({CART_TASK},DYN_STATE)')
+        dyn_state = msg.arg['DYN_STATE']
+        lo_freq = dyn_state['lo_ghz']
+        locked = int(not dyn_state['pll_unlock'])
+        g_state['LOCKED'] = ['NO', 'YES'][locked]
+        drama.set_param('LOCK_STATUS', numpy.int32(locked))
+    
+    g_state['LO_FREQUENCY'] = lo_freq
+    drama.set_param('LO_FREQ', lo_freq)
     
     # TODO: remove, we don't have a cold load
     t_cold = interpolate_t_cold(lo_freq) or g_state['TEMP_LOAD2']
@@ -404,7 +424,7 @@ def setup_sequence(msg, wait_set, done_set):
     
     global g_sideband, g_rest_freq, g_center_freq, g_doppler
     global g_freq_mult, g_freq_off_scale
-    global g_mech_tuning, g_elec_tuning, g_group
+    global g_mech_tuning, g_elec_tuning, g_group, g_esma_mode
     
     if msg.reason == drama.REA_OBEY:
         # TODO these can probably be skipped
@@ -440,7 +460,12 @@ def setup_sequence(msg, wait_set, done_set):
         if g_mech_tuning in cd or g_elec_tuning in cd:
             setup_sequence.tune = True
         
-        if setup_sequence.tune:
+        if g_esma_mode:
+            setup_sequence.tune = False
+        
+        # if PTCS is in TASKS, get updated DOPPLER value --
+        # regardless of whether or not we're tuning the receiver.
+        if ANTENNA_TASK in drama.get_param("TASKS").split():
             wait_set.add(ANTENNA_TASK)
         else:
             drama.cache_path(ANTENNA_TASK)  # shouldn't actually need this here
@@ -495,26 +520,42 @@ def setup_sequence(msg, wait_set, done_set):
     
     g_state['DOPPLER'] = g_doppler
     
-    # TODO check for valid LO_FREQUENCY range
-    lo_freq = (g_doppler*g_rest_freq) - (g_center_freq*g_freq_mult) + (g_freq_off_scale*g_state['FREQ_OFFSET']*1e-3)
-    g_state['LO_FREQUENCY'] = lo_freq
-    drama.set_param('LO_FREQ', lo_freq)
-    
     if setup_sequence.tune:
         # tune the receiver.
         # TODO: target control voltage for fast frequency switching.
+        lo_freq = (g_doppler*g_rest_freq) - (g_center_freq*g_freq_mult) + (g_freq_off_scale*g_state['FREQ_OFFSET']*1e-3)
         voltage = 0.0
         g_state['LOCKED'] = 'NO'
         drama.set_param('LOCK_STATUS', numpy.int32(0))
         log.info('tuning receiver LO to %.9f GHz, %.3f V...', lo_freq, voltage)
         msg = drama.obey(NAMAKANUI_TASK, 'CART_TUNE', g_band, lo_freq, voltage).wait(30)
         check_message(msg, f'obey({NAMAKANUI_TASK},CART_TUNE,{g_band},{lo_freq},{voltage})')
+        g_state['LO_FREQUENCY'] = lo_freq
+        drama.set_param('LO_FREQ', lo_freq)
         g_state['LOCKED'] = 'YES'
         drama.set_param('LOCK_STATUS', numpy.int32(1))
+    else:
+        # make sure rx is tuned and locked.  better to fail here than in SEQUENCE.
+        msg = drama.get(CART_TASK, 'DYN_STATE').wait(3)
+        check_message(msg, f'get({CART_TASK},DYN_STATE)')
+        dyn_state = msg.arg['DYN_STATE']
+        lo_freq = dyn_state['lo_ghz']
+        locked = int(not dyn_state['pll_unlock'])
+        g_state['LO_FREQUENCY'] = lo_freq
+        drama.set_param('LO_FREQ', lo_freq)
+        g_state['LOCKED'] = ['NO', 'YES'][locked]
+        drama.set_param('LOCK_STATUS', numpy.int32(locked))
+        if not lo_freq or not locked:
+            raise drama.BadStatus(WRAP__RXNOTLOCKED, 'receiver unlocked in setup_sequence')
     
     # TODO: remove, we don't have a cold load
     t_cold = interpolate_t_cold(lo_freq) or g_state['TEMP_LOAD2']
     g_state['TEMP_LOAD2'] = t_cold
+    
+    # TODO: get TEMP_TSPILL from NAMAKANUI and/or ENVIRO
+    msg = drama.get(NAMAKANUI_TASK, 'LAKESHORE').wait(5)
+    check_message(msg, f'get({NAMAKANUI_TASK},LAKESHORE)')
+    g_state['TEMP_AMBIENT'] = msg.arg['LAKESHORE']['temp5']
     
     log.info('setup_sequence done.')
     # setup_sequence
@@ -539,6 +580,9 @@ def sequence(msg):
         # start monitor on CART_TASK to track lock status.
         # TODO: do we need a faster update during obs? 5s is pretty slow.
         sequence.cart_tid = drama.monitor(CART_TASK, 'DYN_STATE')
+        
+        # start monitor on NAMAKANUI.LAKESHORE to get TEMP_AMBIENT
+        sequence.lakeshore_tid = drama.monitor(NAMAKANUI_TASK, 'LAKESHORE')
     
     elif msg.reason == drama.REA_TRIGGER and msg.transid == sequence.cart_tid:
         if msg.status == drama.MON_STARTED:
@@ -549,6 +593,14 @@ def sequence(msg):
                 raise drama.BadStatus(WRAP__RXNOTLOCKED, 'lost lock during sequence')
         else:
             raise drama.BadStatus(msg.status, f'unexpected message for {CART_TASK}.DYN_STATE monitor: {msg}')
+    
+    elif msg.reason == drama.REA_TRIGGER and msg.transid == sequence.lakeshore_tid:
+        if msg.status == drama.MON_STARTED:
+            pass  # lazy, just let the drama dispatcher clean up after us
+        elif msg.status == drama.MON_CHANGED:
+            g_state['TEMP_AMBIENT'] = msg.arg['temp5']
+        else:
+            raise drama.BadStatus(msg.status, f'unexpected message for {NAMAKANUI_TASK}.LAKESHORE monitor: {msg}')
     
     # sequence
 
@@ -606,7 +658,12 @@ def sequence_frame(frame):
     else:
         frame['LAST_FREQ'] = numpy.int32(0)
     
-    # skip the rest of this since fast frequency switching isn't supported.
+    # no tuning (fast frequency switching) in ESMA_MODE
+    global g_esma_mode
+    if g_esma_mode:
+        return frame
+    
+    # skip the rest of this since fast frequency switching isn't supported yet.
     return frame
     
     if old_sti != sequence.state_table_index:
