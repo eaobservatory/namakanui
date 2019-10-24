@@ -884,7 +884,25 @@ class App(tk.Frame):
         
         log.debug('MON_MAIN msg: %s', msg)
         
-        if self.retry_tasknames.handle(msg):
+        # if UPDATE isn't running, monitors will continuously timeout.
+        updating = True
+        if msg.reason == drama.REA_OBEY or msg.reason == drama.REA_RESCHED:
+            try:
+                updating = drama.is_active(namakanui_taskname, "UPDATE", 3.0)
+                if not updating:
+                    e = namakanui_taskname + '.UPDATE not active'
+                    log.error(e)
+                    self.retry_tasknames.cancel(e)
+                    self.retry_vacuum.cancel(e)
+                    self.retry_lakeshore.cancel(e)
+                    self.retry_load.cancel(e)
+                    self.retry_load_table.cancel(e)
+                    self.retry_agilent.cancel(e)
+                    self.retry_ifswitch.cancel(e)
+            except drama.BadStatus:
+                pass  # for other errors, handle() as usual
+        
+        if updating and self.retry_tasknames.handle(msg):
             # tasknames changed; cancel old monitors if connected
             for t,b,r in [[0,3,self.retry_b3], [1,6,self.retry_b6], [2,7,self.retry_b7]]:
                 new_taskname = msg.arg['B%d'%(b)]
@@ -897,22 +915,22 @@ class App(tk.Frame):
                 self.notebook.tab(t, text=new_taskname)
                 
         
-        if self.retry_vacuum.handle(msg):
+        if updating and self.retry_vacuum.handle(msg):
             self.cryo_frame.vacuum_changed(msg.arg)
         
-        if self.retry_lakeshore.handle(msg):
+        if updating and self.retry_lakeshore.handle(msg):
             self.cryo_frame.lakeshore_changed(msg.arg)
         
-        if self.retry_load.handle(msg):
+        if updating and self.retry_load.handle(msg):
             self.load_frame.mon_changed(msg.arg)
         
-        if self.retry_load_table.handle(msg):
+        if updating and self.retry_load_table.handle(msg):
             self.load_frame.table_changed(msg.arg)
         
-        if self.retry_agilent.handle(msg):
+        if updating and self.retry_agilent.handle(msg):
             self.agilent_frame.mon_changed(msg.arg)
         
-        if self.retry_ifswitch.handle(msg):
+        if updating and self.retry_ifswitch.handle(msg):
             self.ifswitch_frame.mon_changed(msg.arg)
             
         # set disconnected indicators on all frames
@@ -936,30 +954,33 @@ class App(tk.Frame):
         
         # App.MON_MAIN
     
+    def mon_cart(self, msg, retry, frame):
+        updating = True
+        if msg.reason == drama.REA_OBEY or msg.reason == drama.REA_RESCHED:
+            try:
+                updating = drama.is_active(retry.task, "UPDATE", 3.0)
+                if not updating:
+                    e = retry.task + '.UPDATE not active'
+                    log.error(e)
+                    retry.cancel(e)
+            except drama.BadStatus:
+                pass  # for other errors, handle() as usual
+        if retry.handle(msg):
+            frame.mon_changed(msg.arg)
+        if not retry.connected:
+            frame.connected['text'] = "NO"
+            frame.connected['bg'] = 'red'
+        drama.reschedule(5.0)
     
     def MON_B3(self, msg):
-        if self.retry_b3.handle(msg):
-            self.b3_frame.mon_changed(msg.arg)
-        if not self.retry_b3.connected:
-            self.b3_frame.connected['text'] = "NO"
-            self.b3_frame.connected['bg'] = 'red'
-        drama.reschedule(5.0)
+        self.mon_cart(msg, self.retry_b3, self.b3_frame)
     
     def MON_B6(self, msg):
-        if self.retry_b6.handle(msg):
-            self.b6_frame.mon_changed(msg.arg)
-        if not self.retry_b6.connected:
-            self.b6_frame.connected['text'] = "NO"
-            self.b6_frame.connected['bg'] = 'red'
-        drama.reschedule(5.0)
+        self.mon_cart(msg, self.retry_b6, self.b6_frame)
     
     def MON_B7(self, msg):
-        if self.retry_b7.handle(msg):
-            self.b7_frame.mon_changed(msg.arg)
-        if not self.retry_b7.connected:
-            self.b7_frame.connected['text'] = "NO"
-            self.b7_frame.connected['bg'] = 'red'
-        drama.reschedule(5.0)
+        self.mon_cart(msg, self.retry_b7, self.b7_frame)
+        
     
     def check_msg(self, msg, name):
         '''Log the reply to a drama.obey command.
