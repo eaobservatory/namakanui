@@ -143,7 +143,11 @@ def adjust_dbm(lo_ghz):
             break
         except RuntimeError as e:
             logging.error('tune error: %s, IF power: %g', e, cart.state['pll_if_power'])
+            if dbm == agilent.max_dbm:
+                break
             dbm += 1.0
+            if dbm > agilent.max_dbm:
+                dbm = agilent.max_dbm
     time.sleep(delay)
     cart.update_all()
     if cart.state['pll_unlock']:
