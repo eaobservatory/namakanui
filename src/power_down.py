@@ -3,11 +3,13 @@
 power_down.py
 RMB 20190827
 
-Power down all cartridges.  Uses the Cart class to properly
-disable the amplifiers and ramp voltages and currents to 0.
+Set Agilent to a safe level, then power down all cartridges.
+Uses the Cart class to properly disable the amplifiers
+and ramp voltages and currents to 0.
 '''
 
 import jac_sw
+import namakanui.agilent
 import namakanui.cart
 import time
 import os
@@ -27,8 +29,16 @@ else:
 def mypub(n,s):
     pass
 
+logging.info('\ndisabling agilent output')
+agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
+agilent.set_dbm(agilent.safe_dbm)
+agilent.set_output(0)
+
+
 for band in [3,6,7]:
+    logging.info('\nband %d:', band)
     cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, mypub, simulate=0)
     cart.power(0)
+    
 
-logging.info('all cartridges powered down.')
+logging.info('\nall cartridges powered down.')
