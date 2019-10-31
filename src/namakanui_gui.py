@@ -892,13 +892,6 @@ class App(tk.Frame):
                 if not updating:
                     e = namakanui_taskname + '.UPDATE not active'
                     log.error(e)
-                    self.retry_tasknames.cancel(e)
-                    self.retry_vacuum.cancel(e)
-                    self.retry_lakeshore.cancel(e)
-                    self.retry_load.cancel(e)
-                    self.retry_load_table.cancel(e)
-                    self.retry_agilent.cancel(e)
-                    self.retry_ifswitch.cancel(e)
             except drama.BadStatus:
                 pass  # for other errors, handle() as usual
         
@@ -934,19 +927,19 @@ class App(tk.Frame):
             self.ifswitch_frame.mon_changed(msg.arg)
             
         # set disconnected indicators on all frames
-        if not self.retry_vacuum.connected:
+        if not updating or not self.retry_vacuum.connected:
             self.cryo_frame.edwards['text'] = "NO"
             self.cryo_frame.edwards['bg'] = 'red'
-        if not self.retry_lakeshore.connected:
+        if not updating or not self.retry_lakeshore.connected:
             self.cryo_frame.lakeshore['text'] = "NO"
             self.cryo_frame.lakeshore['bg'] = 'red'
-        if not self.retry_load.connected:
+        if not updating or not self.retry_load.connected:
             self.load_frame.connected['text'] = "NO"
             self.load_frame.connected['bg'] = 'red'
-        if not self.retry_agilent.connected:
+        if not updating or not self.retry_agilent.connected:
             self.agilent_frame.connected['text'] = "NO"
             self.agilent_frame.connected['bg'] = 'red'
-        if not self.retry_ifswitch.connected:
+        if not updating or not self.retry_ifswitch.connected:
             self.ifswitch_frame.connected['text'] = "NO"
             self.ifswitch_frame.connected['bg'] = 'red'
         
@@ -962,12 +955,11 @@ class App(tk.Frame):
                 if not updating:
                     e = retry.task + '.UPDATE not active'
                     log.error(e)
-                    retry.cancel(e)
             except drama.BadStatus:
                 pass  # for other errors, handle() as usual
-        if retry.handle(msg):
+        if updating and retry.handle(msg):
             frame.mon_changed(msg.arg)
-        if not retry.connected:
+        if not updating or not retry.connected:
             frame.connected['text'] = "NO"
             frame.connected['bg'] = 'red'
         drama.reschedule(5.0)
