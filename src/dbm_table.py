@@ -35,6 +35,7 @@ import time
 import argparse
 import namakanui.cart
 import namakanui.agilent
+import namakanui.ifswitch
 import logging
 
 logging.root.setLevel(logging.DEBUG)
@@ -83,14 +84,20 @@ def mypub(n,s):
 agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, mypub, simulate=0)
 agilent.log.setLevel(logging.INFO)
 agilent.set_dbm(agilent.safe_dbm)
-agilent.set_output(1)    
+agilent.set_output(1)
+
+ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, mypub, simulate=0)
+ifswitch.set_band(args.band)
+ifswitch.close()  # done with ifswitch
+
 cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, mypub, simulate=0)
 cart.power(1)
 cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
 floog = agilent.floog * {'below':1.0, 'above':-1.0}[args.lock_polarity]
 
+
+
 # check to make sure this receiver is selected.
-# TODO: once Bill's switch is installed, control it directly.
 rp = cart.state['pll_ref_power']
 if rp < -3.0:
     logging.error('PLL reference power (FLOOG, 31.5 MHz) is too strong (%.2f V).  Please attenuate.', rp)
