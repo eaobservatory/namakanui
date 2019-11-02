@@ -781,7 +781,7 @@ class App(tk.Frame):
         self.actions = [self.MON_MAIN, self.MON_B3, self.MON_B6, self.MON_B7,
                         self.POWER, self.TUNE, self.LOAD_MOVE, self.LOAD_HOME,
                         self.SET_SG_DBM, self.SET_SG_HZ, self.SET_SG_OUT,
-                        self.SET_BAND]
+                        self.SET_BAND, self.MSG_TEST]
         
         self.retry_tasknames = drama.retry.RetryMonitor(namakanui_taskname, 'TASKNAMES')
         self.retry_load = drama.retry.RetryMonitor(namakanui_taskname, 'LOAD')
@@ -1176,6 +1176,18 @@ class App(tk.Frame):
             self.ifswitch_frame.b3_button['state'] = 'normal'
             self.ifswitch_frame.b6_button['state'] = 'normal'
             self.ifswitch_frame.b7_button['state'] = 'normal'
+    
+    
+    def MSG_TEST(self, msg):
+        '''
+        Hidden action (use a ditscmd) designed to test the message textbox.
+        How many messages can we post before something breaks?
+        '''
+        if msg.reason == drama.REA_OBEY or msg.reason == drama.REA_RESCHED:
+            nchars = len(self.messages.get(1.0, tk.END)) - 1
+            nlines = int(self.messages.index(tk.END).split('.')[0]) - 1
+            log.info('MSG_TEST: nchars %d, nlines %d', nchars, nlines)
+            drama.reschedule(0.01)
     
     # App
 
