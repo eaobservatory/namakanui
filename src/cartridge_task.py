@@ -8,7 +8,11 @@ import jac_sw
 import drama
 import time
 import gc
+import sys
+import os
 import namakanui.cart
+
+pid = os.getpid()
 
 import argparse
 parser = argparse.ArgumentParser()
@@ -154,17 +158,26 @@ def TUNE(msg):
     log.info('tuned.')
 
 
+def SEGFAULT(msg):
+    '''Generate a segfault to test coredumps.'''
+    log.fatal('SEGFAULT')
+    drama.segfault()
+
 
 try:
-    log.info('%s starting drama.', taskname)
+    log.info('%s (%d) drama.init', taskname, pid)
     drama.init(taskname,
                buffers = [64000, 8000, 8000, 2000],
-               actions=[UPDATE, INITIALISE, POWER, TUNE])
-    log.info('%s entering main loop.', taskname)
+               actions=[UPDATE, INITIALISE, POWER, TUNE, SEGFAULT])
+    log.info('%s (%d) drama.run', taskname, pid)
     drama.run()
+except:
+    log.exception('%s (%d) fatal exception', taskname, pid)
+    sys.exit(1)
 finally:
+    log.info('%s (%d) drama.stop', taskname, pid)
     drama.stop()
-    log.info('%s done.', taskname)
+    log.info('%s (%d) done.', taskname, pid)
 
 
 
