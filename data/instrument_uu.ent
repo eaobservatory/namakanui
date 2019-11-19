@@ -43,12 +43,12 @@ which the receptor is sensitive.
        <etal>0.9</etal>
    </waveBand>
 
-   <receptor id="NU0L" health="OFF" x="0.0" y="0.0" pol_type="Linear" band="A">
+   <receptor id="NU0L" health="ON" x="0.0" y="0.0" pol_type="Linear" band="A">
       <sensitivity reference="NU0L" value="1.0"/>
       <angle units="rad" value="0.0" />
       <sideband value="LSB" />
    </receptor>
-   <receptor id="NU0U" health="OFF" x="0.0" y="0.0" pol_type="Linear" band="A">
+   <receptor id="NU0U" health="ON" x="0.0" y="0.0" pol_type="Linear" band="A">
       <sensitivity reference="NU0L" value="1.0"/>
       <angle units="rad" value="0.0" />
       <sideband value="USB" />
