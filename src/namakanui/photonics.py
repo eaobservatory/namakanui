@@ -1,0 +1,170 @@
+'''
+Ryan Berthold 20191120
+
+The photonics system transmits the reference signal from the
+Agilent/Keysight signal generator to the IF switch in the cabin
+over an optical fiber.
+
+This class interfaces with an ADAM module that monitors the
+lock status and controls the power attenuator on the output amplifier.
+
+TODO: what adam model? where's the lock status?
+'''
+
+from namakanui.ini import *
+from namakanui import sim
+import socket
+import select
+import logging
+import os
+
+# TODO what kind of adam are we using here
+import adam.adam6260
+
+
+
+class Photonics(object):
+    '''
+    Class to monitor and control the photonics system.
+    '''
+    
+    def __init__(self, inifilename, sleep, publish, simulate=None):
+        '''Arguments:
+            inifilename: Path to config file.
+            sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
+            publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
+            simulate: Bitmask. If not None (default), overrides setting in inifilename.
+        '''
+        self.config = IncludeParser(inifilename)
+        pconfig = self.config['photonics']
+        self.sleep = sleep
+        self.publish = publish
+        if simulate is not None:
+            self.simulate = simulate
+        else:
+            self.simulate = sim.str_to_bits(pconfig['simulate'])
+        self.name = pconfig['pubname']
+        self.logname = pconfig['logname']
+        self.log = logging.getLogger(self.logname)
+        self.nbits = pconfig['nbits']
+        self.state = {'number':0}
+        self.state['DO'] = [0]*6  # needs to match ADAM type, not nbits
+        # ADAM address
+        self.ip = pconfig['ip']
+        self.port = int(pconfig['port'])
+        
+        # init only saves ip/port, so this is fine even if simulating
+        self.adam = adam.adam6260.Adam6260(self.ip, self.port)
+        
+        datapath = os.path.dirname(inifilename) + '/'
+        self.att_tables = {}  # indexed by band
+        for b in [3,6,7]:
+            self.att_tables[b] = read_ascii(datapath + pconfig['b%d_att'%(b)])
+        
+        self.log.debug('__init__ %s, sim=%d, %s:%d',
+                       inifilename, self.simulate, self.ip, self.port)
+        
+        self.initialise()
+        # Photonics.__init__
+    
+    
+    def __del__(self):
+        self.log.debug('__del__')
+        self.close()
+    
+    
+    def close(self):
+        '''Close the connection to the ADAM'''
+        self.log.debug('close')
+        self.adam_6260.close()
+    
+    
+    def initialise(self):
+        '''Open the connections to the ADAM and get/publish state.'''
+        self.log.debug('initialise')
+        
+        # fix simulate set
+        self.simulate &= sim.SIM_PHOTONICS
+        
+        self.state['simulate'] = self.simulate
+        self.state['sim_text'] = sim.bits_to_str(self.simulate)
+        
+        self.close()
+        if not self.simulate & sim.SIM_PHOTONICS:
+            self.log.debug('connecting ADAM, %s:%d', self.ip, self.port)
+            self.adam.connect()
+            modname = self.adam.get_module_name()
+            self.log.debug('ADAM module name: %s', modname)
+        
+        self.update()
+        # Photonics.initialise
+    
+    
+    def update(self, do_publish=True):
+        '''Update and publish state.  Call every 10s.
+           NOTE: The ADAM might time out and disconnect if we don't
+                 talk to it every 30s or so.
+        '''
+        self.log.debug('update(%s)', do_publish)
+        
+        if not self.simulate & sim.SIM_PHOTONICS:
+            DO = self.adam.get_DO_status()
+            self.state['DO'] = DO
+            # TODO lock status
+        
+        # I don't know sense or which bit is which yet
+        att = 0
+        for i,b in enumerate(self.state['DO']):
+            # TODO account for if len(DO) > self.nbits?
+            att |= (b << i)
+        self.state['attenuation'] = att
+        
+        if do_publish:
+            self.state['number'] += 1
+            self.publish(self.name, self.state)
+        # Photonics.update
+
+
+    def set_attenuation(self, counts):
+        '''Set attenuator to given counts.'''
+        self.log.debug('set_attenuation(%s)', counts)
+        
+        att = int(round(counts))
+        max_att = (1 << self.nbits) - 1
+        if att < 0:
+            att = 0
+        if att > max_att:
+            att = max_att
+        
+        # TODO sense, order of bits
+        DO = [0]*6
+        for i in range(len(DO)):
+            DO[i] = (att >> i) & 1
+        
+        if self.simulate & sim.SIM_PHOTONICS:
+            self.state['DO'] = DO
+            self.state['attenuation'] = att
+            self.update()
+            return
+        
+        self.adam.set_DO(DO)
+        
+        # assume that the update() will cause sufficient delay
+        # and thus no sleep is required before returning control
+        self.update()
+        
+        # might as well double-check
+        if self.state['DO'] != DO:
+            raise RuntimeError('failed to set DO: tried %s, but status is %s' % (DO, self.state['DO']))
+        if self.state['attenuation'] != att:
+            raise RuntimeError('attenuation mismatch, expected %d but got %d for DO %s' % (att, self.state['attenuation'], DO))
+        
+        # Photonics.set_attenuation
+
+
+    def interp_attenuation(self, band, lo_ghz):
+        '''Get interpolated attenuation for this band and frequency.'''
+        return interp_table(self.att_tables[band], lo_ghz).att
+
+
+
