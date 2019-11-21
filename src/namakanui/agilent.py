@@ -208,4 +208,18 @@ class Agilent(object):
         '''Get interpolated dBm for this band and frequency.'''
         return interp_table(self.dbm_tables[band], lo_ghz).dbm
 
+    def set_hz_dbm(self, hz, dbm):
+        '''
+        Safely set frequency in Hz and output power in dBm.
+        If increasing power output, sets the frequency first.
+        If decreasing power output, sets the output power first.
+        Updates state, but does not publish.
+        '''
+        if dbm > self.state['dbm']:
+            self.set_hz(hz)
+            self.set_dbm(dbm)
+        else:
+            self.set_dbm(dbm)
+            self.set_hz(hz)
+
 
