@@ -46,7 +46,8 @@ class Agilent(object):
         self.floog = float(agconfig['floog'])
         
         datapath = os.path.dirname(inifilename) + '/'
-        self.dbm_tables = {}  # indexed by band
+        self.dbm_tables = {}  # indexed by band, 0 = photonics table
+        self.dbm_tables[0] = read_ascii(datapath + agconfig['photonics_dbm'])
         for b in [3,6,7]:
             #self.dbm_tables[b] = read_table(self.config['dbm_b%d'%(b)], 'dbm', float, ['lo', 'dbm'])
             self.dbm_tables[b] = read_ascii(datapath + agconfig['b%d_dbm'%(b)])
@@ -204,9 +205,13 @@ class Agilent(object):
         self.state['output'] = on
         return on
 
-    def interp_dbm(self, band, lo_ghz):
-        '''Get interpolated dBm for this band and frequency.'''
-        return interp_table(self.dbm_tables[band], lo_ghz).dbm
+    def interp_dbm(self, band, ghz):
+        '''
+        Get interpolated dBm for this band and frequency.
+        If band==0, use photonics table; ghz should be SG frequency.
+        Otherwise,  use the band  table; ghz should be LO frequency.
+        '''
+        return interp_table(self.dbm_tables[band], ghz).dbm
 
     def set_hz_dbm(self, hz, dbm):
         '''
