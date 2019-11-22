@@ -47,6 +47,7 @@ class Photonics(object):
         self.logname = pconfig['logname']
         self.log = logging.getLogger(self.logname)
         self.nbits = pconfig['nbits']
+        self.max_att = (1 << self.nbits) - 1
         self.state = {'number':0}
         self.state['DO'] = [0]*6  # needs to match ADAM type, not nbits
         # ADAM address
@@ -130,11 +131,10 @@ class Photonics(object):
         self.log.debug('set_attenuation(%s)', counts)
         
         att = int(round(counts))
-        max_att = (1 << self.nbits) - 1
         if att < 0:
             att = 0
-        if att > max_att:
-            att = max_att
+        if att > self.max_att:
+            att = self.max_att
         
         # TODO sense, order of bits
         DO = [0]*6
