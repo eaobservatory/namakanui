@@ -1199,7 +1199,7 @@ try:
     app = App(root)
     
     log.info('drama.init(%s)', taskname)
-    drama.init(taskname, buffers = [64000, 8000, 8000, 2000], actions=app.actions)
+    drama.init(taskname, buffers = [256000, 8000, 32000, 2000], actions=app.actions)
     app.start_monitors()
     
     log.info('drama.run()...')
