@@ -108,9 +108,10 @@ class Agilent(object):
         self.state['number'] += 1
         self.publish(self.name, self.state)
     
-    def cmd(self, cmd):
+    def cmd(self, cmd, reconnect=True):
         '''Send SCPI cmd.  If cmd ends in ?, return reply.
            The reply will be same type as cmd (bytes or str).'''
+        orig_cmd = cmd
         convert = not isinstance(cmd, bytes)
         if convert:
             cmd = cmd.encode()  # convert to bytes
@@ -125,7 +126,17 @@ class Agilent(object):
         b = self.s.send(cmd)
         assert b == len(cmd)
         if reply:
-            reply = self.s.recv(256)  # will replies ever be longer?
+            try:
+                reply = self.s.recv(256)  # will replies ever be longer?
+            except socket.timeout:
+                if reconnect:
+                    self.log.warning('socket.timeout, attempting reconnect')
+                    self.initialise()
+                    self.log.info('reconnected, retrying cmd %s', cmd[:-1])
+                    return self.cmd(orig_cmd, reconnect=False)
+                else:
+                    self.log.error('timeout on reply to cmd %s', cmd[:-1])
+                    raise
             reply = reply.strip()  # remove trailing newline
             self.log.debug('reply: %s', reply)
             if convert:
