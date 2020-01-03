@@ -27,6 +27,10 @@ for ca in [2,5,6]:
         femc.set_pd_enable(ca, 1)
         time.sleep(1)  # still not sure exactly how long we need to sleep here
 
+# 20200103: added this sleep to avoid -5 errors from b7 CC.
+print('sleeping 2s...')
+time.sleep(2)
+
 log.write('#hst ')
 log.write('b3_pll b3_110k b3_p01 b3_15k b3_wca ')
 log.write('b6_pll b6_4k b6_110k b6_p0 b6_15k b6_p1 ')
