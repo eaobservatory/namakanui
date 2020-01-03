@@ -56,7 +56,7 @@ TODO: Need a cartridge configuration data file (INI). FrontEndControlDLL.ini
 ideally python app could just read this in w/o having to convert formats.
 
 
-RuntimeError: reply len from get 0x00500008 not 5: b'\xfd'
+FEMC_RuntimeError: reply len from get 0x00500008 not 5: b'\xfd'
  -- this is an error, -3, restricted by manufacturer directives.
     comes up when we try to read temperature in unpowered cartridge, for instance.
     need to handle this better.
@@ -68,6 +68,13 @@ import socket
 import struct
 import time
 import select
+
+# Custom exception types for more obvious fault messages
+class FEMC_RuntimeError(RuntimeError):
+    pass
+
+class FEMC_ValueError(ValueError):
+    pass
 
 _errors = {
     -1: "communication problem between control module and peripheral",
@@ -264,7 +271,7 @@ class FEMC(object):
         setup = self.get_setup_info()
         if setup != 0 and setup != 5:
             estr = _setup_errors.get(setup, "unknown error")
-            raise RuntimeError("get_setup_info error: %d: %s" % (setup, estr))
+            raise FEMC_RuntimeError("get_setup_info error: %d: %s" % (setup, estr))
         # TODO: other setup/init
         
     def __del__(self):
@@ -285,33 +292,33 @@ class FEMC(object):
            You should OR this with the fixed RCA offset for the particular
            monitor/control point you're calling.'''
         if cartridge < 0 or cartridge > 9:
-            raise ValueError("cartridge outside [0,9] range")
+            raise FEMC_ValueError("cartridge outside [0,9] range")
         if polarization < 0 or polarization > 1:
-            raise ValueError("polarization outside [0,1] range")
+            raise FEMC_ValueError("polarization outside [0,1] range")
         if sideband < 0 or sideband > 1:
-            raise ValueError("sideband outside [0,1] range")
+            raise FEMC_ValueError("sideband outside [0,1] range")
         if lna_stage < 0 or lna_stage > 5:
-            raise ValueError("lna_stage outside [0,5] range")
+            raise FEMC_ValueError("lna_stage outside [0,5] range")
         if dac < 0 or dac > 1:
-            raise ValueError("dac outside [0,1] range")
+            raise FEMC_ValueError("dac outside [0,1] range")
         if pa_channel < 0 or pa_channel > 1:
-            raise ValueError("pa_channel outside [0,1] range")
+            raise FEMC_ValueError("pa_channel outside [0,1] range")
         if cartridge_temp < 0 or cartridge_temp > 5:
-            raise ValueError("cartridge_temp outside [0,5] range")
+            raise FEMC_ValueError("cartridge_temp outside [0,5] range")
         if pd_module < 0 or pd_module > 9:
-            raise ValueError("pd_module outside [0,9] range")
+            raise FEMC_ValueError("pd_module outside [0,9] range")
         if pd_channel < 0 or pd_channel > 5:
-            raise ValueError("pd_channel outside [0,5] range")  # TODO CHECK ME
+            raise FEMC_ValueError("pd_channel outside [0,5] range")  # TODO CHECK ME
         if if_channel_po < 0 or if_channel_po > 1:
-            raise ValueError("if_channel_po outside [0,1] range")
+            raise FEMC_ValueError("if_channel_po outside [0,1] range")
         if if_channel_sb < 0 or if_channel_sb > 1:
-            raise ValueError("if_channel_sb outside [0,1] range")
+            raise FEMC_ValueError("if_channel_sb outside [0,1] range")
         if cryostat_temp < 0 or cryostat_temp > 12:
-            raise ValueError("cryostat_temp outside [0,12] range")
+            raise FEMC_ValueError("cryostat_temp outside [0,12] range")
         if vacuum_sensor < 0 or vacuum_sensor > 1:
-            raise ValueError("vacuum_sensor outside [0,1] range")
+            raise FEMC_ValueError("vacuum_sensor outside [0,1] range")
         if lpr_temp < 0 or lpr_temp > 1:
-            raise ValueError("lpr_temp outside [0,1] range")
+            raise FEMC_ValueError("lpr_temp outside [0,1] range")
         return cartridge<<12 | polarization<<10 | sideband<<7 \
                 | lna_stage<<2 | dac<<6 | pa_channel<<2 | cartridge_temp<<4 \
                 | pd_module<<4 | pd_channel<<1 \
@@ -338,7 +345,7 @@ class FEMC(object):
             try:
                 num = self.s.send(packet)
                 if num != 16:
-                    raise RuntimeError("only sent %d bytes" % (num))
+                    raise FEMC_RuntimeError("only sent %d bytes" % (num))
                 return
             except OSError as e:
                 if e.errno == 105:  # No buffer space available
@@ -346,7 +353,7 @@ class FEMC(object):
                     continue
                 else:
                     raise
-        raise RuntimeError("timeout waiting to send")
+        raise FEMC_RuntimeError("timeout waiting to send")
         
     def try_get_rca(self, rca):
         '''Send SocketCAN packet to RCA and return reply data bytes.
@@ -366,7 +373,7 @@ class FEMC(object):
             except socket.timeout:
                 break
             if len(reply) != 16:
-                raise RuntimeError("only received %d bytes: 0x%s" % (len(reply), reply.hex()))
+                raise FEMC_RuntimeError("only received %d bytes: 0x%s" % (len(reply), reply.hex()))
             if self.verbose:
                 print('get_rca recv %d bytes: 0x%s' % (len(reply), reply.hex()), file=sys.stderr)
             r_can_id, data_len, data = _IB3x8s.unpack(reply)
@@ -380,7 +387,7 @@ class FEMC(object):
                 if self.verbose:
                     print('get_rca %x got reply with no data' % (s_can_id))
         if r_can_id != s_can_id or not data_len:
-            raise RuntimeError("timeout after %d bad replies: %s" % (len(badreps), "<omitted>"))#badreps))
+            raise FEMC_RuntimeError("timeout after %d bad replies: %s" % (len(badreps), "<omitted>"))#badreps))
         data = data[:data_len]
         return data
     
@@ -394,7 +401,7 @@ class FEMC(object):
             try:
                 data = self.try_get_rca(rca)
                 return data
-            except RuntimeError as e:
+            except FEMC_RuntimeError as e:
                 if self.verbose:
                     print('get_rca %s' % (e))
                 loop += 1
@@ -412,7 +419,7 @@ class FEMC(object):
     def try_set_get_rca(self, rca, data):
         '''Set, then get same rca to check for errors.
            Used by STANDARD control commands.
-           On error, raise a RuntimeError exception.'''
+           On error, raise a FEMC_RuntimeError exception.'''
         self.set_rca(rca, data)
         r_data = self.try_get_rca(rca)
         # TODO: certain operations might require action for specific errors,
@@ -420,9 +427,9 @@ class FEMC(object):
         if r_data[-1] != 0:
             code = _b.unpack(r_data[-1:])[0]  # r_data[-1] is unsigned; must unpack
             estr = _errors.get(code, "unrecognized error code")
-            raise RuntimeError("error code from set 0x%08x: %d: %s" % (self.node|rca, code, estr))
+            raise FEMC_RuntimeError("error code from set 0x%08x: %d: %s" % (self.node|rca, code, estr))
         if len(r_data) != len(data) + 1 or r_data[:-1] != data:
-            raise RuntimeError("bad reply from set 0x%08x: expected 0x%s, got 0x%s" % (self.node|rca, data.hex(), r_data.hex()))
+            raise FEMC_RuntimeError("bad reply from set 0x%08x: expected 0x%s, got 0x%s" % (self.node|rca, data.hex(), r_data.hex()))
     
     def set_get_rca(self, rca, data):
         '''Call try_set_get_rca in a loop since sometimes the FEMC ignores us.
@@ -435,7 +442,7 @@ class FEMC(object):
             try:
                 self.try_set_get_rca(rca, data)
                 return
-            except RuntimeError as e:
+            except FEMC_RuntimeError as e:
                 if self.verbose:
                     print('set_get_rca %s' % (e))
                 loop += 1
@@ -463,9 +470,9 @@ class FEMC(object):
         if d[-1] != 0:
             e = _b.unpack(d[-1:])[0]  # d[-1] is unsigned; must unpack
             estr = _errors.get(e, "unrecognized error code")
-            raise RuntimeError("error code from get 0x%08x: %d: %s" % (self.node|rca_offset, e, estr))
+            raise FEMC_RuntimeError("error code from get 0x%08x: %d: %s" % (self.node|rca_offset, e, estr))
         if len(d) != 2:
-            raise RuntimeError("reply len from get 0x%08x not 2: 0x%s" % (self.node|rca_offset, d.hex()))
+            raise FEMC_RuntimeError("reply len from get 0x%08x not 2: 0x%s" % (self.node|rca_offset, d.hex()))
         return _B.unpack(d[:-1])[0]
     
     def get_standard_ushort(self, rca_offset):
@@ -474,9 +481,9 @@ class FEMC(object):
         if d[-1] != 0:
             e = _b.unpack(d[-1:])[0]  # d[-1] is unsigned; must unpack
             estr = _errors.get(e, "unrecognized error code")
-            raise RuntimeError("error code from get 0x%08x: %d: %s" % (self.node|rca_offset, e, estr))
+            raise FEMC_RuntimeError("error code from get 0x%08x: %d: %s" % (self.node|rca_offset, e, estr))
         if len(d) != 3:
-            raise RuntimeError("reply len from get 0x%08x not 3: 0x%s" % (self.node|rca_offset, d.hex()))
+            raise FEMC_RuntimeError("reply len from get 0x%08x not 3: 0x%s" % (self.node|rca_offset, d.hex()))
         return _H.unpack(d[:-1])[0]
     
     def get_standard_float(self, rca_offset):
@@ -485,9 +492,9 @@ class FEMC(object):
         if d[-1] != 0:
             e = _b.unpack(d[-1:])[0]  # d[-1] is unsigned; must unpack
             estr = _errors.get(e, "unrecognized error code")
-            raise RuntimeError("error code from get 0x%08x: %d: %s" % (self.node|rca_offset, e, estr))
+            raise FEMC_RuntimeError("error code from get 0x%08x: %d: %s" % (self.node|rca_offset, e, estr))
         if len(d) != 5:
-            raise RuntimeError("reply len from get 0x%08x not 5: 0x%s" % (self.node|rca_offset, d.hex()))
+            raise FEMC_RuntimeError("reply len from get 0x%08x not 5: 0x%s" % (self.node|rca_offset, d.hex()))
         return _f.unpack(d[:-1])[0]
     
     ########### special SET commands ###########
@@ -514,7 +521,7 @@ class FEMC(object):
              1: Troubleshooting: no software interlocks in place, trained staff only.
              2: Maintenance: only the special RCA is available.'''
         if mode < 0 or mode > 2:
-            raise ValueError("mode %s not in [0,2] range" % (repr(mode)))
+            raise FEMC_ValueError("mode %s not in [0,2] range" % (repr(mode)))
         self.set_special(0x0e, mode)
     
     def set_read_esn(self):
@@ -580,7 +587,7 @@ class FEMC(object):
         payload = self.get_special(0x07)
         t1 = time.time()
         if payload != b'\xff\xff\xff\xff\xff\xff\xff\xff':
-            raise RuntimeError('bad payload, expected 8x 0xff, received 0x%s' % (payload.hex()))
+            raise FEMC_RuntimeError('bad payload, expected 8x 0xff, received 0x%s' % (payload.hex()))
         return t1-t0
     
     def get_fpga_version_info(self):
@@ -604,14 +611,14 @@ class FEMC(object):
         while len(esns) < n:
             esn = self.get_special(0x0b)
             if esn == b'\x00'*8 or esn == b'\xff'*8:
-                raise RuntimeError('expected %d esns, but only found %d: %s' % (n, len(esns), esns))
+                raise FEMC_RuntimeError('expected %d esns, but only found %d: %s' % (n, len(esns), esns))
             esns.append(esn)
         esn = self.get_special(0x0b)
         if esn != b'\x00'*8 and esn != b'\xff'*8:
             esns.append(esn)
-            raise RuntimeError('extra esn found: %s' % (esns))
+            raise FEMC_RuntimeError('extra esn found: %s' % (esns))
         if len(set(esns)) != n:
-            raise RuntimeError('duplicate esns found: %s' % (esns))
+            raise FEMC_RuntimeError('duplicate esns found: %s' % (esns))
         return esns
     
     def retry_esns(self, tries, sleep_seconds):
@@ -621,7 +628,7 @@ class FEMC(object):
             try:
                 esns = self.get_esns()
                 break
-            except RuntimeError:
+            except FEMC_RuntimeError:
                 if (i+1) == tries:
                     raise
                 time.sleep(sleep_seconds)
@@ -718,7 +725,7 @@ class FEMC(object):
            To prevent this from being accidentally applied to band 9,
            a timer was added to allow the band 9 heater only once every 10s.
            If this timing is violated, this function will raise
-           a RuntimeError with -3, hardware blocked error.'''
+           a FEMC_RuntimeError with -3, hardware blocked error.'''
         arg = 0
         if enable:
             arg = 1
@@ -847,7 +854,7 @@ class FEMC(object):
              0:  7.5 MHz/V
              1: 15.0 MHz/V'''
         if bandwidth < 0 or bandwidth > 1:
-            raise ValueError("bandwidth %s not in [0,1] range" % (repr(bandwidth)))
+            raise FEMC_ValueError("bandwidth %s not in [0,1] range" % (repr(bandwidth)))
         rca_offset = self.make_rca(cartridge=ca) | _lo_pll_loop_bandwidth_select
         self.set_standard_ubyte(rca_offset, bandwidth)
     
@@ -857,7 +864,7 @@ class FEMC(object):
              0: Lock below reference (LSB)
              1: Lock above reference (USB)'''
         if polarity < 0 or polarity > 1:
-            raise ValueError("polarity %s not in [0,1] range" % (repr(polarity)))
+            raise FEMC_ValueError("polarity %s not in [0,1] range" % (repr(polarity)))
         rca_offset = self.make_rca(cartridge=ca) | _lo_pll_sb_lock_polarity_select
         self.set_standard_ubyte(rca_offset, polarity)
     
@@ -1171,7 +1178,7 @@ class FEMC(object):
         '''Set power for cartridge.
            If the frontend is in operational or maintenance mode, only 3 bands
            can be powered at once.  If more are attempted, this function will
-           raise a RuntimeError with -3, hardware blocked.
+           raise a FEMC_RuntimeError with -3, hardware blocked.
            In troubleshooting mode any number of bands can be turned on.
            Power up initialization (in any mode) takes 5ms to complete.
            During that time, the FEMC will be unresponsive.
@@ -1218,7 +1225,7 @@ class FEMC(object):
              0: Power off (power up state)
              1: Power on
            Note: if a major error occurred during initialization of the cartridge,
-           this function will raise RuntimeError -7, hardware error.
+           this function will raise FEMC_RuntimeError -7, hardware error.
            The only allowed action will be to power off the selected module.'''
         rca_offset = self.make_rca(pd_module=ca) | _pd_enable
         return self.get_standard_ubyte(rca_offset)
@@ -1244,7 +1251,7 @@ class FEMC(object):
              0: Power off (power up state)
              1: Power on
            If the backing pump is not enabled, this function raises
-           a RuntimeError -3 hardware blocked.  Likewise if the FETIM
+           a FEMC_RuntimeError -3 hardware blocked.  Likewise if the FETIM
            is installed and turbo pump temperature is outside [15C, 45C].'''
         arg = 0
         if enable:
@@ -1256,7 +1263,7 @@ class FEMC(object):
              0: Close (power up state)
              1: Open
            If the backing pump is not enabled, this function raises
-           a RuntimeError -3 hardware blocked.  Likewise if the gate valve
+           a FEMC_RuntimeError -3 hardware blocked.  Likewise if the gate valve
            is still moving from the last set_cryostat_gate_valve_state().'''
         # maybe this should be a range check instead of allowing booleans
         arg = 0
@@ -1269,7 +1276,7 @@ class FEMC(object):
              0: Close (power up state)
              1: Open
            If the backing pump is not enabled, this function raises
-           a RuntimeError -3 hardware blocked.'''
+           a FEMC_RuntimeError -3 hardware blocked.'''
         # maybe this should be a range check instead of allowing booleans
         arg = 0
         if state:
@@ -1302,7 +1309,7 @@ class FEMC(object):
              10: 110K plate near link
              11: 110K plate far side
              12: 110K shield top
-           Raises RuntimeError -3 hardware blocked if the asynchronous
+           Raises FEMC_RuntimeError -3 hardware blocked if the asynchronous
            readout is disabled.  The state of the asynchronous readout
            can be toggled using the console.
            Suggested interval: 30s'''
@@ -1320,7 +1327,7 @@ class FEMC(object):
         '''Get current state of the turbo pump.
              0: Power off (power up state)
              1: Power on
-           Raises RuntimeError -3 hardware blocked if the backing pump is not enabled.
+           Raises FEMC_RuntimeError -3 hardware blocked if the backing pump is not enabled.
            This is not a hardware readback; returns last commanded value.'''
         return self.get_standard_ubyte(_cryostat_turbo_pump_enable)
 
@@ -1328,7 +1335,7 @@ class FEMC(object):
         '''Get current error state for the turbo pump.
              0: OK
              1: Error
-           Raises RuntimeError -3 hardware blocked if the backing pump is not enabled.
+           Raises FEMC_RuntimeError -3 hardware blocked if the backing pump is not enabled.
            Suggested interval: 5s when backing pump is enabled, otherwise none.'''
         return self.get_standard_ubyte(_cryostat_turbo_pump_state)
     
@@ -1336,7 +1343,7 @@ class FEMC(object):
         '''Get current speed state for the turbo pump.
              0: Speed low
              1: Speed OK
-           Raises RuntimeError -3 hardware blocked if the backing pump is not enabled.
+           Raises FEMC_RuntimeError -3 hardware blocked if the backing pump is not enabled.
            Suggested interval: 5s when backing pump is enabled, otherwise none.'''
         return self.get_standard_ubyte(_cryostat_turbo_pump_speed)
     
@@ -1359,7 +1366,7 @@ class FEMC(object):
              1: Open
              2: Unknown (moving between states)
              3: Error
-           Raises RuntimeError -3 hardware blocked if the backing pump is not enabled.
+           Raises FEMC_RuntimeError -3 hardware blocked if the backing pump is not enabled.
            Suggested interval: 5s when backing pump is enabled, otherwise none.'''
         return self.get_standard_ubyte(_cryostat_solenoid_valve_state)
     
@@ -1367,7 +1374,7 @@ class FEMC(object):
         '''Get the cryostat and vacuum port pressure in mbar.
             0: Cryostat
             1: Vacuum port
-           Raises RuntimeError -3 hardware blocked if the asynchronous
+           Raises FEMC_RuntimeError -3 hardware blocked if the asynchronous
            readout is disabled.  The state of the asynchronous readout
            can be toggled using the console.
            Suggested interval: 30s for cryostat
@@ -1391,7 +1398,7 @@ class FEMC(object):
     
     def get_cryostat_supply_current_230v(self):
         '''Get the 230V AC current level in amps.
-           Raises RuntimeError -3 hardware blocked if the backing pump is not enabled,
+           Raises FEMC_RuntimeError -3 hardware blocked if the backing pump is not enabled,
            or if the asynchronous readout is disabled (toggle using console).
            Suggested interval: 5s when backing pump enabled, else none.'''
         return self.get_standard_float(_cryostat_supply_current_230v)
@@ -1540,7 +1547,7 @@ def test_threaded_esns(num_threads=10):
                 try:
                     esns = f.get_esns()
                     break
-                except RuntimeError:
+                except FEMC_RuntimeError:
                     if i+1 == tries:
                         raise
                     sleep_secs = 0.001*(thread_number)
