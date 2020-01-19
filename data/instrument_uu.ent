@@ -38,7 +38,7 @@ which the receptor is sensitive.
    <IF_CENTER_FREQ>6.0</IF_CENTER_FREQ>
    <bw units="Hz" value="4.0E9"/>
    <smu_offset X="-0.02" Y="1.72" Z="0.46"/>
-   <pointing_offset IA="-2.66" IE="8.33" NPAE="16.16" CA="23.61" AN="0.1" AW="-1.26" TF="-0.88"/>
+   <pointing_offset IA="7.04" IE="9.24" NPAE="9.66" CA="24.84" AN="-0.13" AW="-0.5" TF="-1.24"/>
    <waveBand  band="A" label="A" units="Hz" centre="243E9" width="62E9">
        <etal>0.9</etal>
    </waveBand>
