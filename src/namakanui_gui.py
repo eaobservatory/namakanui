@@ -642,7 +642,7 @@ class BandFrame(tk.Frame):
         
         # TUNE command entry and button.  fixed at VOLTAGE=0.
         tune_frame = tk.LabelFrame(c2, text='Tune')
-        self.tune_button = tk.Button(tune_frame, text='TUNE')
+        self.tune_button = tk.Button(tune_frame, text='TUNE B%d'%(self.band))
         self.tune_button.pack(side='right')
         tune_entry = tk.Entry(tune_frame, width=14, bg='white')
         tune_entry.pack(side='right')
