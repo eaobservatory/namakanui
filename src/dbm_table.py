@@ -147,6 +147,10 @@ def adjust_dbm(lo_ghz):
         time.sleep(delay)
         try:
             cart.tune(lo_ghz, 0.0)
+            time.sleep(delay)
+            cart.update_all()
+            if cart.state['pll_unlock']:
+                raise RuntimeError('lost lock')
             break
         except RuntimeError as e:
             logging.error('tune error: %s, IF power: %g', e, cart.state['pll_if_power'])
@@ -166,6 +170,8 @@ def adjust_dbm(lo_ghz):
     # quickly reduce power if initial lock is too strong
     while cart.state['pll_if_power'] < -1.5 and dbm > -20.0 and not cart.state['pll_unlock']:
         dbm -= 0.5
+        if dbm < -20.0:
+            dbm = -20.0
         agilent.set_dbm(dbm)
         time.sleep(delay)
         cart.update_all()
@@ -181,13 +187,15 @@ def adjust_dbm(lo_ghz):
                 break   
     
     # slowly increase power to target
-    while cart.state['pll_if_power'] > -1.5 and dbm < agilent.max_dbm-0.1 and not cart.state['pll_unlock']:
-        if cart.state['pll_if_power'] > -1.0 and dbm < agilent.max_dbm-0.3:
+    while cart.state['pll_if_power'] > -1.5 and dbm < agilent.max_dbm and not cart.state['pll_unlock']:
+        if cart.state['pll_if_power'] > -1.0 and dbm <= agilent.max_dbm-0.3:
             dbm += 0.3
-        elif cart.state['pll_if_power'] > -1.25 and dbm < agilent.max_dbm-0.2:
+        elif cart.state['pll_if_power'] > -1.25 and dbm <= agilent.max_dbm-0.2:
             dbm += 0.2
         else:
             dbm += 0.1
+        if dbm > agilent.max_dbm:
+            dbm = agilent.max_dbm
         agilent.set_dbm(dbm)
         time.sleep(delay)
         cart.update_all()
