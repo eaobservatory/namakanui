@@ -27,9 +27,9 @@ taskname = sys.argv[1]
 import drama.log
 drama.log.setup(taskname)  # save to file in /jac_logs
 import logging
-logging.getLogger('drama.rts').setLevel(logging.DEBUG)
+#logging.getLogger('drama.rts').setLevel(logging.DEBUG)
 log = logging.getLogger(taskname)
-log.setLevel(logging.DEBUG)
+#log.setLevel(logging.DEBUG)
 log.info('startup')
 
 g_band = 0
@@ -315,8 +315,8 @@ def configure(msg, wait_set, done_set):
         g_mech_tuning = dtrack['MECH_TUNING']
         g_elec_tuning = dtrack['ELEC_TUNING']
         
-        drama.set_param('MECH_TUNE', numpy.int32({'NEVER':0}.get(g_mech_tuning,1)))
-        drama.set_param('ELEC_TUNE', numpy.int32({'NEVER':0}.get(g_elec_tuning,1)))
+        drama.set_param('MECH_TUNE', numpy.int32({'NEVER':0, 'NONE':0}.get(g_mech_tuning,1)))
+        drama.set_param('ELEC_TUNE', numpy.int32({'NEVER':0, 'NONE':0}.get(g_elec_tuning,1)))
         drama.set_param('REST_FREQUENCY', g_rest_freq)
         drama.set_param('SIDEBAND', g_sideband)
         drama.set_param('SB_MODE', fe['SB_MODE'])
