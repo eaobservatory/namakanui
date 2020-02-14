@@ -11,6 +11,7 @@ and ramp voltages and currents to 0.
 import jac_sw
 import namakanui.agilent
 import namakanui.cart
+import socket
 import time
 import os
 import sys
@@ -30,9 +31,12 @@ def mypub(n,s):
     pass
 
 logging.info('\ndisabling agilent output')
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
-agilent.set_dbm(agilent.safe_dbm)
-agilent.set_output(0)
+try:
+    agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
+    agilent.set_dbm(agilent.safe_dbm)
+    agilent.set_output(0)
+except socket.timeout as e:
+    logging.warning('*** WARNING: socket.timeout, skipping agilent. ***')
 
 
 for band in [3,6,7]:
