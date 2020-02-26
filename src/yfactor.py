@@ -237,14 +237,19 @@ def iv(target, rows, pa):
     # at the nominal values.  do not relevel on SKY or y-factor won't work.
     # actually re-leveling makes it difficult to compare power levels
     # across sweeps, so skip it.  retuning is fine though.
+    # 20200221 but ACTUALLY we're having problems with saturating power levels,
+    # so DO relevel the detectors here.  we won't be able to see
+    # relative power levels, but we mostly only do 2 PAs these days and care
+    # more about Y-factor values anyway.
     if target == 'hot':
         cart.tune(lo_ghz, 0.0)
+        # do this here because of the retuning
+        cart._set_pa([pa,pa])
         cart.update_all()
-        #if if_setup(2):  # level only
-        #    return 1
+        # TODO optimise agilent dbm
+        if if_setup(2):  # level only
+            return 1
     
-    # do this here because of the retuning
-    cart._set_pa([pa,pa])
     
     sys.stderr.write('%s: '%(target))
     sys.stderr.flush()

@@ -17,6 +17,13 @@ the same (approximately) optimum bias voltage for different PA
 levels, whereas mixer 01 has a strong PA dependency, and the
 noisy part of the curve moves around as well.
 
+Update 20200221:
+With the replacement of mixers 01/02, we're seeing saturated power values
+when we level the IF at the nominal bias settings.  So unfortunately
+we need to do an initial level, then hunt around for the PA setting
+with the highest power value.  Level again, and repeat the process
+a few times to be sure that we won't saturate during the PA Y-factor sweep.
+Just hope the mixer current doesn't suddenly jump, as we saw on 20200220.
 '''
 
 import jac_sw
@@ -158,7 +165,7 @@ def if_setup(adjust):
 
 
 
-def ip(target, rows):
+def ip(target, rows, pas):
     if target == 'hot':
         p_index = hot_p_index
     else:
@@ -216,6 +223,58 @@ def ip(target, rows):
     # ip
 
 
+    
+
+def adjust_levels(dup_pas):
+    '''look for max power levels across dup_pas for each mixer.
+       level at median max PA for 01/02 and 11/12.
+       return the 2 max power PAs for further iterations.'''
+    # remove dups
+    dup_pas = list(set(dup_pas))
+    dup_pas.sort()
+    rows = [None]*len(dup_pas)
+    for i in range(len(rows)):
+        rows[i] = [0.0]*(yf_index+len(powers))
+    if ip('hot', rows, dup_pas):
+        return 0,0  # fail
+    max_pa = [0]*16
+    max_pow = [-1e300]*16
+    for i in range(len(dup_pas)):
+        for j in range(16):
+            if rows[i][hot_p_index+j] > max_pow[j]:
+                max_pow[j] = rows[i][hot_p_index+j]
+                max_pa[j] = dup_pas[i]
+    logging.info('max power PAs: %s', max_pa)
+    p0_pas = max_pa[:8]
+    p1_pas = max_pa[8:]
+    p0_pas.sort()
+    p1_pas.sort()
+    cart._set_pa([p0_pas[4],p1_pas[4]])
+    if if_setup(2):  # level only
+        return 0,0  # fail
+    return p0_pas[4],p1_pas[4]
+
+def iter_adjust_levels():
+    #coarse_pas = [.1*i*2.5 for i in range(1,11)]
+    coarse_pas = [.1*i for i in range(1,26)]
+    p0,p1 = adjust_levels(coarse_pas)
+    if p0==0 and p1==0:
+        return 1  # fail
+    logging.info('leveled at pa %.2f, %.2f', p0, p1)
+    fine_pas_p0 = [p0-.08, p0-.04, p0, p0+.04, p0+.08]
+    fine_pas_p1 = [p1-.08, p1-.04, p1, p1+.04, p1+.08]
+    p0,p1 = adjust_levels(fine_pas_p0+fine_pas_p1)
+    if p0==0 and p1==0:
+        return 1
+    logging.info('leveled at pa %.2f, %.2f', p0, p1)
+    finer_pas_p0 = [p0-.03, p0-.02, p0-.01, p0, p0+.01, p0+.02, p0+.03]
+    finer_pas_p1 = [p1-.03, p1-.02, p1-.01, p1, p1+.01, p1+.02, p1+.03]
+    p0,p1 = adjust_levels(finer_pas_p0+finer_pas_p1)
+    if p0==0 and p1==0:
+        return 1
+    logging.info('leveled at pa %.2f, %.2f', p0, p1)
+    return 0
+
 
 # the rest of this needs to be DRAMA to be able to talk to IFTASK.
 # TODO: could actually publish parameters.  also we need a task name.
@@ -226,15 +285,21 @@ def MAIN(msg):
         if if_setup(if_arg):
             return
         
+        # we want to level close to the max power for each pair of mixers.
+        # use a coarse, full 0-2.5 PA sweep, find max power for each DCM.
+        # we'll get a set of 4 PAs; do a finer sweep around these.
+        # repeat again, then avg PA for 01/02 and 11/12 and do final level.
+        if iter_adjust_levels():
+            return
             
         # need to save output rows since they have both hot and sky data.
         rows = [None]*len(pas)
         for i in range(len(rows)):
             rows[i] = [0.0]*(yf_index+len(powers))
         
-        if ip('hot', rows):
+        if ip('hot', rows, pas):
             return
-        if ip('sky', rows):
+        if ip('sky', rows, pas):
             return
             
         n = ua_n*2
