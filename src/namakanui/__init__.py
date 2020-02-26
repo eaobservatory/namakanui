@@ -5,7 +5,11 @@ This file does very little;
 the namakanui module mainly just serves as a namespace for the submodules.
 '''
 
-from namakanui.version import __version__
+# allow import of module before "make"
+try:
+    from namakanui.version import __version__
+except:
+    pass
 
 # default publish function, does nothing
 def nop(*args, **kwargs):
