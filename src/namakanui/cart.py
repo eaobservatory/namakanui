@@ -482,12 +482,16 @@ class Cart(object):
         self.state['fe_mode'] = mode
     
     
-    def tune(self, lo_ghz, voltage):
+    def tune(self, lo_ghz, voltage, skip_servo_pa=False):
         '''
         Lock the PLL to produce the given LO frequency.
         The reference signal generator must already be set properly.
         Attempt to set PLL control voltage near given value, if not None.
         Set the proper SIS, PA, and LNA parameters.
+        
+        It can sometimes be useful to skip_servo_pa,
+        e.g. to save time during a dbm_table or mixer_pa script
+        where the PA will be set manually.
         '''
         self.log.info('tune(%g, %g)', lo_ghz, voltage)
         try:
@@ -501,6 +505,9 @@ class Cart(object):
                 nom_magnet = interp_table(self.hot_magnet_table, lo_ghz)
                 lna = interp_table(self.hot_lna_table, lo_ghz)
                 nom_lna_01 = nom_lna_02 = nom_lna_11 = nom_lna_12 = lna
+                # RMB 20200214: warm testing paranoia
+                nom_pa = None
+                nom_mixer = None
             else:
                 nom_magnet = interp_table(self.magnet_table, lo_ghz)
                 nom_lna_01 = interp_table(self.lna_table_01, lo_ghz)
@@ -520,9 +527,11 @@ class Cart(object):
             
             # TODO: can we set LNA values before enabling?
             #       should we disable LNA while tuning?
-            self._set_lna_enable(1)
+            if not self.high_temperature():  # RMB 20200214: warm testing paranoia
+                self._set_lna_enable(1)
             
-            self._servo_pa()
+            if not skip_servo_pa:
+                self._servo_pa()  # gets skipped at high temp already
             
         except:
             raise
@@ -1124,6 +1133,9 @@ class Cart(object):
             raise RuntimeError(self.logname + ' power disabled')
         if not self.has_sis_mixers():
             self.log.info('not SIS mixers, skipping bias voltage offset calc')
+            return
+        if self.high_temperature():
+            self.log.info('high temperature, skipping bias voltage offset calc')
             return
         self.log.info('calculating SIS bias voltage setting offset')
         self._set_pa([0.0]*4)
