@@ -278,10 +278,28 @@ class FEMC(object):
         self.s.close()
     
     def clear(self):
-        '''Empty the socket buffer.  Used before sending a command.'''
+        '''Empty the socket buffer.  Used before sending a command.
+           RMB 20200228: This function has been raising socket.timeout errors,
+                         which seems impossible.  Perhaps there's a mutex involved,
+                         and if one process gets rescheduled while holding it,
+                         the other can time out on rare occasions.  For now I
+                         will just ignore socket.timeout, up to 3 times.
+                         TODO: Proper logging.
+        '''
+        tries = 0
         r,w,x = select.select([self.s], [], [], 0)
         while r:
-            self.s.recv(65536)  # minimize loops
+            try:
+                self.s.recv(65536)  # minimize loops
+            except socket.timeout:
+                if self.verbose:
+                    print('clear: recv socket.timeout')
+                tries += 1
+                if tries > 3:
+                    raise
+                # if there is a mutex involved, a small sleep might allow
+                # the other process to grab it back.  40ms for context switch.
+                time.sleep(.04)
             r,w,x = select.select([self.s], [], [], 0)
         
     def make_rca(self, cartridge=0, polarization=0, sideband=0, lna_stage=0,
