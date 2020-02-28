@@ -39,13 +39,13 @@ log.flush()
 
 while True:
     d = datetime.datetime.now()
-    log.write('%s '%(d.isoformat(timespec='seconds')))
+    logstr = '%s '%(d.isoformat(timespec='seconds'))
     print('')
     print(d)
     for ca in [2,5,6]:
         pll = femc.get_cartridge_lo_pll_assembly_temp(ca)
         pll += 273.15
-        log.write('%.3f '%(pll))
+        logstr += '%.3f '%(pll)
         print('')
         print('%-7s: %7.3f K' % ('b%d_pll'%(ca+1), pll))
         tnames = ['4k', '110k', 'p0', 'spare', '15k', 'p1']
@@ -55,9 +55,10 @@ while True:
             if tname == 'spare':
                 continue
             t = femc.get_cartridge_lo_cartridge_temp(ca, i)
-            log.write('%.3f '%(t))
+            logstr += '%.3f '%(t)
             print('%-7s: %7.3f K' % ('b%d_%s'%(ca+1,tname), t))
-    log.write('\n')
+    logstr += '\n'
+    log.write(logstr)
     log.flush()
     print('')
     time.sleep(60.0)
