@@ -10,17 +10,25 @@ Logs to /jac_logs/namakanui_temp.log.
 
 import jac_sw
 import namakanui.femc
+import epics
 import time
 import datetime
+import logging
+import sys
+
+# if running in a terminal, be verbose
+if sys.stdout.isatty():
+    logging.root.setLevel(logging.INFO)
+    logging.root.addHandler(logging.StreamHandler())
 
 femc = namakanui.femc.FEMC()
 filename = '/jac_logs/namakanui_temp.log'
-log = open(filename, 'a')
-print('logging to file', filename)
+logfile = open(filename, 'a')
+logging.info('logging to file %s', filename)
 
 # power up the cartridges.
 # note this will skip demag/deflux by a later Cart instance.
-print('enabling (powering up) cartridges...')
+logging.info('enabling (powering up) cartridges...')
 for ca in [2,5,6]:
     if not femc.get_pd_enable(ca):
         print('enabling band %d...'%(ca+1))
@@ -28,26 +36,32 @@ for ca in [2,5,6]:
         time.sleep(1)  # still not sure exactly how long we need to sleep here
 
 # 20200103: added this sleep to avoid -5 errors from b7 CC.
-print('sleeping 2s...')
+logging.info('sleeping 2s...')
 time.sleep(2)
 
-log.write('#hst ')
-log.write('b3_pll b3_110k b3_p01 b3_15k b3_wca ')
-log.write('b6_pll b6_4k b6_110k b6_p0 b6_15k b6_p1 ')
-log.write('b7_pll b7_4k b7_110k b7_p0 b7_15k b7_p1\n')
-log.flush()
+logfile.write('#hst ')
+logfile.write('b3_pll b3_110k b3_p01 b3_15k b3_wca ')
+logfile.write('b6_pll b6_4k b6_110k b6_p0 b6_15k b6_p1 ')
+logfile.write('b7_pll b7_4k b7_110k b7_p0 b7_15k b7_p1\n')
+logfile.flush()
+
+# NOTE 20200228: In our version of pyepics,
+# caput doesn't return a value or raise errors on failure.  Best effort...
+epics_timeout = 1.0
 
 while True:
     d = datetime.datetime.now()
     logstr = '%s '%(d.isoformat(timespec='seconds'))
-    print('')
-    print(d)
+    logging.info('')
+    logging.info(d)
     for ca in [2,5,6]:
         pll = femc.get_cartridge_lo_pll_assembly_temp(ca)
         pll += 273.15
         logstr += '%.3f '%(pll)
-        print('')
-        print('%-7s: %7.3f K' % ('b%d_pll'%(ca+1), pll))
+        recname = 'b%d_pll'%(ca+1)
+        logging.info('')
+        logging.info('%-7s: %7.3f K' % (recname, pll))
+        epics.caput('nmnCryo:'+recname+'.VAL', pll, timeout=epics_timeout)
         tnames = ['4k', '110k', 'p0', 'spare', '15k', 'p1']
         if ca == 2:
             tnames = ['spare', '110k', 'p01', 'spare', '15k', 'wca']
@@ -56,11 +70,13 @@ while True:
                 continue
             t = femc.get_cartridge_lo_cartridge_temp(ca, i)
             logstr += '%.3f '%(t)
-            print('%-7s: %7.3f K' % ('b%d_%s'%(ca+1,tname), t))
+            recname = 'b%d_%s'%(ca+1,tname)
+            logging.info('%-7s: %7.3f K' % (recname, t))
+            epics.caput('nmnCryo:'+recname+'.VAL', t, timeout=epics_timeout)
     logstr += '\n'
-    log.write(logstr)
-    log.flush()
-    print('')
+    logfile.write(logstr)
+    logfile.flush()
+    logging.info('')
     time.sleep(60.0)
 
 
