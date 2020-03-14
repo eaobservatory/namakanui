@@ -36,17 +36,13 @@ import argparse
 import namakanui.cart
 import namakanui.agilent
 import namakanui.ifswitch
+import namakanui.util
 import logging
 
 logging.root.setLevel(logging.DEBUG)
 logging.root.addHandler(logging.StreamHandler())
 
-binpath = os.path.dirname(os.path.realpath(sys.argv[0])) + '/'
-# HACK, should crawl up
-if 'install' in binpath:
-    datapath = os.path.realpath(binpath + '../../data') + '/'
-else:
-    datapath = os.path.realpath(binpath + '../data') + '/'
+binpath, datapath = namakanui.util.get_paths()
 
 parser = argparse.ArgumentParser()
 parser.add_argument('band', type=int, choices=[3,6,7])
@@ -109,114 +105,17 @@ if rp > -0.5:
 
 
 def adjust_dbm(lo_ghz):
-    
-    # sanity check
-    lo_ghz_range = {3:[75,90], 6:[210,270], 7:[280,365]}[args.band]
-    if lo_ghz < lo_ghz_range[0] or lo_ghz > lo_ghz_range[1]:
-        logging.error('skipping lo_ghz %g, outside range %s for band %d', lo_ghz, lo_ghz_range, args.band)
+    # sanity check, avoid setting agilent for impossible freqs
+    lo_min = cart.yig_lo * cart.cold_mult * cart.warm_mult
+    lo_max = cart.yig_hi * cart.cold_mult * cart.warm_mult
+    if lo_ghz < lo_min or lo_ghz > lo_max:
+        logging.error('skipping lo_ghz %g, outside range [%.3f, %.3f] for band %d', lo_ghz, lo_min, lo_max, args.band)
         return
-    
-    delay = .05
-    fyig = lo_ghz / (cart.cold_mult * cart.warm_mult)
-    fsig = (fyig*cart.warm_mult + floog) / agilent.harmonic
-    #agilent.set_hz(fsig*1e9)  # might not be safe here
-    
-    # get starting dbm value
-    dbm = args.dbm
-    if use_ini:
-        dbm += agilent.interp_dbm(args.band, lo_ghz)
-    
-    if dbm < -20.0:
-        dbm = -20.0
-    elif dbm > agilent.max_dbm -1.0:
-        dbm = agilent.max_dbm -1.0
-    
-    # try to do this safely without going all the way back to safe_dbm.
-    # if increasing power output, set the frequency first.
-    # if decreasing power output, set the output power first.
-    if dbm > agilent.state['dbm']:
-        agilent.set_hz(fsig*1e9)
-        agilent.set_dbm(dbm)
-    else:
-        agilent.set_dbm(dbm)
-        agilent.set_hz(fsig*1e9)
-    
-    while dbm <= agilent.max_dbm:
-        logging.info('lo_ghz %g, dbm %g', lo_ghz, dbm)
-        agilent.set_dbm(dbm)
-        time.sleep(delay)
-        try:
-            cart.tune(lo_ghz, 0.0)
-            time.sleep(delay)
-            cart.update_all()
-            if cart.state['pll_unlock']:
-                raise RuntimeError('lost lock')
-            break
-        except RuntimeError as e:
-            logging.error('tune error: %s, IF power: %g', e, cart.state['pll_if_power'])
-            if dbm == agilent.max_dbm:
-                break
-            dbm += 1.0
-            if dbm > agilent.max_dbm:
-                dbm = agilent.max_dbm
-    time.sleep(delay)
-    cart.update_all()
-    if cart.state['pll_unlock']:
-        agilent.set_dbm(agilent.safe_dbm)
-        logging.error('failed to lock at %g', lo_ghz)
-        return
-    logging.info('LOCKED, dbm=%g, pll_if_power=%g', dbm, cart.state['pll_if_power'])
-    
-    # quickly reduce power if initial lock is too strong
-    while cart.state['pll_if_power'] < -1.5 and dbm > -20.0 and not cart.state['pll_unlock']:
-        dbm -= 0.5
-        if dbm < -20.0:
-            dbm = -20.0
-        agilent.set_dbm(dbm)
-        time.sleep(delay)
-        cart.update_all()
-        logging.info('lowering power, dbm=%g, pll_if_power=%g', dbm, cart.state['pll_if_power'])
-        if cart.state['pll_unlock']:
-            logging.error('lost lock, relocking...')
-            try:
-                cart.tune(lo_ghz, 0.0)
-                time.sleep(delay)
-                cart.update_all()
-            except RuntimeError as e:
-                logging.error('tune error: %s', e)
-                break   
-    
-    # slowly increase power to target
-    while cart.state['pll_if_power'] > -1.5 and dbm < agilent.max_dbm and not cart.state['pll_unlock']:
-        if cart.state['pll_if_power'] > -1.0 and dbm <= agilent.max_dbm-0.3:
-            dbm += 0.3
-        elif cart.state['pll_if_power'] > -1.25 and dbm <= agilent.max_dbm-0.2:
-            dbm += 0.2
-        else:
-            dbm += 0.1
-        if dbm > agilent.max_dbm:
-            dbm = agilent.max_dbm
-        agilent.set_dbm(dbm)
-        time.sleep(delay)
-        cart.update_all()
-        logging.info('raising power, dbm=%g, pll_if_power=%g', dbm, cart.state['pll_if_power'])
-        if cart.state['pll_unlock']:
-            logging.error('lost lock, relocking...')
-            try:
-                cart.tune(lo_ghz, 0.0)
-                time.sleep(delay)
-                cart.update_all()
-            except RuntimeError as e:
-                logging.error('tune error: %s', e)
-                break
-    
-    if cart.state['pll_unlock']:
-        agilent.set_dbm(agilent.safe_dbm)
-        logging.error('lost lock at %g', lo_ghz)
-        return
-    #print(lo_ghz, dbm, cart.state['pll_if_power'])
-    sys.stdout.write('%.3f %6.2f %.3f %.3f %.3f\n' % (lo_ghz, dbm, cart.state['pll_if_power'], cart.state['pa_drain_s'][0], cart.state['pa_drain_s'][1]))
-    sys.stdout.flush()
+    # RMB 20200313: new utility function adjusts dbm as needed.
+    # TODO: early, rough tables could go faster by widening pll_range and using skip_servo_pa.  add option.
+    if namakanui.util.tune(cart, agilent, lo_ghz, use_ini=use_ini, dbm_range=[args.dbm,100], pll_range=[-1.5,-1.5]):
+        sys.stdout.write('%.3f %6.2f %.3f %.3f %.3f\n' % (lo_ghz, agilent.state['dbm'], cart.state['pll_if_power'], cart.state['pa_drain_s'][0], cart.state['pa_drain_s'][1]))
+        sys.stdout.flush()
 
 
 def try_adjust_dbm(lo_ghz):
