@@ -122,12 +122,12 @@ class Agilent(object):
         # clear out recv buffer before sending cmd
         while select.select([self.s], [], [], 0)[0]:
             self.s.recv(256)
-        # packets are small, never expect this to fail -- be lazy.
+        # packets are small, never expect this to fail
         b = self.s.send(cmd)
         assert b == len(cmd)
         if reply:
             try:
-                reply = self.s.recv(256)  # will replies ever be longer?
+                reply = self.s.recv(256)
             except socket.timeout:
                 if reconnect:
                     self.log.warning('socket.timeout, attempting reconnect')
