@@ -26,7 +26,7 @@ def get_paths():
     return binpath, datapath
     
 
-def parse_range(s, maxlen=0):
+def parse_range(s, maxlen=0, maxstep=0):
     '''
     Parse string s in "first:last:step" format and return array of values.
     The "last" and "step" are optional:
@@ -39,19 +39,24 @@ def parse_range(s, maxlen=0):
     if len(s) == 1:
         return [first]
     last = float(s[1])
-    if len(s) == 2:
-        return [first, last]
+    #if len(s) == 2:
+    #    return [first, last]
     diff = last - first
     if diff == 0.0:
         return [first]
-    step = abs(float(s[2]))
-    if step == 0.0:
-        return [first, last]
+    if len(s) == 2:
+        step = 0.0
+    else:
+        step = abs(float(s[2]))
+    if step == 0.0 or step > abs(diff):
+        step = abs(diff)
+    if maxstep and step > maxstep:
+        raise ValueError('step %g > maxstep %g'%(step, maxstep))
     if diff < 0.0:
         step = -step
     alen = int(round(diff/step + 1))
     if maxlen and alen > maxlen:
-        raise ValueError('step too small, array len %d > maxlen %d'%(alen,maxlen))
+        raise ValueError('step %g too small, array len %d > maxlen %d'%(step,alen,maxlen))
     arr = []
     val = first
     while (step > 0 and val < last) or (step < 0 and val > last):
