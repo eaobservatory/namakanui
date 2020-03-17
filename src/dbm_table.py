@@ -113,7 +113,8 @@ def adjust_dbm(lo_ghz):
         return
     # RMB 20200313: new utility function adjusts dbm as needed.
     # TODO: early, rough tables could go faster by widening pll_range and using skip_servo_pa.  add option.
-    if namakanui.util.tune(cart, agilent, lo_ghz, use_ini=use_ini, dbm_range=[args.dbm,100], pll_range=[-1.5,-1.5]):
+    #if namakanui.util.tune(cart, agilent, lo_ghz, use_ini=use_ini, dbm_range=[args.dbm,100], pll_range=[-1.5,-1.5]):
+    if namakanui.util.tune(cart, agilent, None, lo_ghz, pll_range=[-1.5,-1.5], dbm_ini=use_ini, dbm_start=args.dbm, dbm_max=agilent.max_dbm):
         sys.stdout.write('%.3f %6.2f %.3f %.3f %.3f\n' % (lo_ghz, agilent.state['dbm'], cart.state['pll_if_power'], cart.state['pa_drain_s'][0], cart.state['pa_drain_s'][1]))
         sys.stdout.flush()
 
