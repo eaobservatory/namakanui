@@ -11,6 +11,7 @@ and ramp voltages and currents to 0.
 import jac_sw
 import namakanui.agilent
 import namakanui.cart
+import namakanui.util
 import socket
 import time
 import os
@@ -20,12 +21,7 @@ import logging
 logging.root.addHandler(logging.StreamHandler())
 logging.root.setLevel(logging.INFO)
 
-binpath = os.path.dirname(os.path.realpath(sys.argv[0])) + '/'
-# HACK, should crawl up
-if 'install' in binpath:
-    datapath = os.path.realpath(binpath + '../../data') + '/'
-else:
-    datapath = os.path.realpath(binpath + '../data') + '/'
+binpath, datapath = namakanui.util.get_paths()
 
 def mypub(n,s):
     pass

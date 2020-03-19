@@ -54,6 +54,7 @@ import namakanui.agilent
 import namakanui.ifswitch
 import namakanui.load
 import namakanui.femc
+import namakanui.util
 import logging
 
 taskname = 'YF_%d'%(os.getpid())
@@ -61,13 +62,7 @@ taskname = 'YF_%d'%(os.getpid())
 logging.root.setLevel(logging.INFO)
 logging.root.addHandler(logging.StreamHandler())
 
-binpath = os.path.dirname(os.path.realpath(sys.argv[0])) + '/'
-# HACK, should crawl up
-if 'install' in binpath:
-    datapath = os.path.realpath(binpath + '../../data') + '/'
-else:
-    datapath = os.path.realpath(binpath + '../data') + '/'
-
+binpath, datapath = namakanui.util.get_paths()
 
 # use explicit arguments to avoid confusion
 parser = argparse.ArgumentParser(description='''
@@ -91,44 +86,14 @@ parser.add_argument('lock_polarity', nargs='?', choices=['below','above'], defau
 parser.add_argument('--level_only', action='store_true')
 args = parser.parse_args()
 
-def parse_range(s, what, min_step, max_step):
-    s = s.split(':')
-    first = float(s[0])
-    if first < 0:
-        logging.error(what+': negative values not allowed\n')
-        sys.exit(1)
-    if len(s) == 1:
-        return [first]
-    last = float(s[1])
-    if last <= first:
-        logging.error(what+': last must be greater than first\n')
-        sys.exit(1)
-    if len(s) == 2:
-        step = last - first
-    else:
-        step = float(s[2])
-    if not min_step <= step <= max_step:
-        logging.error(what+': step outside [%g,%g] range\n'%(min_step,max_step))
-        sys.exit(1)
-    arr = []
-    val = first
-    while val < last:
-        arr.append(val)
-        val += step
-    if abs(arr[-1] - last) < 1e-6:
-        arr[-1] = last
-    else:
-        arr.append(last)
-    return arr
-
 band = args.band
 lo_ghz = args.lo_ghz
 lo_range = {6:[219,266], 7:[281,367]}[band]
 if not lo_range[0] <= lo_ghz <= lo_range[1]:
-    logging.error('lo_ghz %g outside %s range for band %d\n'%(lo_ghz, lo_range, band))
+    logging.error('lo_ghz %g outside %s range for band %d', lo_ghz, lo_range, band)
     sys.exit(1)
-mvs = parse_range(args.mv, 'mv', 0.001, 0.05)
-pas = parse_range(args.pa, 'pa', 0.01, 2.5)
+mvs = namakanui.util.parse_range(args.mv, maxlen=30e3, maxstep=0.05)
+pas = namakanui.util.parse_range(args.pa, maxlen=300)
 
 # set agilent output to a safe level before setting ifswitch
 agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop, simulate=0)
@@ -136,29 +101,20 @@ agilent.set_dbm(agilent.safe_dbm)
 ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop, simulate=0)
 ifswitch.set_band(band)
 
-# set agilent output level for this frequency and tune the cartridge
-cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop, simulate=0)
-cart.power(1)
-cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
-floog = agilent.floog * {'below':1.0, 'above':-1.0}[args.lock_polarity]
-fyig = lo_ghz / (cart.cold_mult * cart.warm_mult)
-fsig = (fyig*cart.warm_mult + floog) / agilent.harmonic
-agilent.set_hz(fsig*1e9)
-agilent.set_dbm(agilent.interp_dbm(band, lo_ghz))
-agilent.set_output(1)
-time.sleep(0.05)
-agilent.update()
-cart.tune(lo_ghz, 0.0)
-cart.update_all()
-
-# save the nominal sis bias voltages
-nom_v = cart.state['sis_v']
-
-# TODO: adjust agilent dbm to optimize pll_if_power?
-
 # init load controller and set to hot (ambient) load for this band
 load = namakanui.load.Load(datapath+'load.ini', time.sleep, namakanui.nop, simulate=0)
 load.move('b%d_hot'%(band))
+
+# setup cartridge and tune, adjusting power as needed
+cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop, simulate=0)
+cart.power(1)
+cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
+if not namakanui.util.tune(cart, agilent, None, lo_ghz):
+    logging.error('failed to tune to %.3f ghz', lo_ghz)
+    sys.exit(1)
+
+# save the nominal sis bias voltages
+nom_v = cart.state['sis_v']
 
 
 # write out a header for our output file
@@ -167,10 +123,12 @@ sys.stdout.write('# %s\n'%(sys.argv))
 sys.stdout.write('#\n')
 sys.stdout.write('#pa mv')
 mixers = ['01', '02', '11', '12']
-# TODO get clever about this if using more than 2 power readings per mixer
-#powers = ['01_cm20', '01_cm24', '02_cm20', '02_cm24', '11_cm12', '11_cm8', '12_cm12', '12_cm8']
-dcm_0 = list(range(20,28))
-dcm_1 = list(range(12,16)) + list(range(8,12))
+dcm_0U = namakanui.util.get_dcms('NU0U')
+dcm_0L = namakanui.util.get_dcms('NU0L')
+dcm_1U = namakanui.util.get_dcms('NU1U')
+dcm_1L = namakanui.util.get_dcms('NU1L')
+dcm_0 = dcm_0U + dcm_0L
+dcm_1 = dcm_1U + dcm_1L
 powers = []
 powers += ['01_dcm%d'%(x) for x in dcm_0]
 powers += ['02_dcm%d'%(x) for x in dcm_0]
@@ -207,9 +165,9 @@ def if_setup(adjust):
     # BIT_MASK is DCMs to use: bit0=DCM0, bit1=DCM1, ... bit31=DCM31.
     setup_type = ['setup_only', 'setup_and_level', 'level_only']
     logging.info('setup IFTASK, LEVEL_ADJUST %d: %s', adjust, setup_type[adjust])
-    # use DCMS 8-11, 12-15, 20-23, 24-27
-    # TODO: maybe only specify DCMs that we take POWER readings from.
-    bitmask = 0xf<<8 | 0xf<<12 | 0xf<<20 | 0xf<<24
+    bitmask = 0
+    for dcm in dcm_0 + dcm_1:
+        bitmask |= 1<<dcm
     # TODO configurable IF_FREQ?  will 6 be default for both bands?
     msg = drama.obey('IFTASK@if-micro', 'TEST_SETUP',
                      NASM_SET='R_CABIN', BAND_WIDTH=1000, QUAD_MODE=4,
@@ -246,7 +204,7 @@ def iv(target, rows, pa):
         # do this here because of the retuning
         cart._set_pa([pa,pa])
         cart.update_all()
-        # TODO optimise agilent dbm
+        # dbm should already be set from namakanui.util.tune
         if if_setup(2):  # level only
             return 1
     
@@ -294,31 +252,11 @@ def iv(target, rows, pa):
         if msg.reason != drama.REA_COMPLETE or msg.status != 0:
             logging.error('bad reply from IFTASK.WRITE_TP2: %s', msg)
             return 1
-        #rows[i][p_index + 0] = msg.arg['POWER20']
-        #rows[i][p_index + 2] = msg.arg['POWER12']
-        # read both a USB and LSB power for each mixer
-        #rows[i][p_index +  0] = msg.arg['POWER20']  # 1U
-        #rows[i][p_index +  1] = msg.arg['POWER24']  # 1L
-        #rows[i][p_index +  4] = msg.arg['POWER12']  # 2U
-        #rows[i][p_index +  5] = msg.arg['POWER8']   # 2L
-        # full blown
-        rows[i][p_index +  0] = msg.arg['POWER20']  # 1U
-        rows[i][p_index +  1] = msg.arg['POWER21']  # 1U
-        rows[i][p_index +  2] = msg.arg['POWER22']  # 1U
-        rows[i][p_index +  3] = msg.arg['POWER23']  # 1U
-        rows[i][p_index +  4] = msg.arg['POWER24']  # 1L
-        rows[i][p_index +  5] = msg.arg['POWER25']  # 1L
-        rows[i][p_index +  6] = msg.arg['POWER26']  # 1L
-        rows[i][p_index +  7] = msg.arg['POWER27']  # 1L
-        rows[i][p_index +  16] = msg.arg['POWER12']  # 2U
-        rows[i][p_index +  17] = msg.arg['POWER13']  # 2U
-        rows[i][p_index +  18] = msg.arg['POWER14']  # 2U
-        rows[i][p_index +  19] = msg.arg['POWER15']  # 2U
-        rows[i][p_index +  20] = msg.arg['POWER8']    # 2L
-        rows[i][p_index +  21] = msg.arg['POWER9']    # 2L
-        rows[i][p_index +  22] = msg.arg['POWER10']   # 2L
-        rows[i][p_index +  23] = msg.arg['POWER11']   # 2L
         
+        for j,dcm in enumerate(dcm_0):
+            rows[i][p_index + j + 0] = msg.arg['POWER%d'%(dcm)]
+        for j,dcm in enumerate(dcm_1):
+            rows[i][p_index + j + 16] = msg.arg['POWER%d'%(dcm)]
     
     # sis2
     sb = 1
@@ -345,31 +283,11 @@ def iv(target, rows, pa):
         if msg.reason != drama.REA_COMPLETE or msg.status != 0:
             logging.error('bad reply from IFTASK.WRITE_TP2: %s', msg)
             return 1
-        #rows[i][p_index + 1] = msg.arg['POWER24']
-        #rows[i][p_index + 3] = msg.arg['POWER8']
-        # read both a USB and LSB power for each mixer
-        #rows[i][p_index +  2] = msg.arg['POWER20']  # 1U
-        #rows[i][p_index +  3] = msg.arg['POWER24']  # 1L
-        #rows[i][p_index +  6] = msg.arg['POWER12']  # 2U
-        #rows[i][p_index +  7] = msg.arg['POWER8']   # 2L
-        # full blown
-        rows[i][p_index +  8]  = msg.arg['POWER20']  # 1U
-        rows[i][p_index +  9]  = msg.arg['POWER21']  # 1U
-        rows[i][p_index +  10] = msg.arg['POWER22']  # 1U
-        rows[i][p_index +  11] = msg.arg['POWER23']  # 1U
-        rows[i][p_index +  12] = msg.arg['POWER24']  # 1L
-        rows[i][p_index +  13] = msg.arg['POWER25']  # 1L
-        rows[i][p_index +  14] = msg.arg['POWER26']  # 1L
-        rows[i][p_index +  15] = msg.arg['POWER27']  # 1L
-        rows[i][p_index +  24] = msg.arg['POWER12']  # 2U
-        rows[i][p_index +  25] = msg.arg['POWER13']  # 2U
-        rows[i][p_index +  26] = msg.arg['POWER14']  # 2U
-        rows[i][p_index +  27] = msg.arg['POWER15']  # 2U
-        rows[i][p_index +  28] = msg.arg['POWER8']   # 2L
-        rows[i][p_index +  29] = msg.arg['POWER9']   # 2L
-        rows[i][p_index +  30] = msg.arg['POWER10']  # 2L
-        rows[i][p_index +  31] = msg.arg['POWER11']  # 2L
         
+        for j,dcm in enumerate(dcm_0):
+            rows[i][p_index + j + 8] = msg.arg['POWER%d'%(dcm)]
+        for j,dcm in enumerate(dcm_1):
+            rows[i][p_index + j + 24] = msg.arg['POWER%d'%(dcm)]
     
     sys.stderr.write('\n')
     sys.stderr.flush()

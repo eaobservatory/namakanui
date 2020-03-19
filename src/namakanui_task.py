@@ -28,6 +28,7 @@ import namakanui.cryo
 import namakanui.load
 import namakanui.agilent
 import namakanui.ifswitch
+import namakanui.util
 
 import argparse
 parser = argparse.ArgumentParser()
@@ -43,12 +44,7 @@ log = logging.getLogger(args.taskname)
 #logging.getLogger('drama').setLevel(logging.DEBUG)
 
 # always use sibling cartridge_task.py (vs one in $PATH)
-binpath = os.path.dirname(os.path.realpath(sys.argv[0])) + '/'
-# HACK, should crawl up
-if 'install' in binpath:
-    datapath = os.path.realpath(binpath + '../../data') + '/'
-else:
-    datapath = os.path.realpath(binpath + '../data') + '/'
+binpath, datapath = namakanui.util.get_paths()
 
 initialised = False
 inifile = None

@@ -21,6 +21,7 @@ import time
 import argparse
 import namakanui.cart
 import namakanui.agilent
+import namakanui.util
 import logging
 
 logging.root.setLevel(logging.DEBUG)
@@ -29,12 +30,7 @@ logging.root.addHandler(logging.StreamHandler())
 logging.info('importing pylab...')
 from pylab import *
 
-binpath = os.path.dirname(os.path.realpath(sys.argv[0])) + '/'
-# HACK, should crawl up
-if 'install' in binpath:
-    datapath = os.path.realpath(binpath + '../../data') + '/'
-else:
-    datapath = os.path.realpath(binpath + '../data') + '/'
+binpath, datapath = namakanui.util.get_paths()
 
 parser = argparse.ArgumentParser()
 parser.add_argument('band', type=int, choices=[3,6,7])

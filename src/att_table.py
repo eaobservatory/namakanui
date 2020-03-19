@@ -29,17 +29,13 @@ import namakanui.cart
 import namakanui.agilent
 import namakanui.ifswitch
 import namakanui.photonics
+import namakanui.util
 import logging
 
 logging.root.setLevel(logging.DEBUG)
 logging.root.addHandler(logging.StreamHandler())
 
-binpath = os.path.dirname(os.path.realpath(sys.argv[0])) + '/'
-# HACK, should crawl up
-if 'install' in binpath:
-    datapath = os.path.realpath(binpath + '../../data') + '/'
-else:
-    datapath = os.path.realpath(binpath + '../data') + '/'
+binpath, datapath = namakanui.util.get_paths()
 
 parser = argparse.ArgumentParser()
 parser.add_argument('band', type=int, choices=[3,6,7])
@@ -106,114 +102,19 @@ if rp > -0.5:
 
 
 def adjust_att(lo_ghz):
-    
-    # sanity check, config values as of 20191121:
-    # b3, ala'ihi: 73.266 -  88.578 GHz
-    # b6, u'u:    219.996 - 265.842 GHz
-    # b7 aweoweo: 281.088 - 366.750 GHz
-    lo_ghz_range = {3:[73.3,88.5], 6:[220.1,265.8], 7:[281.1,366.7]}[args.band]
-    if lo_ghz < lo_ghz_range[0] or lo_ghz > lo_ghz_range[1]:
-        logging.error('skipping lo_ghz %g, outside range %s for band %d', lo_ghz, lo_ghz_range, args.band)
+    # sanity check, skip impossible freqs
+    lo_min = cart.yig_lo * cart.cold_mult * cart.warm_mult
+    lo_max = cart.yig_hi * cart.cold_mult * cart.warm_mult
+    if lo_ghz < lo_min or lo_ghz > lo_max:
+        logging.error('skipping lo_ghz %g, outside range [%.3f, %.3f] for band %d',
+                      lo_ghz, lo_min, lo_max, args.band)
         return
-    
-    delay = .05
-    fyig = lo_ghz / (cart.cold_mult * cart.warm_mult)
-    fsig = (fyig*cart.warm_mult + floog) / agilent.harmonic
-    #agilent.set_hz(fsig*1e9)  # might not be safe here
-    hz = fsig*1e9
-    #dbm = agilent.interp_dbm(args.band, lo_ghz)
-    dbm = agilent.interp_dbm(0, fsig)  # use photonics table
-    logging.info('lo_ghz %g, ref ghz %.6f, dbm %g', lo_ghz, fsig, dbm)
-    
-    # get starting att value
-    att = args.att
-    if use_ini:
-        att += photonics.interp_attenuation(args.band, lo_ghz)
-    
-    if att < 0:
-        att = 0
-    elif att > photonics.max_att:
-        att = photonics.max_att
-    
-    # try to do this safely without going all the way back to max_att.
-    # if increasing power output, set the frequency first.
-    # if decreasing power output, set the attenuation first.
-    if att < photonics.state['attenuation']:
-        agilent.set_hz_dbm(hz, dbm)
-        photonics.set_attenuation(att)
-    else:
-        photonics.set_attenuation(att)
-        agilent.set_hz_dbm(hz, dbm)
-    
-    # increase power output until we find an initial lock.
-    # assuming this is a 6-bit 31.5 dB attenuator, 4 counts = 2 dB steps.
-    att += 4
-    while att > 0:
-        att -= 4
-        if att < 0:
-            att = 0
-        logging.info('lo_ghz %g, att %g', lo_ghz, att)
-        photonics.set_attenuation(att)
-        time.sleep(delay)
-        try:
-            cart.tune(lo_ghz, 0.0)
-            break
-        except RuntimeError as e:
-            logging.error('tune error: %s, IF power: %g', e, cart.state['pll_if_power'])
-    
-    time.sleep(delay)
-    cart.update_all()
-    if cart.state['pll_unlock']:
-        photonics.set_attenuation(photonics.max_att)
-        agilent.set_dbm(agilent.safe_dbm)
-        logging.error('failed to lock at %g', lo_ghz)
-        return
-    logging.info('LOCKED, att=%d, pll_if_power=%g', att, cart.state['pll_if_power'])
-    
-    # quickly reduce power if initial lock is too strong, 2 counts = 1 dB steps.
-    while cart.state['pll_if_power'] <= -1.5 and att < photonics.max_att and not cart.state['pll_unlock']:
-        att += 2
-        if att > photonics.max_att
-            att = photonics.max_att
-        photonics.set_attenuation(att)
-        time.sleep(delay)
-        cart.update_all()
-        logging.info('lowering power, att=%d, pll_if_power=%g', att, cart.state['pll_if_power'])
-        if cart.state['pll_unlock']:
-            logging.error('lost lock, relocking...')
-            try:
-                cart.tune(lo_ghz, 0.0)
-                time.sleep(delay)
-                cart.update_all()
-            except RuntimeError as e:
-                logging.error('tune error: %s', e)
-                break   
-    
-    # slowly increase power to target, 1 count = .5 dB steps.
-    while cart.state['pll_if_power'] > -1.5 and att > 0 and not cart.state['pll_unlock']:
-        att -= 1
-        photonics.set_attenuation(att)
-        time.sleep(delay)
-        cart.update_all()
-        logging.info('raising power, att=%d, pll_if_power=%g', att, cart.state['pll_if_power'])
-        if cart.state['pll_unlock']:
-            logging.error('lost lock, relocking...')
-            try:
-                cart.tune(lo_ghz, 0.0)
-                time.sleep(delay)
-                cart.update_all()
-            except RuntimeError as e:
-                logging.error('tune error: %s', e)
-                break
-    
-    if cart.state['pll_unlock']:
-        photonics.set_attenuation(photonics.max_att)
-        agilent.set_dbm(agilent.safe_dbm)
-        logging.error('lost lock at %g', lo_ghz)
-        return
-    #print(lo_ghz, att, cart.state['pll_if_power'])
-    sys.stdout.write('%.3f %d %.3f %.3f %.3f\n' % (lo_ghz, att, cart.state['pll_if_power'], cart.state['pa_drain_s'][0], cart.state['pa_drain_s'][1]))
-    sys.stdout.flush()
+    # RMB 20200316: use new utility function
+    if namakanui.util.tune(cart, agilent, photonics, lo_ghz, pll_range=[-1.5,-1.5],
+                           att_ini=use_ini, att_start=args.att, att_min=0,
+                           dbm_ini=True, dbm_start=0, dbm_max=0):
+        sys.stdout.write('%.3f %d %.3f %.3f %.3f\n' % (lo_ghz, att, cart.state['pll_if_power'], cart.state['pa_drain_s'][0], cart.state['pa_drain_s'][1]))
+        sys.stdout.flush()
 
 
 def try_adjust_att(lo_ghz):

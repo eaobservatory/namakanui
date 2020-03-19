@@ -8,6 +8,7 @@ Move the load wheel to the given position.
 
 import jac_sw
 import namakanui.load
+import namakanui.util
 import time
 import os
 import sys
@@ -30,12 +31,7 @@ if args.verbose:
     logging.root.setLevel(logging.DEBUG)
     logging.debug('verbose: log level set to DEBUG')
 
-binpath = os.path.dirname(os.path.realpath(sys.argv[0])) + '/'
-# HACK, should crawl up
-if 'install' in binpath:
-    datapath = os.path.realpath(binpath + '../../data') + '/'
-else:
-    datapath = os.path.realpath(binpath + '../data') + '/'
+binpath, datapath = namakanui.util.get_paths()
 
 def mypub(n,s):
     pass

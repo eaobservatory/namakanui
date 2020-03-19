@@ -17,19 +17,14 @@ TODO: custom starting power level?  i'm assuming that loss is minimal
 
 import jac_sw
 import namakanui.agilent
+import namakanui.util
 import sys
 import os
 import argparse
 import socket
 import time
 
-binpath = os.path.dirname(os.path.realpath(sys.argv[0])) + '/'
-# HACK, should crawl up
-if 'install' in binpath:
-    datapath = os.path.realpath(binpath + '../../data') + '/'
-else:
-    datapath = os.path.realpath(binpath + '../data') + '/'
-
+binpath, datapath = namakanui.util.get_paths()
 
 parser = argparse.ArgumentParser()
 #parser.add_argument('IP', help='prologix adapter IP address')
