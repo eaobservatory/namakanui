@@ -86,6 +86,8 @@ def read_ascii(filename):
         if not line:
             continue
         if line.startswith('#'):
+            if ttype:
+                continue
             line = line[1:].strip()
             if not line:
                 continue
