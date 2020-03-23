@@ -10,6 +10,7 @@ from namakanui import sim
 import logging
 import time
 import collections
+import os
 
 
 def sign(x):
@@ -82,15 +83,17 @@ class Cart(object):
         self.yig_lo = float(wca['FLOYIG'])
         self.yig_hi = float(wca['FHIYIG'])
         
+        datapath = os.path.dirname(inifilename) + '/'
+        
         fnames = 'freqLO, VDA, VDB, VGA, VGB' 
-        self.pa_table = read_table(wca, 'LOParam', float, fnames)
+        self.pa_table = read_table_or_ascii(wca, 'LOParam', float, fnames, datapath)
         fnames = 'freqLO, IMag01, IMag02, IMag11, IMag12'
-        self.magnet_table = read_table(cc, 'MagnetParam', float, fnames)
-        self.hot_magnet_table = read_table(cc, 'HotMagnet', float, fnames)
+        self.magnet_table = read_table_or_ascii(cc, 'MagnetParam', float, fnames, datapath)
+        self.hot_magnet_table = read_table_or_ascii(cc, 'HotMagnet', float, fnames, datapath)
         fnames = 'freqLO, VJ01, VJ02, VJ11, VJ12, IJ01, IJ02, IJ11, IJ12'
-        self.mixer_table = read_table(cc, 'MixerParam', float, fnames)
+        self.mixer_table = read_table_or_ascii(cc, 'MixerParam', float, fnames, datapath)
         fnames = 'freqLO, Pol, SIS, VD1, VD2, VD3, ID1, ID2, ID3, VG1, VG2, VG3'
-        lna_table = read_table(cc, 'PreampParam', float, fnames)
+        lna_table = read_table_or_ascii(cc, 'PreampParam', float, fnames, datapath)
         
         # the lna_table's pol/sis columns make interpolation difficult,
         # so break it up into four separate tables.
@@ -101,7 +104,7 @@ class Cart(object):
         self.lna_table_02 = [ttype(*[r[0]] + list(r[3:])) for r in lna_table if r.Pol==0 and r.SIS==2]
         self.lna_table_11 = [ttype(*[r[0]] + list(r[3:])) for r in lna_table if r.Pol==1 and r.SIS==1]
         self.lna_table_12 = [ttype(*[r[0]] + list(r[3:])) for r in lna_table if r.Pol==1 and r.SIS==2]
-        self.hot_lna_table = read_table(cc, 'HotPreamp', float, fnames)
+        self.hot_lna_table = read_table_or_ascii(cc, 'HotPreamp', float, fnames, datapath)
         
         self.initialise()
         # Cart.__init__

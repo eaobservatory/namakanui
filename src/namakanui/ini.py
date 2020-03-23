@@ -106,6 +106,14 @@ def read_ascii(filename):
     return table
 
 
+def read_table_or_ascii(config_section, name, dtype, fnames, datapath):
+    '''Try read_table, falling back to read_ascii(datapath+config_section[name]).'''
+    try:
+        return read_table(config_section, name, dtype, fnames)
+    except:
+        return read_ascii(datapath + config_section[name])
+
+
 def interp_table(table, x):
     '''
     Return a linearly-interpolated row in table at given x,
