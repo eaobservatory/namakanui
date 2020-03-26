@@ -120,7 +120,7 @@ def _try_dbm(cart, agilent, lo_ghz, dbm, skip_servo_pa, delay_secs, sleep, log):
     agilent.update()
     cart.update_all()
     if cart.state['pll_unlock']:
-        _try_tune(cart, lo_ghz, 'dbm %.2f'%(msg), skip_servo_pa, log)
+        _try_tune(cart, lo_ghz, 'dbm %.2f'%(dbm), skip_servo_pa, log)
 
 
 def tune(cart, agilent, photonics, lo_ghz, pll_range=[-.8,-2.5],
