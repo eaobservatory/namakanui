@@ -889,6 +889,10 @@ class Cart(object):
         Power-on needs to demagnetize and deflux the SIS mixers, which may
         take several MINUTES.  In practice, the cartridges will be left
         powered on most of the time.
+        
+        RMB 20200413: Removed demagnetize_and_deflux on power-up.
+          The temp_mon.py service effectively bypasses the procedure anyhow,
+          and it really ought to be something we have more manual control over.
         '''
         enable = int(bool(enable))
         if enable and not self.state['pd_enable']:  # power-on
@@ -900,7 +904,7 @@ class Cart(object):
                 self.sleep(1.0)  # cartridge needs some time to wake up
             self.initialise()  # calls _calc_sis_bias_error
             self._set_pa([0.0]*4)
-            self.demagnetize_and_deflux()
+            #self.demagnetize_and_deflux()  # RMB 20200413 removed
             # NOTE: we skip the "standard biasing sequence",
             # which can wait until the first tune cmd.
             self.state['number'] += 1
@@ -1033,6 +1037,17 @@ class Cart(object):
         so we have to keep toggling them during the loop.
         
         TODO: support heating a single polarization?
+        
+        RMB 20200414: Testing shows that heater current never changes,
+            so just toggle the heaters every 1s regardless.
+            Result: B6 heating doesn't seem to work.
+                    B7 rises slightly, <1K in 30s.  (.8K, .4K)
+                       try toggling every 0.2s: (.8K, .4K)
+                       try toggling every 2.0s: (.5K, .3K)
+                       try 1s, 90s timeout: (.85K, .5K)
+            
+            B6: Does not work
+            B7: Ineffectual
         '''
         self.log.info('_mixer_heating')
         
@@ -1076,6 +1091,7 @@ class Cart(object):
             timeout = 3
         now = time.time()
         timeout += now  # wall time
+        toggle = now + 1
         debug_interval = .2
         debug_time = now + debug_interval
         self.log.info('_mixer_heating: heating loop')
@@ -1083,8 +1099,10 @@ class Cart(object):
             # TODO: publish state during this loop?  or otherwise log currents/temps?
             heater_current_0 = self.femc.get_sis_heater_current(self.ca, 0)
             heater_current_1 = self.femc.get_sis_heater_current(self.ca, 1)
-            if heater_current_0 < base_heater_current_0 or heater_current_1 < base_heater_current_1:
-                self.log.debug('_mixer_heating: toggling heaters')
+            #if heater_current_0 < base_heater_current_0 or heater_current_1 < base_heater_current_1:
+            if now > toggle:
+                toggle = now + 1
+                self.log.debug('_mixer_heating: toggling heaters, %.1fs left',timeout-now)
                 # heaters must be disabled, then enabled.
                 self.femc.set_sis_heater_enable(self.ca, 0, 0)
                 self.femc.set_sis_heater_enable(self.ca, 1, 0)
