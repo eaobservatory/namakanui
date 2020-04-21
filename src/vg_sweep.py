@@ -58,7 +58,7 @@ print('#lo_ghz vg ua01 ua02 ua11 ua12 drain_c0 drain_c1')
 
 # main loops
 for lo_ghz in los:
-    if not namakanui.util.tune(cart, agilent, None, lo_ghz, [-1.0, -2.0]):
+    if not namakanui.util.tune(cart, agilent, None, lo_ghz, pll_range=[-1.0, -2.0]):
         continue
     
     if args.vd:
@@ -84,7 +84,7 @@ for lo_ghz in los:
         print('%.3f %.2f %.2f %.2f %.2f %.2f %.2f %.2f'%tuple(a))
 
 logging.info('tuning back to starting freq to reset pa...')
-namakanui.util.tune(cart, agilent, None, los[0], [-1.0, -2.0])
+namakanui.util.tune(cart, agilent, None, los[0], pll_range=[-1.0, -2.0])
 logging.info('done.')
 
 

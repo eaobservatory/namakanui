@@ -88,7 +88,7 @@ def smooth(y):
 
 # main loops
 for lo_ghz in los:
-    if not namakanui.util.tune(cart, agilent, None, lo_ghz, [-1.0, -2.0]):
+    if not namakanui.util.tune(cart, agilent, None, lo_ghz, pll_range=[-1.0, -2.0]):
         continue
     
     # get nominal pa, it's probably close to target and will save time later
