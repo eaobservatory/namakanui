@@ -123,7 +123,8 @@ def _try_dbm(cart, agilent, lo_ghz, voltage, dbm, skip_servo_pa, delay_secs, sle
         _try_tune(cart, lo_ghz, voltage, 'dbm %.2f'%(dbm), skip_servo_pa, log)
 
 
-def tune(cart, agilent, photonics, lo_ghz, voltage=0.0, pll_range=[-.8,-2.5],
+def tune(cart, agilent, photonics,
+         lo_ghz, voltage=0.0, lock_side='above', pll_range=[-.8,-2.5],
          att_ini=True, att_start=None, att_min=None,
          dbm_ini=True, dbm_start=None, dbm_max=None,
          skip_servo_pa=False, sleep=time.sleep, log=logging):
@@ -137,6 +138,7 @@ def tune(cart, agilent, photonics, lo_ghz, voltage=0.0, pll_range=[-.8,-2.5],
       photonics: Photonics (attenuator) class instance, can be None
       lo_ghz: Frequency to tune to
       voltage: Target PLL control voltage [-10, 10]; None skips FM adjustment
+      lock_side: Lock PLL "above" or "below" ref signal; if None no change
       pll_range: [min_power, max_power].
       att_ini: If True, att_range is relative to interpolated table value.
       att_start: If None, is (att_ini ?  0 : photonics.max_att)
@@ -154,6 +156,13 @@ def tune(cart, agilent, photonics, lo_ghz, voltage=0.0, pll_range=[-.8,-2.5],
     # TODO this needs to be easily accessible from cart instance.
     # presently must manually set after initialise and doesn't update state.
     lock_polarity = cart.femc.get_cartridge_lo_pll_sb_lock_polarity_select(cart.ca)
+    if lock_side is not None:
+        lock_side = lock_side.lower() if hasattr(lock_side, 'lower') else lock_side
+        arg_lock_polarity = {0:0, 1:1, 'below':0, 'above':1}[lock_side]
+        if arg_lock_polarity != lock_polarity:
+            lock_polarity = arg_lock_polarity
+            cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, lock_polarity)
+    cart.state['pll_sb_lock'] = lock_polarity  # cart never updates this
     floog = agilent.floog * [1.0, -1.0][lock_polarity]  # [below, above]
     fyig = lo_ghz / (cart.cold_mult * cart.warm_mult)
     fsig = (fyig*cart.warm_mult + floog) / agilent.harmonic
