@@ -13,6 +13,18 @@ import collections
 import os
 
 
+class BadLock(RuntimeError):
+    '''
+    Raised by Cart.tune() if it fails to lock the receiver,
+    or if the lock is lost during subsequent adjustment steps,
+    but the cartridge itself is enabled and the arguments are valid.
+    Having an explicit exception type for this case will let
+    other functions, e.g. util.tune(), know that it's safe
+    to adjust the reference signal power and try again.
+    '''
+    pass
+
+
 def sign(x):
     '''
     Return 1 for positive, -1 for negative, and 0 for 0.
@@ -536,6 +548,11 @@ class Cart(object):
             if not skip_servo_pa:
                 self._servo_pa()  # gets skipped at high temp already
             
+            # final check in case we lost the lock after initial tune
+            ll = self.femc.get_cartridge_lo_pll_unlock_detect_latch(self.ca)
+            self.state['pll_unlock'] = ll
+            if ll:
+                raise BadLock(self.logname + ' lost lock setting mag/bias/lna/pa at lo_ghz=%.9f' % (lo_ghz))
         except:
             raise
         finally:
@@ -650,7 +667,7 @@ class Cart(object):
             return
         
         self.state['pll_unlock'] = 1
-        raise RuntimeError(self.logname + ' failed to lock at lo_ghz=%.9f' % (lo_ghz))
+        raise BadLock(self.logname + ' failed to lock at lo_ghz=%.9f' % (lo_ghz))
         # Cart._lock_pll
     
     
@@ -727,7 +744,7 @@ class Cart(object):
         self.log.debug('_adjust_fm unlock %d, corr_v %.2f, final counts %d', ll, cv, coarse_counts)
         if ll:
             lo_ghz = self.state['lo_ghz']
-            raise RuntimeError(self.logname + ' lost lock while adjusting control voltage to %.2f at lo_ghz=%.9f' % (voltage, lo_ghz))
+            raise BadLock(self.logname + ' lost lock while adjusting control voltage to %.2f at lo_ghz=%.9f' % (voltage, lo_ghz))
         # Cart._adjust_fm
 
 
@@ -783,7 +800,7 @@ class Cart(object):
         self.state['pll_unlock'] = ll
         if ll:
             lo_ghz = self.state['lo_ghz']
-            raise RuntimeError(self.logname + ' lost lock in estimate_fm_slope at lo_ghz=%.9f' % (lo_ghz))
+            raise BadLock(self.logname + ' lost lock in estimate_fm_slope at lo_ghz=%.9f' % (lo_ghz))
         
         # average new correction voltage
         cv = 0.0

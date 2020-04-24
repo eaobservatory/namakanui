@@ -94,11 +94,13 @@ def clip(value, minimum, maximum):
 
 
 def _try_tune(cart, lo_ghz, voltage, msg, skip_servo_pa, log):
-    '''Helper function used by tune() to catch and log exceptions.'''
+    '''Helper function used by tune() to catch and log exceptions.
+       NOTE: Any error except BadLock should set power to safe levels.
+    '''
     log.info('cart.tune %.3f ghz, %s', lo_ghz, msg)
     try:
         cart.tune(lo_ghz, voltage, skip_servo_pa=skip_servo_pa)
-    except RuntimeError as e:
+    except namakanui.cart.BadLock as e:
         log.error('tune failed at %.3f ghz, %s', lo_ghz, msg)
     cart.update_all()
 
@@ -138,7 +140,7 @@ def tune(cart, agilent, photonics,
       photonics: Photonics (attenuator) class instance, can be None
       lo_ghz: Frequency to tune to
       voltage: Target PLL control voltage [-10, 10]; None skips FM adjustment
-      lock_side: Lock PLL "above" or "below" ref signal; if None no change
+      lock_side: Lock PLL "below"(0) or "above"(1) ref signal; if None no change
       pll_range: [min_power, max_power].
       att_ini: If True, att_range is relative to interpolated table value.
       att_start: If None, is (att_ini ?  0 : photonics.max_att)
@@ -151,7 +153,7 @@ def tune(cart, agilent, photonics,
       sleep: Sleep function
       log: logging.Logger class instance
     '''
-    log.info('tuning to %.3f ghz...', lo_ghz)
+    log.info('tuning band %d to %.3f ghz...', cart.band, lo_ghz)
     delay_secs = 0.05
     # TODO this needs to be easily accessible from cart instance.
     # presently must manually set after initialise and doesn't update state.
@@ -202,85 +204,98 @@ def tune(cart, agilent, photonics,
     hz = fsig*1e9
     log.info('agilent hz: %.1f', hz)
     
-    # if adjusting photonics, must do so safely.
-    # if increasing power output, set the frequency first.
-    # if decreasing power output, set the attenuation first.
-    if photonics:
-        if att < photonics.state['attenuation']:
-            agilent.set_hz_dbm(hz, dbm)
-            photonics. set_attenuation(att)
+    # from here on, any uncaught exception needs to set power to safe levels
+    try:
+    
+        # if adjusting photonics, must do so safely.
+        # if increasing power output, set the frequency first.
+        # if decreasing power output, set the attenuation first.
+        if photonics:
+            if att < photonics.state['attenuation']:
+                agilent.set_hz_dbm(hz, dbm)
+                photonics.set_attenuation(att)
+            else:
+                photonics.set_attenuation(att)
+                agilent.set_hz_dbm(hz, dbm)
         else:
-            photonics.set_attenuation(att)
             agilent.set_hz_dbm(hz, dbm)
-    else:
-        agilent.set_hz_dbm(hz, dbm)
+        
+        sleep(delay_secs)
+        agilent.update()
+        photonics.update() if photonics else None
+        _try_tune(cart, lo_ghz, voltage, 'att %d, dbm %.2f'%(att,dbm), skip_servo_pa, log)
+        
+        
+        ### PHOTONICS ATTENUATOR ADJUSTMENT ###
+        
+        # quickly decrease attenuation if needed
+        while photonics and (cart.state['pll_unlock'] or cart.state['pll_if_power'] > pll_range[0]) and att > att_min:
+            att -= 4  # 2 dB for 6-bit 31.5 dB attenuator
+            if att < att_min:
+                att = att_min
+            log.info('unlock: %d, pll_if: %.3f; decreasing att to %d', cart.state['pll_unlock'], cart.state['pll_if_power'], att)
+            _try_att(cart, photonics, lo_ghz, voltage, att, skip_servo_pa, delay_secs, sleep, log)
+        
+        # increase attenuation if too strong
+        while photonics and (not cart.state['pll_unlock']) and cart.state['pll_if_power'] < pll_range[1] and att < att_max:
+            att += 2  # 1 dB for 6-bit 31.5 dB attenuator
+            if att > att_max:
+                att = att_max
+            log.info('unlock: %d, pll_if: %.3f; increasing att to %d', cart.state['pll_unlock'], cart.state['pll_if_power'], att)
+            _try_att(cart, photonics, lo_ghz, voltage, att, skip_servo_pa, delay_secs, sleep, log)
+        
+        # slowly decrease attenuation to target (and relock if needed)
+        while photonics and (cart.state['pll_unlock'] or cart.state['pll_if_power'] > pll_range[0]) and att > att_min:
+            att -= 1  # .5 dB for 6-bit 31.5 dB attenuator
+            if att < att_min:
+                att = att_min
+            log.info('unlock: %d, pll_if: %.3f; decreasing att to %d', cart.state['pll_unlock'], cart.state['pll_if_power'], att)
+            _try_att(cart, photonics, lo_ghz, voltage, att, skip_servo_pa, delay_secs, sleep, log)
+        
+        
+        ### AGILENT OUTPUT POWER ADJUSTMENT ###
+        
+        # quickly increase power if needed
+        while (cart.state['pll_unlock'] or cart.state['pll_if_power'] > pll_range[0]) and dbm < dbm_max:
+            dbm += 1.0
+            if dbm > dbm_max:
+                dbm = dbm_max
+            log.info('unlock: %d, pll_if: %.3f; increasing dbm to %.2f', cart.state['pll_unlock'], cart.state['pll_if_power'], dbm)
+            _try_dbm(cart, agilent, lo_ghz, voltage, dbm, skip_servo_pa, delay_secs, sleep, log)
+        
+        # decrease power if too strong
+        while (not cart.state['pll_unlock']) and cart.state['pll_if_power'] < pll_range[1] and dbm > dbm_min:
+            dbm -= 0.3
+            if dbm < dbm_min:
+                dbm = dbm_min
+            log.info('unlock: %d, pll_if: %.3f; decreasing dbm to %.2f', cart.state['pll_unlock'], cart.state['pll_if_power'], dbm)
+            _try_dbm(cart, agilent, lo_ghz, voltage, dbm, skip_servo_pa, delay_secs, sleep, log)
+        
+        # slowly increase power to target (and relock if needed)
+        while (cart.state['pll_unlock'] or cart.state['pll_if_power'] > pll_range[0]) and dbm < dbm_max:
+            dbm += 0.1
+            if dbm > dbm_max:
+                dbm = dbm_max
+            log.info('unlock: %d, pll_if: %.3f; increasing dbm to %.2f', cart.state['pll_unlock'], cart.state['pll_if_power'], dbm)
+            _try_dbm(cart, agilent, lo_ghz, voltage, dbm, skip_servo_pa, delay_secs, sleep, log)
+        
+        #log.info('unlock: %d, pll_if: %.3f; final dbm %.2f', cart.state['pll_unlock'], cart.state['pll_if_power'], dbm)
+        if cart.state['pll_unlock']:
+            log.error('unlocked at %.3f ghz, pll_if %.3f. setting power to safe levels.', lo_ghz, cart.state['pll_if_power'])
+            agilent.set_dbm(agilent.safe_dbm)
+            photonics.set_attenuation(photonics.max_att) if photonics else None
+            return False
+        log.info('tuned to %.3f ghz, pll_if %.3f, final att %d, dbm %.2f', lo_ghz, cart.state['pll_if_power'], att, dbm)
+        return True
     
-    sleep(delay_secs)
-    agilent.update()
-    photonics.update() if photonics else None
-    _try_tune(cart, lo_ghz, voltage, 'att %d, dbm %.2f'%(att,dbm), skip_servo_pa, log)
-    
-    
-    # PHOTONICS ATTENUATOR ADJUSTMENT
-    
-    # quickly decrease attenuation if needed
-    while photonics and (cart.state['pll_unlock'] or cart.state['pll_if_power'] > pll_range[0]) and att > att_min:
-        att -= 4  # 2 dB for 6-bit 31.5 dB attenuator
-        if att < att_min:
-            att = att_min
-        log.info('unlock: %d, pll_if: %.3f; decreasing att to %d', cart.state['pll_unlock'], cart.state['pll_if_power'], att)
-        _try_att(cart, photonics, lo_ghz, voltage, att, skip_servo_pa, delay_secs, sleep, log)
-    
-    # increase attenuation if too strong
-    while photonics and (not cart.state['pll_unlock']) and cart.state['pll_if_power'] < pll_range[1] and att < att_max:
-        att += 2  # 1 dB for 6-bit 31.5 dB attenuator
-        if att > att_max:
-            att = att_max
-        log.info('unlock: %d, pll_if: %.3f; increasing att to %d', cart.state['pll_unlock'], cart.state['pll_if_power'], att)
-        _try_att(cart, photonics, lo_ghz, voltage, att, skip_servo_pa, delay_secs, sleep, log)
-    
-    # slowly decrease attenuation to target (and relock if needed)
-    while photonics and (cart.state['pll_unlock'] or cart.state['pll_if_power'] > pll_range[0]) and att > att_min:
-        att -= 1  # .5 dB for 6-bit 31.5 dB attenuator
-        if att < att_min:
-            att = att_min
-        log.info('unlock: %d, pll_if: %.3f; decreasing att to %d', cart.state['pll_unlock'], cart.state['pll_if_power'], att)
-        _try_att(cart, photonics, lo_ghz, voltage, att, skip_servo_pa, delay_secs, sleep, log)
-    
-    
-    # AGILENT OUTPUT POWER ADJUSTMENT
-    
-    # quickly increase power if needed
-    while (cart.state['pll_unlock'] or cart.state['pll_if_power'] > pll_range[0]) and dbm < dbm_max:
-        dbm += 1.0
-        if dbm > dbm_max:
-            dbm = dbm_max
-        log.info('unlock: %d, pll_if: %.3f; increasing dbm to %.2f', cart.state['pll_unlock'], cart.state['pll_if_power'], dbm)
-        _try_dbm(cart, agilent, lo_ghz, voltage, dbm, skip_servo_pa, delay_secs, sleep, log)
-    
-    # decrease power if too strong
-    while (not cart.state['pll_unlock']) and cart.state['pll_if_power'] < pll_range[1] and dbm > dbm_min:
-        dbm -= 0.3
-        if dbm < dbm_min:
-            dbm = dbm_min
-        log.info('unlock: %d, pll_if: %.3f; decreasing dbm to %.2f', cart.state['pll_unlock'], cart.state['pll_if_power'], dbm)
-        _try_dbm(cart, agilent, lo_ghz, voltage, dbm, skip_servo_pa, delay_secs, sleep, log)
-    
-    # slowly increase power to target (and relock if needed)
-    while (cart.state['pll_unlock'] or cart.state['pll_if_power'] > pll_range[0]) and dbm < dbm_max:
-        dbm += 0.1
-        if dbm > dbm_max:
-            dbm = dbm_max
-        log.info('unlock: %d, pll_if: %.3f; increasing dbm to %.2f', cart.state['pll_unlock'], cart.state['pll_if_power'], dbm)
-        _try_dbm(cart, agilent, lo_ghz, voltage, dbm, skip_servo_pa, delay_secs, sleep, log)
-    
-    #log.info('unlock: %d, pll_if: %.3f; final dbm %.2f', cart.state['pll_unlock'], cart.state['pll_if_power'], dbm)
-    if cart.state['pll_unlock']:
-        log.error('unlocked at %.3f ghz, pll_if %.3f. setting power to safe levels.', lo_ghz, cart.state['pll_if_power'])
-        agilent.set_dbm(agilent.safe_dbm)
-        photonics.set_attenuation(photonics.max_att) if photonics else None
-        return False
-    log.info('tuned to %.3f ghz, pll_if %.3f, final att %d, dbm %.2f', lo_ghz, cart.state['pll_if_power'], att, dbm)
-    return True
+    except:
+        log.exception('unhandled error tuning to %.3f ghz. setting power to safe levels.', lo_ghz)
+        # nested try/finally block will attempt to set power on both devices,
+        # even if one fails, while still raising any errors produced.
+        try:
+            agilent.set_dbm(agilent.safe_dbm)
+        finally:
+            photonics.set_attenuation(photonics.max_att) if photonics else None
+        raise
     # tune
 
