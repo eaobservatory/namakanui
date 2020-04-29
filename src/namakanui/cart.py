@@ -621,6 +621,13 @@ class Cart(object):
             self.log.debug('_lock_pll already locked, corr_v %.2f', cv)
             return
         
+        # if we don't have good reference power, give up now
+        self.state['pll_ref_power'] = rfp
+        if rfp < -3.0:
+            raise RuntimeError(self.logname + ' FLOOG (31.5 MHz) power too strong (%.2fV), please attenuate' % (rfp))
+        if rfp > -0.5:
+            raise RuntimeError(self.logname + ' FLOOG (31.5 MHz) power too weak (%.2fV), check IF switch band' % (rfp))
+        
         femc.set_cartridge_lo_pll_null_loop_integrator(self.ca, 1)
         femc.set_cartridge_lo_yto_coarse_tune(self.ca, coarse_counts)
         self.sleep(0.05)  # first step might be large
@@ -947,10 +954,13 @@ class Cart(object):
         # Cart.power
     
     
-    def demagnetize_and_deflux(self):
+    def demagnetize_and_deflux(self, heat=False):
         '''
         This could take a while.
         Described in section 10.1.1 of FEND-40.00.00.00-089-D-MAN.
+        
+        RMB 20200427: Testing shows that mixer heating does nothing
+            for B6 and very little for B7.  Skip by default.
         '''
         self.log.info('demagnetize_and_deflux')
         
@@ -973,8 +983,13 @@ class Cart(object):
             for po in range(2):
                 for sb in range(2):
                     self._demagnetize(po,sb)
+        
         # Mixer Heating
-        self._mixer_heating()
+        if not heat:
+            self.log.info('skipping mixer heating')
+        else:
+            self._mixer_heating()
+        
         # Final Steps
         # NOTE: instead of setting parameters back to nominal,
         #       we leave everything at zero until next tune cmd.
