@@ -18,9 +18,7 @@ import select
 import logging
 import os
 
-# TODO what kind of adam are we using here
-import adam.adam6260
-
+import adam.adam6052
 
 
 class Photonics(object):
@@ -49,13 +47,13 @@ class Photonics(object):
         self.nbits = pconfig['nbits']
         self.max_att = (1 << self.nbits) - 1
         self.state = {'number':0}
-        self.state['DO'] = [0]*6  # needs to match ADAM type, not nbits
+        self.state['DO'] = [0]*8  # needs to match ADAM type, not nbits
         # ADAM address
         self.ip = pconfig['ip']
         self.port = int(pconfig['port'])
         
         # init only saves ip/port, so this is fine even if simulating
-        self.adam = adam.adam6260.Adam6260(self.ip, self.port)
+        self.adam = adam.adam6052.Adam6052(self.ip, self.port)
         
         datapath = os.path.dirname(inifilename) + '/'
         self.att_tables = {}  # indexed by band
@@ -77,7 +75,7 @@ class Photonics(object):
     def close(self):
         '''Close the connection to the ADAM'''
         self.log.debug('close')
-        self.adam_6260.close()
+        self.adam.close()
     
     
     def initialise(self):
@@ -137,7 +135,7 @@ class Photonics(object):
             att = self.max_att
         
         # TODO sense, order of bits
-        DO = [0]*6
+        DO = [0]*8  # 6052 is 8-bit, even if we only use 6
         for i in range(len(DO)):
             DO[i] = (att >> i) & 1
         
