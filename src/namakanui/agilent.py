@@ -119,30 +119,37 @@ class Agilent(object):
         self.log.debug('cmd: %s', cmd)
         reply = cmd.endswith(b'?')
         cmd += b'\n'
-        # clear out recv buffer before sending cmd
-        while select.select([self.s], [], [], 0)[0]:
-            self.s.recv(256)
-        # packets are small, never expect this to fail
-        b = self.s.send(cmd)
-        assert b == len(cmd)
-        if reply:
-            try:
+        # wrap this whole thing in a try block, since
+        # we sometimes see a recv() timeout even after select.
+        # we also need to watch for b'' in case connection closed.
+        try:
+            # clear out recv buffer before sending cmd
+            buf = b'x'
+            while buf and select.select([self.s], [], [], 0)[0]:
+                buf = self.s.recv(256)
+            assert buf, 'lost connection'
+            # packets are small, never expect this to fail
+            b = self.s.send(cmd)
+            assert b == len(cmd), 'only sent %d/%d bytes'%(b,len(cmd))
+            if reply:
                 reply = self.s.recv(256)
-            except socket.timeout:
-                if reconnect:
-                    self.log.warning('socket.timeout, attempting reconnect')
-                    self.initialise()
-                    self.log.info('reconnected, retrying cmd %s', cmd[:-1])
-                    return self.cmd(orig_cmd, reconnect=False)
-                else:
-                    self.log.error('timeout on reply to cmd %s', cmd[:-1])
-                    raise
-            reply = reply.strip()  # remove trailing newline
-            self.log.debug('reply: %s', reply)
-            if convert:
-                reply = reply.decode()  # convert to string
-            return reply
-
+                assert reply, 'no reply, lost connection'
+                reply = reply.strip()  # remove trailing newline
+                self.log.debug('reply: %s', reply)
+                if convert:
+                    reply = reply.decode()  # convert to string
+                return reply
+        except (OSError, AssertionError) as e:
+            if reconnect:
+                self.log.warning('socket %s, attempting reconnect', e)
+                self.initialise()
+                self.log.info('reconnected, retrying cmd %s', cmd[:-1])
+                return self.cmd(orig_cmd, reconnect=False)
+            else:
+                self.log.error('socket %s, cmd %s', e, cmd[:-1])
+                raise
+        # cmd
+    
     def get_errors(self):
         '''Clear the error message queue and return as list of strings.'''
         self.log.debug('get_errors')
