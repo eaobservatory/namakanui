@@ -7,6 +7,7 @@ import sys
 import os
 import logging
 import time
+import namakanui.cart  # needed for BadLock
 
 def get_paths():
     '''Return binpath and datapath for this script.'''
