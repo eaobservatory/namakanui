@@ -196,10 +196,18 @@ def UPDATE(msg):
         drama.reschedule(delay)
         return
     log.debug('UPDATE reschedule.')
-    cryo.update()
-    load.update()
-    agilent.update()
-    ifswitch.update()
+
+    # RMB 20200610: try each update function independently; keep UPDATE running.
+    #cryo.update()
+    #load.update()
+    #agilent.update()
+    #ifswitch.update()
+    update_funcs = [cryo.update, load.update, agilent.update, ifswitch.update]
+    for f in update_funcs:
+        try:
+            f()
+        except:  # TODO limit bycatch
+            log.exception('UPDATE exception')
     drama.reschedule(delay)
     # UPDATE
 
