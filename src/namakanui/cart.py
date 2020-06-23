@@ -549,7 +549,9 @@ class Cart(object):
                 self._servo_pa()  # gets skipped at high temp already
             
             # final check in case we lost the lock after initial tune
-            ll = self.femc.get_cartridge_lo_pll_unlock_detect_latch(self.ca)
+            ll = 0
+            if not self.sim_femc:
+                ll = self.femc.get_cartridge_lo_pll_unlock_detect_latch(self.ca)
             self.state['pll_unlock'] = ll
             if ll:
                 raise BadLock(self.logname + ' lost lock setting mag/bias/lna/pa at lo_ghz=%.9f' % (lo_ghz))
