@@ -98,6 +98,7 @@ pas = namakanui.util.parse_range(args.pa, maxlen=300)
 # set agilent output to a safe level before setting ifswitch
 agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop, simulate=0)
 agilent.set_dbm(agilent.safe_dbm)
+agilent.set_output(1)
 ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop, simulate=0)
 ifswitch.set_band(band)
 
@@ -123,10 +124,11 @@ sys.stdout.write('# %s\n'%(sys.argv))
 sys.stdout.write('#\n')
 sys.stdout.write('#pa mv')
 mixers = ['01', '02', '11', '12']
-dcm_0U = namakanui.util.get_dcms('NU0U')
-dcm_0L = namakanui.util.get_dcms('NU0L')
-dcm_1U = namakanui.util.get_dcms('NU1U')
-dcm_1L = namakanui.util.get_dcms('NU1L')
+uw = ['U','W'][args.band-6]
+dcm_0U = namakanui.util.get_dcms('N%s0U'%(uw))
+dcm_0L = namakanui.util.get_dcms('N%s0L'%(uw))
+dcm_1U = namakanui.util.get_dcms('N%s1U'%(uw))
+dcm_1L = namakanui.util.get_dcms('N%s1L'%(uw))
 dcm_0 = dcm_0U + dcm_0L
 dcm_1 = dcm_1U + dcm_1L
 powers = []
