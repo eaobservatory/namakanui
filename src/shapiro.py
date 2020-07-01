@@ -145,10 +145,10 @@ def plot_MixerParam(mparms):
 title_str = 'Shapiro Band %d'%(band)
 
 if len(sys.argv) > 2:
-    plot_MixerParam(open(sys.argv[2].read()))
+    plot_MixerParam(open(sys.argv[2]).read())
     fname = sys.argv[2]
     if '/' in fname:
-        fname = fname.rpartition['/'][-1]
+        fname = fname.rpartition('/')[-1]
     title_str += ', ' + fname
 
 title(title_str)
