@@ -322,7 +322,9 @@ def configure(msg, wait_set, done_set):
         drama.set_param('SB_MODE', fe['SB_MODE'])
         #drama.set_param('SB_MODE', 'SSB')  # debug
         
-        og = ['ONCE', 'GROUP']
+        # RMB 20200701: tune here even for CONTINUOUS/DISCRETE,
+        # since the DCMs probably level themselves in CONFIGURE.
+        og = ['ONCE', 'GROUP', 'CONTINUOUS', 'DISCRETE']
         if g_esma_mode:
             configure.tune = False
             wait_set.add(ANTENNA_TASK)
