@@ -354,20 +354,23 @@ def CART_POWER(msg):
     log.info('band %d powered %s.', band, ['off','on'][enable])
 
 
-def cart_tune_args(BAND, LO_GHZ, VOLTAGE=None):
+def cart_tune_args(BAND, LO_GHZ, VOLTAGE=None, LOCK_ONLY=False):
     BAND = int(BAND)
     LO_GHZ = float(LO_GHZ)
     if VOLTAGE is not None:
         VOLTAGE = float(VOLTAGE)
-    return BAND, LO_GHZ, VOLTAGE
+    LOCK_ONLY = bool(int(LOCK_ONLY))
+    return BAND, LO_GHZ, VOLTAGE, LOCK_ONLY
     
 def CART_TUNE(msg):
     '''Tune a cartridge, after setting reference frequency.  Arguments:
-            BAND: One of 3,6,7
-            LO_GHZ: Local oscillator frequency in gigahertz
-            VOLTAGE: Desired PLL control voltage, [-10,10].
-                     If not given, voltage will not be adjusted
-                     following the initial lock.
+            BAND:      One of 3,6,7
+            LO_GHZ:    Local oscillator frequency in gigahertz
+            VOLTAGE:   Desired PLL control voltage, [-10,10].
+                       If not given, voltage will not be adjusted
+                       following the initial lock.
+            LOCK_ONLY: if True, bias voltage, PA, LNA, and magnets will not
+                       be adjusted after locking the receiver.
        
        TODO: lock polarity (below or above reference) could be a parameter.
              for now we just read back from the cartridge task.
@@ -378,7 +381,7 @@ def CART_TUNE(msg):
     if not initialised:
         raise drama.BadStatus(drama.APP_ERROR, 'task needs INITIALISE')
     args,kwargs = drama.parse_argument(msg.arg)
-    band,lo_ghz,voltage = cart_tune_args(*args,**kwargs)
+    band,lo_ghz,voltage,lock_only = cart_tune_args(*args,**kwargs)
     if band not in [3,6,7]:
         raise drama.BadStatus(drama.INVARG, 'BAND %d not one of [3,6,7]' % (band))
     if not 70<=lo_ghz<=400:  # TODO be more specific
@@ -419,8 +422,11 @@ def CART_TUNE(msg):
     vstr = ''
     band_kwargs = {"LO_GHZ":lo_ghz}
     if voltage is not None:
-        vstr = ', %g V' % (voltage)
+        vstr += ', %g V' % (voltage)
         band_kwargs["VOLTAGE"] = voltage
+    if lock_only:
+        vstr += ', LOCK_ONLY'
+        band_kwargs["LOCK_ONLY"] = lock_only
     log.info('band %d tuning to LO %g GHz%s...', band, lo_ghz, vstr)
     
     # during commissioning, the dBm lookup table has needed constant updates.

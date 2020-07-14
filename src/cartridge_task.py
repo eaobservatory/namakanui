@@ -134,27 +134,32 @@ def POWER(msg):
     log.info('powered %s.', onoff)
 
 
-def tune_args(LO_GHZ, VOLTAGE=None):
+def tune_args(LO_GHZ, VOLTAGE=None, LOCK_ONLY=False):
     LO_GHZ = float(LO_GHZ)
     if VOLTAGE is not None:
         VOLTAGE = float(VOLTAGE)
-    return LO_GHZ, VOLTAGE
+    LOCK_ONLY = bool(int(LOCK_ONLY))
+    return LO_GHZ, VOLTAGE, LOCK_ONLY
 
 def TUNE(msg):
     '''
-    Takes two arguments, LO_GHZ and VOLTAGE.
+    Takes three arguments, LO_GHZ, VOLTAGE, and LOCK_ONLY.
     If VOLTAGE is not given, PLL control voltage will not be adjusted
-    following the initial lock.
+        following the initial lock.
+    If LOCK_ONLY is True, bias voltage, PA, LNA, and magnets will not
+        be adjusted after locking the receiver.
     The reference signal and IF switch must already be set externally.
     '''
     log.debug('TUNE(%s)', msg.arg)
     args,kwargs = drama.parse_argument(msg.arg)
-    lo_ghz,voltage = tune_args(*args,**kwargs)
+    lo_ghz,voltage,lock_only = tune_args(*args,**kwargs)
     vstr = ''
     if voltage is not None:
-        vstr = ', %g V' % (voltage)
+        vstr += ', %g V' % (voltage)
+    if lock_only:
+        vstr += ', LOCK_ONLY'
     log.info('tuning to LO %g GHz%s...', lo_ghz, vstr)
-    cart.tune(lo_ghz, voltage)
+    cart.tune(lo_ghz, voltage, lock_only=lock_only)
     log.info('tuned.')
 
 

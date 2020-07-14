@@ -530,7 +530,9 @@ def setup_sequence(msg, wait_set, done_set):
         g_state['LOCKED'] = 'NO'
         drama.set_param('LOCK_STATUS', numpy.int32(0))
         log.info('tuning receiver LO to %.9f GHz, %.3f V...', lo_freq, voltage)
-        msg = drama.obey(NAMAKANUI_TASK, 'CART_TUNE', g_band, lo_freq, voltage).wait(30)
+        # RMB 20200714: try to hold output power steady while doppler tracking
+        # by keeping the same tuning params (bias voltage, PA, etc).
+        msg = drama.obey(NAMAKANUI_TASK, 'CART_TUNE', g_band, lo_freq, voltage, LOCK_ONLY=True).wait(30)
         check_message(msg, f'obey({NAMAKANUI_TASK},CART_TUNE,{g_band},{lo_freq},{voltage})')
         g_state['LO_FREQUENCY'] = lo_freq
         drama.set_param('LO_FREQ', lo_freq)
