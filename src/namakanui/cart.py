@@ -497,7 +497,7 @@ class Cart(object):
         self.state['fe_mode'] = mode
     
     
-    def tune(self, lo_ghz, voltage, skip_servo_pa=False):
+    def tune(self, lo_ghz, voltage, skip_servo_pa=False, lock_only=False):
         '''
         Lock the PLL to produce the given LO frequency.
         The reference signal generator must already be set properly.
@@ -507,46 +507,53 @@ class Cart(object):
         It can sometimes be useful to skip_servo_pa,
         e.g. to save time during a dbm_table or mixer_pa script
         where the PA will be set manually.
+        
+        If lock_only is True, do not set SIS voltage, PA, LNA, or magnets;
+        they will retain their previous values.  This can help avoid output
+        power changes for small tuning adjustments, such as while
+        doppler tracking during an observation, especially if there are
+        step-changes in the tuning tables.
         '''
-        self.log.info('tune(%g, %g)', lo_ghz, voltage)
+        self.log.info('tune(%g, %g, skip_servo_pa=%s, lock_only=%s)', lo_ghz, voltage, skip_servo_pa, lock_only)
         try:
             self._lock_pll(lo_ghz)
             self._adjust_fm(voltage)
             
-            # allow for high temperature testing
-            nom_pa = interp_table(self.pa_table, lo_ghz)
-            nom_mixer = interp_table(self.mixer_table, lo_ghz)
-            if self.high_temperature():
-                nom_magnet = interp_table(self.hot_magnet_table, lo_ghz)
-                lna = interp_table(self.hot_lna_table, lo_ghz)
-                nom_lna_01 = nom_lna_02 = nom_lna_11 = nom_lna_12 = lna
-                # RMB 20200214: warm testing paranoia
-                nom_pa = None
-                nom_mixer = None
-            else:
-                nom_magnet = interp_table(self.magnet_table, lo_ghz)
-                nom_lna_01 = interp_table(self.lna_table_01, lo_ghz)
-                nom_lna_02 = interp_table(self.lna_table_02, lo_ghz)
-                nom_lna_11 = interp_table(self.lna_table_11, lo_ghz)
-                nom_lna_12 = interp_table(self.lna_table_12, lo_ghz)
-            
-            if nom_magnet:
-                self._ramp_sis_magnet_currents(nom_magnet[1:])
-            if nom_mixer:
-                self._ramp_sis_bias_voltages(nom_mixer[1:5])
-            if nom_pa:
-                self._set_pa(nom_pa[1:])
-            for i, lna in enumerate([nom_lna_01, nom_lna_02, nom_lna_11, nom_lna_12]):
-                if lna:
-                    self._set_lna(i//2, i%2, lna[1:])
-            
-            # TODO: can we set LNA values before enabling?
-            #       should we disable LNA while tuning?
-            if not self.high_temperature():  # RMB 20200214: warm testing paranoia
-                self._set_lna_enable(1)
-            
-            if not skip_servo_pa:
-                self._servo_pa()  # gets skipped at high temp already
+            if not lock_only:
+                # allow for high temperature testing
+                nom_pa = interp_table(self.pa_table, lo_ghz)
+                nom_mixer = interp_table(self.mixer_table, lo_ghz)
+                if self.high_temperature():
+                    nom_magnet = interp_table(self.hot_magnet_table, lo_ghz)
+                    lna = interp_table(self.hot_lna_table, lo_ghz)
+                    nom_lna_01 = nom_lna_02 = nom_lna_11 = nom_lna_12 = lna
+                    # RMB 20200214: warm testing paranoia
+                    nom_pa = None
+                    nom_mixer = None
+                else:
+                    nom_magnet = interp_table(self.magnet_table, lo_ghz)
+                    nom_lna_01 = interp_table(self.lna_table_01, lo_ghz)
+                    nom_lna_02 = interp_table(self.lna_table_02, lo_ghz)
+                    nom_lna_11 = interp_table(self.lna_table_11, lo_ghz)
+                    nom_lna_12 = interp_table(self.lna_table_12, lo_ghz)
+                
+                if nom_magnet:
+                    self._ramp_sis_magnet_currents(nom_magnet[1:])
+                if nom_mixer:
+                    self._ramp_sis_bias_voltages(nom_mixer[1:5])
+                if nom_pa:
+                    self._set_pa(nom_pa[1:])
+                for i, lna in enumerate([nom_lna_01, nom_lna_02, nom_lna_11, nom_lna_12]):
+                    if lna:
+                        self._set_lna(i//2, i%2, lna[1:])
+                
+                # TODO: can we set LNA values before enabling?
+                #       should we disable LNA while tuning?
+                if not self.high_temperature():  # RMB 20200214: warm testing paranoia
+                    self._set_lna_enable(1)
+                
+                if not skip_servo_pa:
+                    self._servo_pa()  # gets skipped at high temp already
             
             # final check in case we lost the lock after initial tune
             ll = 0
@@ -554,7 +561,7 @@ class Cart(object):
                 ll = self.femc.get_cartridge_lo_pll_unlock_detect_latch(self.ca)
             self.state['pll_unlock'] = ll
             if ll:
-                raise BadLock(self.logname + ' lost lock setting mag/bias/lna/pa at lo_ghz=%.9f' % (lo_ghz))
+                raise BadLock(self.logname + ' lost lock after tuning at lo_ghz=%.9f' % (lo_ghz))
         except:
             raise
         finally:
