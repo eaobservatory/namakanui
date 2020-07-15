@@ -68,21 +68,35 @@ try:
         sys.stderr.write('.')
         sys.stderr.flush()
         set_mv = random.uniform(-mv_range, mv_range)
-        cart._ramp_sis_bias_voltages([set_mv]*4)
+        try:
+            cart._ramp_sis_bias_voltages([set_mv]*4, retry=0)  # don't defeat the test
+        except RuntimeError:
+            pass
+        # try to provoke errors
+        #for i in range(10):
+        #    cart.update_all()
         for i in range(4):
-            get_mv = cart.femc.get_sis_voltage(cart.ca, i//2, i%2)
+            avg = 0.0
+            n = 10
+            for j in range(n):
+                avg += cart.femc.get_sis_voltage(cart.ca, i//2, i%2)
+            get_mv = avg/n
             cmd_mv = cart.femc.get_sis_voltage_cmd(cart.ca, i//2, i%2)
             cmd_mv += cart.bias_error[i]
             # TODO tweak; unsure how much error to expect normally
             get_err = get_mv - set_mv
             set_err = cmd_mv - set_mv
-            if abs(get_err) > mv_range*.001 or abs(set_err) > mv_range*.001:
+            if abs(get_err) > mv_range*.005 or abs(set_err) > mv_range*.005:
                 errs += 1
                 sys.stderr.write('\n')
                 sys.stderr.flush()
-                print('err %d/%d (%g%%): mixer %d, set/get/cmd mv: %.3f, %.3f, %.3f'%(errs, count, 100.0*errs/count, i, set_mv, get_mv, cmd_mv))
+                sys.stdout.write('err %d/%d (%g%%): mixer %d, set/get/cmd mv: %.3f, %.3f, %.3f, err get/cmd: %.3f, %.3f, prev %.3f\n'%(errs, count, 100.0*errs/count, i, set_mv, get_mv, cmd_mv, get_err, set_err, prev_mv))
+                sys.stdout.flush()
+        prev_mv = set_mv
 finally:
-    sys.stderr.write('\ndone, ramping bias voltages back to 0.')
+    sys.stderr.write('\nfinally, ramping bias voltages back to 0.\n')
     cart._ramp_sis_bias_voltages([0.0]*4)
+    sys.stderr.write('done.\n')
+    sys.stderr.flush()
 
 

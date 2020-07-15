@@ -81,6 +81,8 @@ for key in sorted(cart.state):
     if isinstance(cart.state[key], list):
         state_keys.remove(key)
         state_keys += ['%s_%d'%(key,i) for i in range(len(cart.state[key]))]
+    elif not str(cart.state[key]).strip():
+        state_keys.remove(key)
     elif len(str(cart.state[key]).split()) > 1:
         state_keys.remove(key)
 state_keys.sort()
@@ -145,20 +147,30 @@ prev_powers = []
 
 def loop():
     global i, prev_powers
-    while i < 10:
+    while i < 23:
+        time.sleep(1)
         i += 1
         if i < 0:
             sys.stderr.write('.')
         else:
             sys.stderr.write('%d '%(i))
         sys.stderr.flush()
-        # retune the cart; make sure it loses the lock
-        agilent.set_output(0)
-        time.sleep(0.05)
-        agilent.set_output(1)
-        time.sleep(0.05)
-        cart.tune(lo_ghz, 0.0)
-        time.sleep(0.05)
+        if i % 5 == 4:
+            # retune the cart; make sure it loses the lock
+            dbm = agilent.state['dbm']
+            while dbm > agilent.safe_dbm and not cart.state['pll_unlock']:
+                agilent.set_dbm(dbm)
+                cart.update_all()
+                dbm -= 0.1
+            dbm = agilent.safe_dbm
+            agilent.set_dbm(dbm)
+            agilent.set_output(0)
+            time.sleep(0.05)
+            agilent.set_output(1)
+            agilent.set_dbm(orig_dbm)
+            time.sleep(0.05)
+            cart.tune(lo_ghz, 0.0)
+            time.sleep(0.05)
         transid = drama.obey("IFTASK@if-micro", "WRITE_TP2", FILE="NONE", ITIME=0.1)
         cart.update_all()
         msg = transid.wait(5)
@@ -173,10 +185,10 @@ def loop():
             powers.append(msg.arg['POWER%d'%(dcm)])
         for j,(prev,curr) in enumerate(zip(prev_powers, powers)):
             pdiff = abs((prev-curr)/min(prev,curr)) * 100.0
-            if pdiff > 10.0:
-                logging.info('%.2f%% jump in DCM %d', pdiff, dcm[j])
+            if pdiff > 1.5:
+                logging.info('%.2f%% jump in DCM %d', pdiff, dcms[j])
                 # let's write to the output file too, might come in handy
-                sys.stdout.write('# jump DCM %d, %.2f%%\n'%(dcm[j], pdiff))
+                sys.stdout.write('# jump DCM %d, %.2f%%\n'%(dcms[j], pdiff))
                 if i < 0:
                     i = 0  # collect a bit more data, then quit
         prev_powers = powers
