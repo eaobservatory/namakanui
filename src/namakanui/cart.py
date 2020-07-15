@@ -1304,10 +1304,12 @@ class Cart(object):
         self.log.debug('_ramp_sis_bias_voltages cmd mv: %s', self.state['sis_v'])
         self._ramp_sis(set_mv, 'sis_v', 0.05, self.femc.set_sis_voltage)
         # double-check and retry
+        for i in range(4):  # this loop may be necessary to make cmd errors visible
+            self.state['sis_v'][i] = self.femc.get_sis_voltage(self.ca, i//2, i%2)
         for i in range(4):
-            self.state['sis_v'][i] = self.femc.get_sis_voltage_cmd(self.ca, i//2, i%2) + self.bias_error[i]
-            if abs(self.state['sis_v'][i] - mv[i]) > 0.001:
-                emsg = '_ramp_sis_bias_voltages bad cmd, mixer %d set to %.3f instead of %.3f'%(i, self.state['sis_v'][i], mv[i])
+            cmd_mv = self.femc.get_sis_voltage_cmd(self.ca, i//2, i%2) + self.bias_error[i]
+            if abs(cmd_mv - mv[i]) > 0.001:
+                emsg = '_ramp_sis_bias_voltages bad cmd, mixer %d set to %.3f instead of %.3f'%(i, cmd_mv, mv[i])
                 if retry:
                     self.log.warning(emsg + ', retrying but there might be TRAPPED FLUX')
                     return self._ramp_sis_bias_voltages(mv, retry-1)
