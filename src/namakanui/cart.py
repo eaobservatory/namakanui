@@ -1270,14 +1270,16 @@ class Cart(object):
         # Cart._ramp_sis_magnet_currents
     
     
-    def _ramp_sis_bias_voltages(self, mv):
+    def _ramp_sis_bias_voltages(self, mv, retry=3):
         '''
         Internal function, does not publish state.
         Ramp bias voltages to desired values in 0.05mV steps.
         Order of voltage array mv is pol/sis [01, 02, 11, 12].
         Subtracts self.bias_error from given mv.
         
-        NOTE use of special get_sis_voltage_cmd, TODO NEEDS TESTING ON STARTUP.
+        RMB 20200714: A set_sis_voltage command will sometimes cause the
+            FEMC to set one of the other mixers to the wrong value.
+            Double-check and retry, or raise RuntimeError if out of tries.
         '''
         self.log.debug('_ramp_sis_bias_voltages(%s)', mv)
         if self.sim_cold:
@@ -1297,10 +1299,21 @@ class Cart(object):
             except RuntimeError:
                 self.state['sis_v'][i] = 0.0  # or should we use get_mv[i]?
         self.log.debug('_ramp_sis_bias_voltages arg mv:  %s', mv)
-        self.log.debug('_ramp_sis_bias_voltages set mv: %s', set_mv)
         self.log.debug('_ramp_sis_bias_voltages get mv: %s', get_mv)
+        self.log.debug('_ramp_sis_bias_voltages set mv: %s', set_mv)
         self.log.debug('_ramp_sis_bias_voltages cmd mv: %s', self.state['sis_v'])
         self._ramp_sis(set_mv, 'sis_v', 0.05, self.femc.set_sis_voltage)
+        # double-check and retry
+        for i in range(4):
+            self.state['sis_v'][i] = self.femc.get_sis_voltage_cmd(self.ca, i//2, i%2) + self.bias_error[i]
+            if abs(self.state['sis_v'][i] - mv[i]) > 0.001:
+                emsg = '_ramp_sis_bias_voltages bad cmd, mixer %d set to %.3f instead of %.3f'%(i, self.state['sis_v'][i], mv[i])
+                if retry:
+                    self.log.warning(emsg + ', retrying but there might be TRAPPED FLUX')
+                    return self._ramp_sis_bias_voltages(mv, retry-1)
+                else:
+                    self.log.error(emsg + ', raising error.')
+                    raise RuntimeError(emsg)
         # Cart._ramp_sis_bias_voltages
     
     
