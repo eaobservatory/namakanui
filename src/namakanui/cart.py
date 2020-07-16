@@ -342,6 +342,17 @@ class Cart(object):
             self.state['sis_mag_v'] = [0.0]*4
             self.state['sis_mag_c'] = [0.0]*4
         
+        # sis bias voltage set values
+        if 'sis_v_s' not in self.state:
+            self.state['sis_v_s'] = [0.0]*4
+        elif self.has_sis_mixers() and any(self.bias_error):
+            # double-check bias voltage commands and warn
+            # TODO: resend bias commands?  throw an error?
+            for i in range(4):
+                cmd_mv = self.femc.get_sis_voltage_cmd(self.ca, i//2, i%2) + self.bias_error[i]
+                if abs(cmd_mv - self.state['sis_v_s'][i]) > 0.001:
+                    self.log.warning('update_b() corrupt SIS bias voltage, mixer %d set to %.3f instead of %.3f, possible TRAPPED FLUX', i, cmd_mv, self.state['sis_v_s'][i])
+        
         if do_publish:
             self.state['number'] += 1
             self.publish(self.name, self.state)
@@ -528,8 +539,8 @@ class Cart(object):
                     lna = interp_table(self.hot_lna_table, lo_ghz)
                     nom_lna_01 = nom_lna_02 = nom_lna_11 = nom_lna_12 = lna
                     # RMB 20200214: warm testing paranoia
-                    nom_pa = None
-                    nom_mixer = None
+                    nom_pa = [0.0]*5
+                    nom_mixer = [0.0]*5
                 else:
                     nom_magnet = interp_table(self.magnet_table, lo_ghz)
                     nom_lna_01 = interp_table(self.lna_table_01, lo_ghz)
@@ -537,24 +548,39 @@ class Cart(object):
                     nom_lna_11 = interp_table(self.lna_table_11, lo_ghz)
                     nom_lna_12 = interp_table(self.lna_table_12, lo_ghz)
                 
+                # RMB 20200715: set LNA first, since apparently 
+                # _set_lna_enable(1) can mess up the sis_bias_voltage values.
+                for i, lna in enumerate([nom_lna_01, nom_lna_02, nom_lna_11, nom_lna_12]):
+                    if lna:
+                        self._set_lna(i//2, i%2, lna[1:])
+                if not self.high_temperature():  # RMB 20200214: warm testing paranoia
+                    self._set_lna_enable(1)
+                
                 if nom_magnet:
                     self._ramp_sis_magnet_currents(nom_magnet[1:])
                 if nom_mixer:
                     self._ramp_sis_bias_voltages(nom_mixer[1:5])
                 if nom_pa:
                     self._set_pa(nom_pa[1:])
-                for i, lna in enumerate([nom_lna_01, nom_lna_02, nom_lna_11, nom_lna_12]):
-                    if lna:
-                        self._set_lna(i//2, i%2, lna[1:])
-                
-                # TODO: can we set LNA values before enabling?
-                #       should we disable LNA while tuning?
-                if not self.high_temperature():  # RMB 20200214: warm testing paranoia
-                    self._set_lna_enable(1)
                 
                 if not skip_servo_pa:
                     self._servo_pa()  # gets skipped at high temp already
             
+            # RMB 20200715: double-check mixer bias voltage; testing shows
+            # that even commands like clear_unlock_detect_latch can
+            # mess up the sis_bias_voltage values.
+            if self.has_sis_mixers():
+                for i in range(4):  # this loop may be necessary to make cmd errors visible
+                    self.state['sis_v'][i] = self.femc.get_sis_voltage(self.ca, i//2, i%2)
+                rebias = False
+                for i in range(4):
+                    cmd_mv = self.femc.get_sis_voltage_cmd(self.ca, i//2, i%2) + self.bias_error[i]
+                    if abs(cmd_mv - self.state['sis_v_s'][i]) > 0.001:
+                        rebias = True
+                        self.log.warning('tune() corrupt SIS bias voltage, mixer %d set to %.3f instead of %.3f, resetting but there may be TRAPPED FLUX', i, cmd_mv, self.state['sis_v_s'][i])
+                if rebias:
+                    self._ramp_sis_bias_voltages(self.state['sis_v_s'])
+                
             # final check in case we lost the lock after initial tune
             ll = 0
             if not self.sim_femc:
@@ -1282,6 +1308,7 @@ class Cart(object):
             Double-check and retry, or raise RuntimeError if out of tries.
         '''
         self.log.debug('_ramp_sis_bias_voltages(%s)', mv)
+        self.state['sis_v_s'] = mv
         if self.sim_cold:
             self.state['sis_v'] = mv
             return
