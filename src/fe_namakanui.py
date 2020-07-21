@@ -509,7 +509,7 @@ def setup_sequence(msg, wait_set, done_set):
     
     if ANTENNA_TASK not in wait_set and ANTENNA_TASK not in done_set:
         done_set.add(ANTENNA_TASK)  # once only
-        g_doppler = 1.0
+        #g_doppler = 1.0  # RMB 20200720: hold doppler at previous value
     elif ANTENNA_TASK in wait_set and ANTENNA_TASK in done_set:
         wait_set.remove(ANTENNA_TASK)  # once only
         msg = drama.get(ANTENNA_TASK, 'RV_BASE').wait(5)
