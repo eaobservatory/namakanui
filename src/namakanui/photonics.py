@@ -1,5 +1,5 @@
 '''
-Ryan Berthold 20191120
+namakanui/photonics.py  RMB 20191120
 
 The photonics system transmits the reference signal from the
 Agilent/Keysight signal generator to the IF switch in the cabin
@@ -8,7 +8,23 @@ over an optical fiber.
 This class interfaces with an ADAM module that monitors the
 lock status and controls the power attenuator on the output amplifier.
 
-TODO: what adam model? where's the lock status?
+TODO: Lock status
+
+
+Copyright (C) 2020 East Asian Observatory
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 from namakanui.ini import *

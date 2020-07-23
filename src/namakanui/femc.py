@@ -1,26 +1,19 @@
 '''
-Python3 SocketCAN interface to the FEMC.
-Ryan Berthold 20180607
+namakanui/femc.py   RMB 20180607
 
-Implements functions to monitor and control the Warm Cartridge Assembly.
-Other functionality to be added as needed.
+Python3 SocketCAN interface to the FEMC.
 
 This software was designed using the following documents as references:
 
     ALMA-40.00.00.00-70.35.25.00-C-ICD  -- FEMC Interface Control Document
     FEND-40.04.03.03-002-A-DSN -- FEMC RCA Map
     ALMA-70.35.10.03-001-A-SPE -- ALMA MC Bus Interface Specification
+    FEND-40.00.00.00-173-A-MAN -- front end operation manual
+    FEND-40.09.03.00-053-A-MAN -- front end engineering control software user manual
 
 And also the FEMC firmware code:
 
     https://github.com/morganmcleod/ALMA-FEMC
-
-TODO:
-    FEND-40.00.00.00-173-A-MAN -- front end operation manual
-    FEND-40.09.03.00-053-A-MAN -- front end engineering control software user manual
-
-TODO:
-    obtain cryostat drawings / schematics -- how are the valves/pumps arranged?
 
 Abbreviations:
 
@@ -35,32 +28,27 @@ Abbreviations:
     YIG:   Yttrium Iron Garnet
     YTO:   YIG Tuned Oscillator
 
-
-TODO: Add asynchronous support, ability to fire off multiple get/set
-requests and then handle the replies sometime later.  But might not be
-necessary depending on how fast the basic synchronous interface is.
-
-
-ISSUE: Possibly.  Some commands have a latency during which the FEMC is
-unresponsive to incoming messages.  If we try to do the set-get thing to
-verify that a command went through, maybe it'll fail due to blocking.
-TEST with SET_POWER_DISTRIBUTION_MODULE[Ca]_ENABLE;
-  notes say newer versions are not blocking though.
-
 SAFETY: Check https://safe.nrao.edu/wiki/bin/view/ALMA/FrontEndOperationManual
 Various components might be subject to damaging power levels.
-Need a better idea of the layout of the system, and what components need to
-be powered down (and how) in certain states.
-
-TODO: Need a cartridge configuration data file (INI). FrontEndControlDLL.ini
-ideally python app could just read this in w/o having to convert formats.
+Certain operations must be run with fe_mode=1 (troubleshooting),
+which disables certain interlocks.  Users are advised to read all listed
+documents before using this module.
 
 
-FEMC_RuntimeError: reply len from get 0x00500008 not 5: b'\xfd'
- -- this is an error, -3, restricted by manufacturer directives.
-    comes up when we try to read temperature in unpowered cartridge, for instance.
-    need to handle this better.
+Copyright (C) 2020 East Asian Observatory
 
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import sys
@@ -252,8 +240,6 @@ _lpr_edfa_driver_state = 0xd03c  # temperature alarm
 
 
 # fetim 0xe000 TODO if needed -- might not be installed
-# ...nothing FETIM-related in labview, that i noticed.
-
 
 
 # TODO: come up with a better output format for verbose messages.

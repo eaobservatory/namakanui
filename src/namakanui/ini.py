@@ -1,10 +1,27 @@
 '''
-RMB 20181228
+namakanui/ini.py    RMB 20181228
+
 IncludeParser is a ConfigParser derivative that supports an [include] section.
 Handles nested inclusions with absolute or relative paths.
 
 This module also provides functions for reading and interpolating tables,
 including those in topcat ascii format.
+
+
+Copyright (C) 2020 East Asian Observatory
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import sys

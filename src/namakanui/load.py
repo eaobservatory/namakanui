@@ -1,5 +1,6 @@
 '''
-RMB 20181219
+namakanui/load.py   RMB 20181219
+
 Monitoring and control class for Namakanui load selector,
 modeled on the glt_load.py script from the GLT receiver.
 
@@ -20,12 +21,28 @@ NOTE: The stage is not homed automatically.  During GLT testing there were
       requiring supervision.  If Namakanui is configured differently, this
       class should be altered to allow automatic homing.
 
-NOTE: The motor be turned off and the load positioned by hand:
+NOTE: The motor can be turned off and the load positioned by hand:
       send cmd 'C:10' and spin the small wheel on the gear drive.
       However, the controller loses its 'homed' status
       and will no longer update the position count.
 
 TODO: Command cheat sheet.
+
+
+Copyright (C) 2020 East Asian Observatory
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 from namakanui.ini import IncludeParser

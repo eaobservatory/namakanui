@@ -1,14 +1,30 @@
 '''
-Ryan Berthold 20190807
+namakanui/ifswitch.py   RMB 20190807
 
-Controller for Bill Stahm's IF Switch module.
-Uses the ADAM classes created by John Kuroda.
+Controller for Bill Stahm's IF Switch module,
+using the ADAM classes created by John Kuroda.
 
 The low-frequency lines (<12 GHz) are switched by Mini Circuits, MSP4T.
 The high-frequency lines (>18 GHz) are switched by a Keysight, 87104D.
 
 TODO: This could be a bit more generic, selecting Rx1, Rx2, Rx3 instead
       of band 3, 6, 7.  But for now we'll keep it Namakanui-specific.
+
+
+Copyright (C) 2020 East Asian Observatory
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 from namakanui.ini import *
