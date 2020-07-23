@@ -70,9 +70,13 @@ sys.stdout.write('# %s\n'%(sys.argv))
 sys.stdout.write('#\n')
 sys.stdout.write('#lo_ghz lock_only ')
 
+# debug, this should exist
+#sys.stderr.write('sis_v_s: %s'%(repr(cart.state['sis_v_s'])))
+#sys.stderr.flush()
+
 state_keys = sorted(cart.state)
 for key in sorted(cart.state):
-    if isinstance(cart.state[key], list):
+    if isinstance(cart.state[key], (list,tuple)):
         state_keys.remove(key)
         state_keys += ['%s_%d'%(key,i) for i in range(len(cart.state[key]))]
     elif not str(cart.state[key]).strip():
@@ -124,10 +128,12 @@ def if_setup(adjust):
 def main_loop():
     random.seed()
     lock_only = 1
+    sys.stderr.write('starting %d iters\n'%(args.iters))
+    sys.stderr.flush()
     for i in range(args.iters):
         sys.stderr.write('%d '%(i))
         sys.stderr.flush()
-        if i/args.iters > 0.5:
+        if i == args.iters//2:
             lock_only = 0
             sys.stderr.write('\nhalfway\n')
             sys.stderr.flush()
@@ -146,17 +152,16 @@ def main_loop():
             return
         sys.stdout.write('%.6f %d'%(lo_ghz, lock_only))
         for key in state_keys:
-        if key not in cart.state:
-            key,sep,index = key.rpartition('_')
-            index = int(index)
-            sys.stdout.write(' %s'%(cart.state[key][index]))
-        else:
-            sys.stdout.write(' %s'%(cart.state[key]))
+            if key not in cart.state:
+                key,sep,index = key.rpartition('_')
+                index = int(index)
+                sys.stdout.write(' %s'%(cart.state[key][index]))
+            else:
+                sys.stdout.write(' %s'%(cart.state[key]))
         for dcm in dcms:
-            sys.stdout.write(' %.3f'%(msg.arg['POWER%d'%(dcm)]))
+            sys.stdout.write(' %.5f'%(msg.arg['POWER%d'%(dcm)]))
         sys.stdout.write('\n')
         sys.stdout.flush()
-        return
 
 
 # the rest of this needs to be DRAMA to be able to talk to IFTASK.

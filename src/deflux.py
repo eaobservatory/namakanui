@@ -44,6 +44,7 @@ else:
             for sb in range(2):
                 cart._demagnetize(po,sb)
 
+cart.update_all()
 logging.info('done.')
 
 
