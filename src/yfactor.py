@@ -84,6 +84,7 @@ parser.add_argument('--mv')
 parser.add_argument('--pa')
 parser.add_argument('lock_polarity', nargs='?', choices=['below','above'], default='above')
 parser.add_argument('--level_only', action='store_true')
+parser.add_argument('--zero', action='store_true', help='zero bias voltage of unused mixer instead of leaving at nominal value')
 args = parser.parse_args()
 
 band = args.band
@@ -231,9 +232,10 @@ def iv(target, rows, pa):
     mult = 1.0
     if band == 6:
         mult = -1.0
-    #cart._ramp_sis_bias_voltages([mult*mvs[0], 0.0, mult*mvs[0], 0.0])
-    # leave sis2 at NOMINAL values so mixers are more balanced
-    cart._ramp_sis_bias_voltages([mult*mvs[0], nom_v[1], mult*mvs[0], nom_v[3]])
+    if args.zero:
+        cart._ramp_sis_bias_voltages([mult*mvs[0], 0.0, mult*mvs[0], 0.0])
+    else:
+        cart._ramp_sis_bias_voltages([mult*mvs[0], nom_v[1], mult*mvs[0], nom_v[3]])
     for i,mv in enumerate(mvs):
         if (i+1) % 20 == 0:
             sys.stderr.write('%.2f%% '%(0.0 + 50*i/len(mvs)))
@@ -262,9 +264,10 @@ def iv(target, rows, pa):
     
     # sis2
     sb = 1
-    #cart._ramp_sis_bias_voltages([0.0, mvs[0], 0.0, mvs[0]])
-    # leave sis1 at NOMINAL values so mixers are more balanced
-    cart._ramp_sis_bias_voltages([nom_v[0], mvs[0], nom_v[2], mvs[0]])
+    if args.zero:
+        cart._ramp_sis_bias_voltages([0.0, mvs[0], 0.0, mvs[0]])
+    else:
+        cart._ramp_sis_bias_voltages([nom_v[0], mvs[0], nom_v[2], mvs[0]])
     for i,mv in enumerate(mvs):
         if (i+1) % 20 == 0:
             sys.stderr.write('%.2f%% '%(50.0 + 50*i/len(mvs)))
