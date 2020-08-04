@@ -44,7 +44,7 @@ agilent.set_output(1)
 # TODO: is it worth making a class for the N1913A?
 pmeter = socket.socket()
 pmeter.settimeout(1)
-pmeter.connect((args.IP, 5025))
+pmeter.connect((args.ip, 5025))
 pmeter.send(b'*idn?\n')
 idn = pmeter.recv(256)
 if b'N1913A' not in idn:
@@ -74,8 +74,9 @@ def read_power():
 if args.table:
     # read in a dbm table, assume band from filename.
     # set synthesizer to each point and take a reading.
-    assert len(args.table)>1 and args.table[0]=='b' and args.table[1] in ['3','6','7'], 'bad filename format, expecting "b[3,6,7]_dbm*"'
-    band = int(args.table[1])
+    fname = args.table.rpartition('/')[-1]
+    assert len(fname)>1 and fname[0]=='b' and fname[1] in ['3','6','7'], 'bad filename format, expecting "b[3,6,7]_dbm*"'
+    band = int(fname[1])
     # HACK, i'm not going to bother with full bandX.ini read here
     cold_mult = 3
     warm_mult = 6
