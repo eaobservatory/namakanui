@@ -11,11 +11,20 @@ Usage:
   shapiro.py <band> [mixer_ascii_file]
 '''
 
-from pylab import *
+
 import sys
 import bisect
+import argparse
 
-band = int(sys.argv[1])
+parser = argparse.ArgumentParser(description='''
+''',
+  formatter_class=argparse.RawTextHelpFormatter)
+parser.add_argument('band', type=int, choices=[6,7])
+parser.add_argument('filename', nargs='?', default='')
+parser.add_argument('--lo', nargs='?', default='')
+args = parser.parse_args()
+
+band = args.band
 if band == 7:
     n = 1  # single junction
     vgap = 2.8  # nominal
@@ -40,7 +49,26 @@ h = 4.135667696e-3
 # last step starts one photon step below vgap (TODO VERIFY VIA IV CURVE)
 yr = [vgap - xr[1]*h*n - 0.1, vgap + 0.1]
 
+# calculate some shapiro steps for each freq
+if args.lo:
+    if ':' in args.lo:
+        import namakanui.util
+        los = namakanui.util.parse_range(args.lo, maxlen=100e3)
+    else:
+        los = [float(x) for x in args.lo.replace(',', ' ').split()]
+    for lo in los:
+        sys.stdout.write('%.3f:'%(lo))
+        p = vgap - lo*h*n
+        for i in range(10):
+            s = lo*h*n*i*.5
+            if s > p and s < vgap:
+                sys.stdout.write(' %.3f'%(s))
+        sys.stdout.write('\n')
+        sys.stdout.flush()
+
 # plot!
+from pylab import *
+
 x = linspace(xr[0], xr[1], 100)
 plot(x, x*0 + vgap, 'r', linewidth=2, label=None)
 plot(x, vgap - x*h*n, 'r', linewidth=2, label=None)
@@ -144,11 +172,9 @@ def plot_MixerParam(mparms):
 
 title_str = 'Shapiro Band %d'%(band)
 
-if len(sys.argv) > 2:
-    plot_MixerParam(open(sys.argv[2]).read())
-    fname = sys.argv[2]
-    if '/' in fname:
-        fname = fname.rpartition('/')[-1]
+if args.filename:
+    plot_MixerParam(open(args.filename).read())
+    fname = args.filename.rpartition('/')[-1]
     title_str += ', ' + fname
 
 title(title_str)
