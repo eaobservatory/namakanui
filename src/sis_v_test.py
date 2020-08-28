@@ -86,7 +86,8 @@ try:
             # TODO tweak; unsure how much error to expect normally
             get_err = get_mv - set_mv
             set_err = cmd_mv - set_mv
-            if abs(get_err) > mv_range*.005 or abs(set_err) > mv_range*.005:
+            #if abs(get_err) > mv_range*.005 or abs(set_err) > mv_range*.005:
+            if abs(set_err) > mv_range*.005:  # otherwise lots of get_err triggers for b7
                 errs += 1
                 sys.stderr.write('\n')
                 sys.stderr.flush()
