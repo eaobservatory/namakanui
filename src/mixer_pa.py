@@ -80,7 +80,7 @@ for i in range(4):
 
 # main loop
 for lo in los:
-    if not namakanui.util.tune(cart, agilent, None, lo_ghz, skip_servo_pa=True):
+    if not namakanui.util.tune(cart, agilent, None, lo, skip_servo_pa=True):
         continue
     x.append(lo)
     sys.stdout.write('%.3f '%(lo))
