@@ -1,12 +1,28 @@
 #!/local/python3/bin/python3
 '''
-RMB 20200406
+pa_table.py     RMB 20200406
 Create PA drain/gate voltage table (LOParams).
 
 Perform a Vg sweep at each frequency with Vd set to 2.5
 in order to find the point of maximum available mixer current.
 Then repeat _servo_pa to find Vd for target mixer current
 from the MixerParams table.
+
+
+Copyright (C) 2020 East Asian Observatory
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw

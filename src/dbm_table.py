@@ -1,7 +1,6 @@
 #!/local/python3/bin/python3
 '''
-dbm_table.py
-RMB 20190805
+dbm_table.py    RMB 20190805
 
 Build a dBm table for a receiver by tuning in a range of frequencies and
 adjusting the power output from the signal generator.  Ideally we want
@@ -16,16 +15,30 @@ The <dbm> parameter gives the starting dBm setting at each frequency;
 I've used -12 dBm for the ASIAA IF switch and -16 dBm for Bill's IF switch.
 You can also give "ini-X" for this parameter to start with the value
 interpolated from the table in the agilent.ini file, minus X dBm.
-In any case, the resulting value will be clamped to [-20,-6] dBm for safety.
 
-Once you've created an output file, it can be converted to an ini table:
+It is no longer necessary to convert the output file to an ini table,
+but if you prefer you can do that as follows:
 
 grep -v '^#' <file> | sort -n | awk '{ printf "dbm%02d=%s, %6s\n", NR, $1, $2 }'
-
 
 Usage:
 dbm_table.py <band> <LO_GHz_start> <LO_GHz_end> <LO_GHz_step> <lock_polarity> <dbm>
 
+
+Copyright (C) 2020 East Asian Observatory
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw

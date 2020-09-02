@@ -1,6 +1,6 @@
 #!/local/python3/bin/python3
 '''
-20190620 RMB
+fe_namakanui.py     20190620 RMB
 
 RTS client task, frontend to Namakanui engineering control task.
 The task name will be set from the command line, and will likely be one of
@@ -9,7 +9,21 @@ FE_ALAIHI
 FE_UU
 FE_AWEOWEO
 
-TODO: Fast frequency switching.  How does it work?  Can it be simplified?
+
+Copyright (C) 2020 East Asian Observatory
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 '''
 import jac_sw

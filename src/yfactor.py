@@ -1,6 +1,7 @@
 #!/local/python3/bin/python3
 '''
-20190918 RMB
+yfactor.py  20190918 RMB
+
 Script to check Y-factor (hot power / cold power) across a mixer IV sweep.
 This is a 2D optimization problem between the mixer bias voltage setting
 and the PA drain voltage (which adjusts LO pumping power / mixer current).
@@ -9,16 +10,9 @@ So for each row in the output data we save the following columns:
     bias voltage x1, same for all mixers
     mixer current avg x4
     mixer current dev x4
-    amb power x4
-    sky power x4
-    y-factor x4
-
-NOTE we only take one power reading (TPD2) from each quad switch.
-From cm_wire_file.txt:
-01: NX1U, POWER20
-02: NX1L, POWER24
-11: NX2U, POWER12
-12: NX2L, POWER8
+    amb power x16
+    sky power x16
+    y-factor x16
 
 Keeping the PA drain voltage the same for both polarizations is mainly
 for the sake of simplifying this program so we only have two dimensions
@@ -32,15 +26,25 @@ for the upper sideband mixers.  Therefore this program will only accept
 positive ranges as input parameters, and you will need to manually
 negate the output data's voltage/current for mixers 01 and 11.
 
-TODO: For band 3 we'll want a PA sweep only.  It could probably use
-a separate program that also automatically steps through frequencies.
-
-TODO: Given the need for drama comms with IFTASK, this might make more
-sense as an action (pair) in namakanui/cartridge tasks.  That would
-also allow for easy monitoring from the GUI.
 
 TODO: Do we need separate mixer current readings for each load?
       Or is it okay to average hot/sky readings together?
+
+
+Copyright (C) 2020 East Asian Observatory
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw

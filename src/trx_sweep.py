@@ -1,6 +1,6 @@
 #!/local/python3/bin/python3
 '''
-20200812 RMB
+trx_sweep.py    20200812 RMB
 
 Tune to a range of frequencies and calculate Trx at each one.
 Unfortunately this script will spend most of its time just moving
@@ -12,6 +12,24 @@ NOTE: TEST_SETUP action in IFTASK is inadequate.
       Must setup to set bandwidth and IF frequency,
       only handles 4/5/6 GHz IF,
       and doesn't set LO2s right for 250 MHz bandwidth.
+      Hence we use extra DCM/LO2 commands to the IFTASK.
+
+
+
+Copyright (C) 2020 East Asian Observatory
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw

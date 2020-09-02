@@ -1,6 +1,7 @@
 #!/local/python3/bin/python3
 '''
-RMB 20200221
+mixer_pa.py     RMB 20200221
+
 Tune to a range of frequencies.
 At each frequency, set PA to a range of values.
 Record average mixer current at each PA, for each mixer.
@@ -9,10 +10,24 @@ Motivation:  Mixer current was much lower than expected
 at LO 249 GHz with the new mixer block.  I'm wondering
 if there are strange dropouts at various frequencies.
 
-Recording this data is a little troublesome.
-I'll use topcat ascii format, with each column
-a separate mixer/pa combo.  Plotting data is also
-troublesome.  I might want a separate program for that.
+Data is saved to stdout in topcat ascii format,
+with each column a separate mixer/pa combo.
+
+
+Copyright (C) 2020 East Asian Observatory
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw

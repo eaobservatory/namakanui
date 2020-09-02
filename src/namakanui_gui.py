@@ -1,25 +1,24 @@
 #!/local/python3/bin/python3
 '''
-namakanui_gui.py
-RMB 20190828
+namakanui_gui.py    RMB 20190828
 
 Tkinter GUI for Namakanui DRAMA tasks.
 
-need retry monitors on the following:
 
-NAMAKANUI.LOAD
-NAMAKANUI.IFSWITCH
-NAMAKANUI.AGILENT
-<BANDx3>.DYN_STATE
+Copyright (C) 2020 East Asian Observatory
 
-state update handler can basically be identical for each band, with just
-a few minor differences.  so maybe make a BandTab class to hold all the
-widgets and state variables.  pass it DYN_STATE updates.
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
-each band still needs a separate action entry point so the RESCHED timeout
-thing works as it should.  if a RetryMonitor shares an action with another,
-it might never see a RESCHED at all.  it ought to be okay to share with
-other monitors for the same task, however.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw

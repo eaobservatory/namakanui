@@ -1,6 +1,6 @@
 #!/local/python3/bin/python3
 '''
-RMB 20200218
+trx.py      RMB 20200218
 
 Calculate an array of Trx values from the IFTASK YFACTOR values.
 Assumes Jhot is Namakanui ambient load temperature and that Jcold is 80K.
@@ -21,6 +21,23 @@ Trx*(Y-1) = Jhot - Y*Jcold
 Trx = (Jhot - Y*Jcold) / (Y-1)
 
 This method is slow and tedious and should not be used by anyone.
+
+
+
+Copyright (C) 2020 East Asian Observatory
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw

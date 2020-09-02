@@ -1,6 +1,6 @@
 #!/local/python3/bin/python3
 '''
-20190918 RMB
+yfactor_pa.py   20190918 RMB
 
 Script to check Y-factor (hot power / cold power) across a PA sweep.
 The receiver is tuned to its nominal values, then the PA is varied
@@ -11,19 +11,28 @@ The motivation here is that it's hard to be confident in the relative
 y-factors for each PA level when taking IV curves, since the weather
 might change significantly between different PAs.
 
-We expect this script to work pretty well for mixers 11/12, but
-with mixers 01/02 it might not be very useful.  Mixers 11/12 keep
-the same (approximately) optimum bias voltage for different PA
-levels, whereas mixer 01 has a strong PA dependency, and the
-noisy part of the curve moves around as well.
-
 Update 20200221:
 With the replacement of mixers 01/02, we're seeing saturated power values
 when we level the IF at the nominal bias settings.  So unfortunately
 we need to do an initial level, then hunt around for the PA setting
 with the highest power value.  Level again, and repeat the process
 a few times to be sure that we won't saturate during the PA Y-factor sweep.
-Just hope the mixer current doesn't suddenly jump, as we saw on 20200220.
+
+
+Copyright (C) 2020 East Asian Observatory
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw

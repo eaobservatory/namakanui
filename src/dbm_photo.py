@@ -1,6 +1,6 @@
 #!/local/python3/bin/python3
 '''
-RMB 20191227
+dbm_photo.py    RMB 20191227
 
 Create a table for the Agilent/Keysight signal generator
 with the necessary output power setting to produce the desired
@@ -13,6 +13,22 @@ which is connected directly to LAN and uses SCPI commands.
 TODO: custom starting power level?  i'm assuming that loss is minimal
       and the power setting is fairly accurate, so i just set the initial
       level to the target and adjust a few times.
+
+
+Copyright (C) 2020 East Asian Observatory
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw

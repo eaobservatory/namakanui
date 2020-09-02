@@ -1,7 +1,6 @@
 #!/local/python3/bin/python3
 '''
-pa_sweep.py
-RMB 20190806
+pa_sweep.py     RMB 20190806
 
 Tune a cartridge, then run through the PA drain voltage values [0, 2.5]
 to see the shape of the curve.  Are there local maxima/minima?
@@ -12,6 +11,22 @@ probably shouldn't run at the same time.
 
 Usage:
 pa_sweep.py <band> <lo_ghz> <lock_polarity> [pa_step=0.01]
+
+
+Copyright (C) 2020 East Asian Observatory
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw
