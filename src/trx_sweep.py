@@ -44,7 +44,7 @@ parser.add_argument('band', type=int, choices=[6,7])
 parser.add_argument('lo_ghz', help='LO GHz range, first:last:step')
 parser.add_argument('lock_polarity', nargs='?', choices=['below','above'], default='above')
 parser.add_argument('--level_only', action='store_true')
-parser.add_arguemnt('--bw_mhz', nargs='?', default='1000', help='BW MHz range, first:last:step')
+parser.add_argument('--bw_mhz', nargs='?', default='1000', help='BW MHz range, first:last:step')
 parser.add_argument('--if_ghz', nargs='?', default='6', help='IF GHz range, first:last:step')
 args = parser.parse_args()
 
@@ -132,8 +132,11 @@ def if_setup(adjust, bw_mhz, if_ghz):
                      NASM_SET='R_CABIN', BAND_WIDTH=bw_mhz, QUAD_MODE=4,
                      IF_FREQ=if_ghz, LEVEL_ADJUST=adjust, BIT_MASK=bitmask).wait(90)
     if msg.reason != drama.REA_COMPLETE or msg.status != 0:
-        logging.error('bad reply from IFTASK.TEST_SETUP: %s', msg)
-        return 1
+        if msg.status == 261456746:  # ACSISIF__ATTEN_ZERO
+            logging.warning('low attenuator setting from IFTASK.TEST_SETUP')
+        else:
+            logging.error('bad reply from IFTASK.TEST_SETUP: %s', msg)
+            return 1
     return 0
 
 def set_bw(bw_mhz):

@@ -176,8 +176,11 @@ def if_setup(adjust):
                      NASM_SET='R_CABIN', BAND_WIDTH=1000, QUAD_MODE=4,
                      IF_FREQ=6, LEVEL_ADJUST=adjust, BIT_MASK=bitmask).wait(90)
     if msg.reason != drama.REA_COMPLETE or msg.status != 0:
-        logging.error('bad reply from IFTASK.TEST_SETUP: %s', msg)
-        return 1
+        if msg.status == 261456746:  # ACSISIF__ATTEN_ZERO
+            logging.warning('low attenuator setting from IFTASK.TEST_SETUP')
+        else:
+            logging.error('bad reply from IFTASK.TEST_SETUP: %s', msg)
+            return 1
     return 0
 
 
