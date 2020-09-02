@@ -64,6 +64,7 @@ for pa in pas:
     for po in ['0', '1']:
         sys.stdout.write('vg%s_%03d '%(po, pa*100))
 sys.stdout.write('\n')
+sys.stdout.flush()
 
 # init load controller and set desired load (default hot)
 load = namakanui.load.Load(datapath+'load.ini', time.sleep, namakanui.nop, simulate=0)
@@ -102,8 +103,8 @@ for lo in los:
         cart._set_pa([pa,pa])
         time.sleep(0.05)
         # check voltages
-        pa_3v = self.femc.get_cartridge_lo_pa_supply_voltage_3v(self.ca)
-        pa_5v = self.femc.get_cartridge_lo_pa_supply_voltage_5v(self.ca)
+        pa_3v = cart.femc.get_cartridge_lo_pa_supply_voltage_3v(cart.ca)
+        pa_5v = cart.femc.get_cartridge_lo_pa_supply_voltage_5v(cart.ca)
         sys.stdout.write('%.3f %.3f '%(pa_3v, pa_5v))
         # average mixer currents
         n = 10
@@ -121,9 +122,9 @@ for lo in los:
         pa_id = [0.0]*2
         pa_vg = [0.0]*2
         for po in range(2):
-            pa_vg[po] = self.femc.get_cartridge_lo_pa_gate_voltage(self.ca, po)
-            pa_vd[po] = self.femc.get_cartridge_lo_pa_drain_voltage(self.ca, po)
-            pa_id[po] = self.femc.get_cartridge_lo_pa_drain_current(self.ca, po)
+            pa_vg[po] = cart.femc.get_cartridge_lo_pa_gate_voltage(cart.ca, po)
+            pa_vd[po] = cart.femc.get_cartridge_lo_pa_drain_voltage(cart.ca, po)
+            pa_id[po] = cart.femc.get_cartridge_lo_pa_drain_current(cart.ca, po)
         sys.stdout.write('%.3f %.3f '%(pa_vd[0], pa_vd[1]))
         sys.stdout.write('%.3f %.3f '%(pa_id[0], pa_id[1]))
         sys.stdout.write('%.3f %.3f '%(pa_vg[0], pa_vg[1]))
