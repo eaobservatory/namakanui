@@ -5,6 +5,33 @@ dbm_pmeter.py   RMB 20200715
 Set synthesizer to a range of values and check power via an N1913A power meter.
 Writes table to stdout; use 'tee' to monitor output progress.
 
+NOTE: This script does not set the Namakanui IF Switch, since it's assumed
+that we're running in a nonstandard configuration.  If needed,
+use tune.sh or other script to set the IF switch to the desired position
+before running this script.
+
+This script runs in three different modes:
+
+1. If "--table" is given, the power meter should be connected between the
+signal generator output and the receiver harmonic mixer.  The table given
+should be created by the dbm_table.py script; the signal generator output
+frequency and power will be set according to the table entries.
+The cartridge band (which affects the lo_ghz -> sig_hz calculation)
+is assumed from the table filename, like "bX_dbm*".
+
+2. If "--sig_ghz" and "--sig_dbm" are given, the power meter should again
+be connected between the signal generator output and the receiver
+harmonic mixer.  The signal generator output is set according to
+the ranges given.
+
+3. If "--band" is given, the power meter should be connected to the
+receiver output: either an IF output or a WCA waveguide.  The receiver
+will be tuned according to the following arguments:
+  "--lock_polarity": Lock rx "below" or "above" reference (default above).
+  "--lo_ghz": Range of LOs to tune to.
+  "--pa": Range of PA values; if missing, no override.
+  "--if_ghz": Frequency for pmeter; if missing, use WCA output frequency.
+
 
 Copyright (C) 2020 East Asian Observatory
 
@@ -44,6 +71,11 @@ parser.add_argument('ip', help='N1913A power meter IP address')
 parser.add_argument('--table', nargs='?', default='', help='dbm table file, overrides ghz/dbm')
 parser.add_argument('--ghz', nargs='?', default='20', help='ghz range, first:last:step')
 parser.add_argument('--dbm', nargs='?', default='-20', help='dbm range, first:last:step')
+parser.add_argument('--band', nargs='?', type=int, default=0, help='rx band for tuning')
+parser.add_argument('--lo_ghz', nargs='?', default='0', help='LO range for tuning')
+parser.add_argument('--pa', nargs='?', default='', help='PA range for tuning')
+parser.add_argument('--if_ghz', nargs='?', type=float, default=0.0, help='pmeter frequency')
+parser.add_argument('--lock_polarity', nargs='?', choices=['below','above'], default='above')
 args = parser.parse_args()
 
 sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
@@ -87,7 +119,42 @@ def read_power():
     pmeter.send(b'fetch?\n')
     return float(pmeter.recv(256))
 
-if args.table:
+
+if args.band:
+    # tune rx to range of values and take power readings.
+    import namakanui.cart
+    cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop, simulate=0)
+    cart.power(1)
+    cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
+    los = namakanui.util.parse_range(args.lo_ghz)
+    if args.pa:
+        pas = namakanui.util.parse_range(args.pa)
+    sys.stdout.write('#lo_ghz pa0 pa1 pmeter_dbm\n')
+    sys.stdout.flush()
+    for lo_ghz in los:
+        if not namakanui.util.tune(cart, agilent, None, lo_ghz):
+            logging.error('failed to tune to %.3f ghz', lo_ghz)
+            continue
+        if args.if_ghz:
+            pmeter.send(b'freq %gGHz\n'%(args.if_ghz))
+        else:
+            # use WCA output frequency
+            wca_ghz = lo_ghz / cart.cold_mult
+            pmeter.send(b'freq %gGHz\n'%(wca_ghz))
+        if args.pa:
+            for pa in pas:
+                cart._set_pa([pa,pa])
+                time.sleep(0.1)
+                power = read_power()
+                sys.stdout.write('%.3f %.2f %.2f %.3f\n'%(lo_ghz, pa, pa, power))
+                sys.stdout.flush()
+        else:
+            pa0,pa1 = cart.state['pa_drain_s']
+            time.sleep(0.1)
+            power = read_power()
+            sys.stdout.write('%.3f %.2f %.2f %.3f\n'%(lo_ghz, pa0, pa1, power))
+            sys.stdout.flush()
+elif args.table:
     # read in a dbm table, assume band from filename.
     # set synthesizer to each point and take a reading.
     fname = args.table.rpartition('/')[-1]
