@@ -68,6 +68,7 @@ parser.add_argument('band', type=int, choices=[6,7])
 parser.add_argument('lo_ghz', type=float)
 parser.add_argument('lock_polarity', nargs='?', choices=['below','above'], default='above')
 parser.add_argument('--level_only', action='store_true')
+parser.add_argument('--pa', nargs='?', default='0.0:2.5:0.01', help='PA range')
 args = parser.parse_args()
 
 band = args.band
@@ -76,6 +77,8 @@ lo_range = {6:[219,266], 7:[281,367]}[band]
 if not lo_range[0] <= lo_ghz <= lo_range[1]:
     logging.error('lo_ghz %g outside %s range for band %d\n'%(lo_ghz, lo_range, band))
     sys.exit(1)
+
+pas = namakanui.util.parse_range(args.pa, maxlen=300)
 
 # set agilent output to a safe level before setting ifswitch
 agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop, simulate=0)
@@ -137,14 +140,6 @@ yf_index = sky_p_index + len(powers)
 # TODO might be able to increase this without impacting runtime due to ITIME,
 # but it depends on the actual value of ppcomm_time.
 ua_n = 10
-
-pas = []
-pa = 0.0  # TODO better starting point
-while pa <= 2.500001:
-    pas.append(pa)
-    pa += 0.01
-
-# TODO: define a custom error type and raise/catch it like an adult
 
 
 def if_setup(adjust):
@@ -245,6 +240,8 @@ def adjust_levels(dup_pas):
 def iter_adjust_levels():
     #coarse_pas = [.1*i*2.5 for i in range(1,11)]
     coarse_pas = [.1*i for i in range(1,26)]
+    if len(pas) < len(coarse_pas):
+        coarse_pas = pas
     p0,p1 = adjust_levels(coarse_pas)
     if p0==0 and p1==0:
         return 1  # fail
