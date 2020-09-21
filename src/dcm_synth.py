@@ -49,10 +49,11 @@ TP2 readings for direct synthesizer-to-DCM connection.
 ''',
   formatter_class=argparse.RawTextHelpFormatter)
 parser.add_argument('--level_only', action='store_true')
-parser.add_arguemnt('--bw_mhz', nargs='?', default='1000', help='BW MHz range, first:last:step')
+parser.add_argument('--bw_mhz', nargs='?', default='1000', help='BW MHz range, first:last:step')
 parser.add_argument('--if_ghz', nargs='?', default='6', help='IF GHz range, first:last:step')
 parser.add_argument('--dbm', nargs='?', default='14:-20:.1', help='dBm range, hi:lo:step')
-parser.add_argument('--dcm', help='starting DCM id (0-based); TP2 collected thru dcm+3.')
+parser.add_argument('--dcm', type=int, help='starting DCM id (0-based); TP2 collected thru dcm+3.')
+parser.add_argument('--note', nargs='?', default='', help='note for output file')
 args = parser.parse_args()
 
 
@@ -62,7 +63,8 @@ dbms = namakanui.util.parse_range(args.dbm, maxlen=4e3)
 dcms = range(args.dcm, args.dcm+4)
 
 # set agilent output to a safe level
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop, simulate=0)
+# RMB 20200911: paranoia, make sure to use cabin agilent instead of keysight
+agilent = namakanui.agilent.Agilent(datapath+'agilent_cabin.ini', time.sleep, namakanui.nop, simulate=0)
 agilent.set_dbm(agilent.safe_dbm)
 agilent.set_output(1)
 
@@ -163,8 +165,7 @@ def MAIN(msg):
         # final timestamp
         sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
         sys.stdout.flush()
-        # retune the receiver to get settings back to nominal
-        cart.tune(lo_ghz, 0.0)
+        agilent.set_dbm(agilent.safe_dbm)
         drama.Exit('MAIN done')
     # MAIN
         

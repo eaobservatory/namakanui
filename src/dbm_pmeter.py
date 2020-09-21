@@ -67,7 +67,7 @@ binpath, datapath = namakanui.util.get_paths()
 parser = argparse.ArgumentParser()
 #parser.add_argument('IP', help='prologix adapter IP address')
 #parser.add_argument('GPIB', type=int, help='power meter GPIB address')
-parser.add_argument('ip', help='N1913A power meter IP address')
+parser.add_argument('ip', help='N1913A power meter IP address')  # 128.171.92.36
 parser.add_argument('--table', nargs='?', default='', help='dbm table file, overrides ghz/dbm')
 parser.add_argument('--ghz', nargs='?', default='20', help='ghz range, first:last:step')
 parser.add_argument('--dbm', nargs='?', default='-20', help='dbm range, first:last:step')
@@ -83,7 +83,8 @@ sys.stdout.write('# %s\n'%(sys.argv))
 sys.stdout.write('#\n')
 sys.stdout.flush()
 
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop, simulate=0)
+# RMB 20200911: paranoia, make sure we don't accidentally use keysight
+agilent = namakanui.agilent.Agilent(datapath+'agilent_cabin.ini', time.sleep, namakanui.nop, simulate=0)
 agilent.log.setLevel(logging.INFO)
 agilent.set_dbm(agilent.safe_dbm)
 agilent.set_output(1)

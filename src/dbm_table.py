@@ -95,7 +95,7 @@ agilent.log.setLevel(logging.INFO)
 agilent.set_dbm(agilent.safe_dbm)
 agilent.set_output(1)
 
-ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, mypub, simulate=0)
+ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, mypub)
 ifswitch.set_band(args.band)
 ifswitch.close()  # done with ifswitch
 

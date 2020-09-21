@@ -58,16 +58,15 @@ sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
 sys.stdout.write('# %s\n'%(sys.argv))
 sys.stdout.write('# load: %s\n'%(args.load))
 sys.stdout.write('#\n')
-sys.stdout.write('#lo_ghz pa0 pa1 ')
-for pa in pas:
-    for mixer in ['01', '02', '11', '12']:
-        sys.stdout.write('ua%s_%03d '%(mixer, pa*100))
-    for po in ['0', '1']:
-        sys.stdout.write('vd%s_%03d '%(po, pa*100))
-    for po in ['0', '1']:
-        sys.stdout.write('id%s_%03d '%(po, pa*100))
-    for po in ['0', '1']:
-        sys.stdout.write('vg%s_%03d '%(po, pa*100))
+sys.stdout.write('#lo_ghz pa0 pa1')
+for mixer in ['01', '02', '11', '12']:
+    sys.stdout.write(' ua%s'%(mixer))
+for po in ['0', '1']:
+    sys.stdout.write(' vd%s'%(po))
+for po in ['0', '1']:
+    sys.stdout.write(' id%s'%(po))
+for po in ['0', '1']:
+    sys.stdout.write(' vg%s'%(po))
 sys.stdout.write('\n')
 sys.stdout.flush()
 
@@ -81,7 +80,7 @@ load.move(args.load)
 agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop, simulate=0)
 agilent.set_dbm(agilent.safe_dbm)
 agilent.set_output(1)
-ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop, simulate=0)
+ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop)
 ifswitch.set_band(band)
 
 # power up the cartridge
@@ -108,7 +107,6 @@ for lo in los:
     for i in range(4):
         uas[i] /= n
         sys.stdout.write('%.3f '%(uas[i]))
-        y[i][j].append(uas[i])
     # amp feedback
     pa_vd = [0.0]*2
     pa_id = [0.0]*2
@@ -120,8 +118,8 @@ for lo in los:
     sys.stdout.write('%.3f %.3f '%(pa_vd[0], pa_vd[1]))
     sys.stdout.write('%.3f %.3f '%(pa_id[0], pa_id[1]))
     sys.stdout.write('%.3f %.3f '%(pa_vg[0], pa_vg[1]))
-sys.stdout.write('\n')
-sys.stdout.flush()
+    sys.stdout.write('\n')
+    sys.stdout.flush()
 
 
 
