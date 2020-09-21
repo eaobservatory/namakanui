@@ -52,7 +52,7 @@ except socket.timeout as e:
 
 for band in [3,6,7]:
     logging.info('\nband %d:', band)
-    cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, mypub, simulate=0)
+    cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, mypub)
     cart.power(0)
     
 

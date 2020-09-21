@@ -82,20 +82,20 @@ sys.stdout.write('\n')
 sys.stdout.flush()
 
 # init load controller and set desired load (default hot)
-load = namakanui.load.Load(datapath+'load.ini', time.sleep, namakanui.nop, simulate=0)
+load = namakanui.load.Load(datapath+'load.ini', time.sleep, namakanui.nop)
 if args.load == 'hot' or args.load == 'sky':
     args.load = 'b%d_'%(band) + args.load
 load.move(args.load)
 
 # set agilent output to a safe level before setting ifswitch
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop, simulate=0)
+agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
 agilent.set_dbm(agilent.safe_dbm)
 agilent.set_output(1)
-ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop, simulate=0)
+ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop)
 ifswitch.set_band(band)
 
 # power up the cartridge
-cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop, simulate=0)
+cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop)
 cart.power(1)
 cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
 floog = agilent.floog * {'below':1.0, 'above':-1.0}[args.lock_polarity]

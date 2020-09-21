@@ -54,11 +54,11 @@ args = parser.parse_args()
 band = args.band
 
 # no need for lock; set agilent output to a safe level
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop, simulate=0)
+agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
 agilent.set_dbm(agilent.safe_dbm)
 
 # init cartridge
-cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop, simulate=0)
+cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop)
 cart.power(1)
 
 # make sure LO pumping power is zero

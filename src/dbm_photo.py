@@ -76,7 +76,7 @@ if steps > 10e3:
     sys.stderr.write('error: step size too small for this range\n')
     sys.exit(1)
 
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop, simulate=0)
+agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
 agilent.log.setLevel(logging.INFO)
 agilent.set_dbm(agilent.safe_dbm)
 agilent.set_output(1)

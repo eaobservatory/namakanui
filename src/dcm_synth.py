@@ -64,7 +64,7 @@ dcms = range(args.dcm, args.dcm+4)
 
 # set agilent output to a safe level
 # RMB 20200911: paranoia, make sure to use cabin agilent instead of keysight
-agilent = namakanui.agilent.Agilent(datapath+'agilent_cabin.ini', time.sleep, namakanui.nop, simulate=0)
+agilent = namakanui.agilent.Agilent(datapath+'agilent_cabin.ini', time.sleep, namakanui.nop)
 agilent.set_dbm(agilent.safe_dbm)
 agilent.set_output(1)
 

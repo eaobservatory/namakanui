@@ -59,11 +59,11 @@ args = parser.parse_args()
 def mypub(n,s):
     pass
 
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, mypub, simulate=0)
+agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, mypub)
 agilent.log.setLevel(logging.INFO)
 agilent.set_dbm(agilent.safe_dbm)
 agilent.set_output(1)
-cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, mypub, simulate=0)
+cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, mypub)
 cart.power(1)
 cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
 floog = agilent.floog * {'below':1.0, 'above':-1.0}[args.lock_polarity]

@@ -79,7 +79,7 @@ def mypub(n,s):
 
 # connecting to a cart will zero the PAs and such during initialise,
 # so we'll just talk directly to the FEMC instead.
-#cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, mypub, simulate=0)
+#cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, mypub)
 #cart.power(1)
 femc = namakanui.femc.FEMC()
 ca = args.band - 1

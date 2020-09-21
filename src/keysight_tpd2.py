@@ -60,17 +60,17 @@ if not lo_range[0] <= lo_ghz <= lo_range[1]:
     sys.exit(1)
 
 # set agilent output to a safe level before setting ifswitch
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop, simulate=0)
+agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
 agilent.set_dbm(agilent.safe_dbm)
-ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop, simulate=0)
+ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop)
 ifswitch.set_band(band)
 
 # init load controller and set to hot (ambient) load for this band
-load = namakanui.load.Load(datapath+'load.ini', time.sleep, namakanui.nop, simulate=0)
+load = namakanui.load.Load(datapath+'load.ini', time.sleep, namakanui.nop)
 load.move('b%d_hot'%(band))
 
 # setup cartridge and tune, adjusting power as needed
-cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop, simulate=0)
+cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop)
 cart.power(1)
 cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
 if not namakanui.util.tune(cart, agilent, None, lo_ghz):

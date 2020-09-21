@@ -43,7 +43,7 @@ parser.add_argument('--skip', choices=['demag', 'heat'])
 args = parser.parse_args()
 
 # setup cartridge
-cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, namakanui.nop, simulate=0)
+cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, namakanui.nop)
 cart.log.setLevel(logging.DEBUG)  # TODO: ought to be an __init__ arg for this
 cart.power(1)
 

@@ -84,7 +84,7 @@ sys.stdout.write('#\n')
 sys.stdout.flush()
 
 # RMB 20200911: paranoia, make sure we don't accidentally use keysight
-agilent = namakanui.agilent.Agilent(datapath+'agilent_cabin.ini', time.sleep, namakanui.nop, simulate=0)
+agilent = namakanui.agilent.Agilent(datapath+'agilent_cabin.ini', time.sleep, namakanui.nop)
 agilent.log.setLevel(logging.INFO)
 agilent.set_dbm(agilent.safe_dbm)
 agilent.set_output(1)
@@ -124,7 +124,7 @@ def read_power():
 if args.band:
     # tune rx to range of values and take power readings.
     import namakanui.cart
-    cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop, simulate=0)
+    cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop)
     cart.power(1)
     cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
     los = namakanui.util.parse_range(args.lo_ghz)

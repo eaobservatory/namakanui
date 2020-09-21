@@ -52,7 +52,7 @@ binpath, datapath = namakanui.util.get_paths()
 def mypub(n,s):
     pass
 
-load = namakanui.load.Load(datapath+'load.ini', time.sleep, mypub, simulate=0)
+load = namakanui.load.Load(datapath+'load.ini', time.sleep, mypub)
 
 pos = args.pos.strip()
 if pos.lower() == 'home':
