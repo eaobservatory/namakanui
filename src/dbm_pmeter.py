@@ -74,6 +74,7 @@ parser.add_argument('--dbm', nargs='?', default='-20', help='dbm range, first:la
 parser.add_argument('--band', nargs='?', type=int, default=0, help='rx band for tuning')
 parser.add_argument('--lo_ghz', nargs='?', default='0', help='LO range for tuning')
 parser.add_argument('--pa', nargs='?', default='', help='PA range for tuning')
+parser.add_argument('--pol', nargs='?', type=int, choices=[0,1], help='which polarization (other is set to zero)')
 parser.add_argument('--if_ghz', nargs='?', type=float, default=0.0, help='pmeter frequency')
 parser.add_argument('--lock_polarity', nargs='?', choices=['below','above'], default='above')
 args = parser.parse_args()
@@ -122,6 +123,11 @@ def read_power():
 
 
 if args.band:
+    if args.pa and args.pol is None:
+        logging.error('missing arg "pol", must be 0 or 1.')
+        agilent.set_dbm(agilent.safe_dbm)
+        logging.info('done.')
+        sys.exit(1)
     # tune rx to range of values and take power readings.
     import namakanui.cart
     cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop)
@@ -144,10 +150,20 @@ if args.band:
             pmeter.send(b'freq %gGHz\n'%(wca_ghz))
         if args.pa:
             for pa in pas:
-                cart._set_pa([pa,pa])
+                if args.pol == 0:
+                    pa0 = pa;
+                    pa1 = 0;
+                    vg0 = 0.06  # HACK
+                    vg1 = 0;
+                elif args.pol == 1:
+                    pa0 = 0;
+                    pa1 = pa;
+                    vg0 = 0
+                    vg1 = -0.19  # HACK
+                cart._set_pa([pa0,pa1,vg0,vg1])
                 time.sleep(0.1)
                 power = read_power()
-                sys.stdout.write('%.3f %.2f %.2f %.3f\n'%(lo_ghz, pa, pa, power))
+                sys.stdout.write('%.3f %.2f %.2f %.3f\n'%(lo_ghz, pa0, pa1, power))
                 sys.stdout.flush()
         else:
             pa0,pa1 = cart.state['pa_drain_s']
