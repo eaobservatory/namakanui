@@ -77,6 +77,7 @@ parser.add_argument('--pa', nargs='?', default='', help='PA range for tuning')
 parser.add_argument('--pol', nargs='?', type=int, choices=[0,1], help='which polarization (other is set to zero)')
 parser.add_argument('--if_ghz', nargs='?', type=float, default=0.0, help='pmeter frequency')
 parser.add_argument('--lock_polarity', nargs='?', choices=['below','above'], default='above')
+parser.add_argument('--note', nargs='?', default='', help='note for file header')
 args = parser.parse_args()
 
 sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
@@ -129,6 +130,7 @@ if args.band:
         logging.info('done.')
         sys.exit(1)
     # tune rx to range of values and take power readings.
+    band = args.band
     import namakanui.cart
     cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop)
     cart.power(1)
@@ -136,18 +138,21 @@ if args.band:
     los = namakanui.util.parse_range(args.lo_ghz)
     if args.pa:
         pas = namakanui.util.parse_range(args.pa)
-    sys.stdout.write('#lo_ghz pa0 pa1 pmeter_dbm\n')
+    if args.if_ghz:
+        sys.stdout.write('#lo_ghz if_ghz pa0 pa1 vd0 vd1 id0 id1 pmeter_dbm\n')
+    else:
+        sys.stdout.write('#lo_ghz wca_ghz pa0 pa1 vd0 vd1 id0 id1 pmeter_dbm\n')
     sys.stdout.flush()
     for lo_ghz in los:
         if not namakanui.util.tune(cart, agilent, None, lo_ghz):
             logging.error('failed to tune to %.3f ghz', lo_ghz)
             continue
         if args.if_ghz:
-            pmeter.send(b'freq %gGHz\n'%(args.if_ghz))
+            if_ghz = args.if_ghz
         else:
             # use WCA output frequency
-            wca_ghz = lo_ghz / cart.cold_mult
-            pmeter.send(b'freq %gGHz\n'%(wca_ghz))
+            if_ghz = lo_ghz / cart.cold_mult
+        pmeter.send(b'freq %gGHz\n'%(if_ghz))
         if args.pa:
             for pa in pas:
                 if args.pol == 0:
@@ -162,14 +167,20 @@ if args.band:
                     vg1 = -0.19  # HACK
                 cart._set_pa([pa0,pa1,vg0,vg1])
                 time.sleep(0.1)
+                cart.update_all()
+                dv = cart.state['pa_drain_v']
+                di = cart.state['pa_drain_c']
                 power = read_power()
-                sys.stdout.write('%.3f %.2f %.2f %.3f\n'%(lo_ghz, pa0, pa1, power))
+                sys.stdout.write('%.3f %.3f %.2f %.2f %.3f %.3f %.3f %.3f %.3f\n'%(lo_ghz, if_ghz, pa0, pa1, dv[0], dv[1], di[0], di[1], power))
                 sys.stdout.flush()
         else:
             pa0,pa1 = cart.state['pa_drain_s']
             time.sleep(0.1)
+            cart.update_all()
+            dv = cart.state['pa_drain_v']
+            di = cart.state['pa_drain_c']
             power = read_power()
-            sys.stdout.write('%.3f %.2f %.2f %.3f\n'%(lo_ghz, pa0, pa1, power))
+            sys.stdout.write('%.3f %.3f %.2f %.2f %.3f %.3f %.3f %.3f %.3f\n'%(lo_ghz, if_ghz, pa0, pa1, dv[0], dv[1], di[0], di[1], power))
             sys.stdout.flush()
 elif args.table:
     # read in a dbm table, assume band from filename.
