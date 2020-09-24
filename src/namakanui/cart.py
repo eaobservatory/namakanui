@@ -582,10 +582,12 @@ class Cart(object):
                 if not skip_servo_pa:
                     self._servo_pa()  # gets skipped at high temp already
             
+            #self.log.info('past _servo_pa, double-checking bias.')
+
             # RMB 20200715: double-check mixer bias voltage; testing shows
             # that even commands like clear_unlock_detect_latch can
             # mess up the sis_bias_voltage values.
-            if self.has_sis_mixers():
+            if self.has_sis_mixers() and not self.sim_cold:
                 for i in range(4):  # this loop may be necessary to make cmd errors visible
                     self.state['sis_v'][i] = self.femc.get_sis_voltage(self.ca, i//2, i%2)
                 rebias = False
