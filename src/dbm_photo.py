@@ -36,6 +36,10 @@ import argparse
 import socket
 import time
 
+import logging
+logging.root.setLevel(logging.INFO)
+logging.root.addHandler(logging.StreamHandler())
+
 binpath, datapath = namakanui.util.get_paths()
 
 parser = argparse.ArgumentParser()
@@ -57,7 +61,7 @@ if args.target_dbm < -20.0 or args.target_dbm > 14.0:
     sys.stderr.write('error: target dBm %g outside [-20, 14] range\n'%(args.target_dbm))
     sys.exit(1)
 
-if args.start_dbm < -20.0 or args._start_dbm > 14.0:
+if args.start_dbm < -20.0 or args.start_dbm > 14.0:
     sys.stderr.write('error: starting dBm %g outside [-20, 14] range\n'%(args.start_dbm))
     sys.exit(1)
 
@@ -129,7 +133,7 @@ def do_ghz(ghz):
     pmeter.send(b'freq %gGHz\n'%(ghz))  # for power sensor calibration tables
     # assuming meter and generator are both reasonably accurate,
     # we only need to iterate a few times to get close to optimal setting.
-    for i in range(3):
+    for i in range(5):
         time.sleep(delay)
         power = read_power()
         err = args.target_dbm - power
@@ -146,6 +150,7 @@ def do_ghz(ghz):
     power = read_power()
     sys.stderr.write('(%.2f, %.2f)\n'%(dbm, power))
     print('%.6f %.2f %.2f'%(ghz, dbm, power))
+    sys.stdout.flush()
 
 print('#ghz dbm pow')
 ghz = args.GHz_start
