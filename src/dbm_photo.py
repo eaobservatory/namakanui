@@ -10,10 +10,6 @@ at each frequency.
 The signal generator output must be connected to a power meter, N1913A,
 which is connected directly to LAN and uses SCPI commands.
 
-TODO: custom starting power level?  i'm assuming that loss is minimal
-      and the power setting is fairly accurate, so i just set the initial
-      level to the target and adjust a few times.
-
 
 Copyright (C) 2020 East Asian Observatory
 
@@ -46,7 +42,8 @@ parser = argparse.ArgumentParser()
 #parser.add_argument('IP', help='prologix adapter IP address')
 #parser.add_argument('GPIB', type=int, help='power meter GPIB address')
 parser.add_argument('IP', help='N1913A power meter IP address')
-parser.add_argument('dbm', type=float, help='target dBm')
+parser.add_argument('target_dbm', type=float, help='target dBm reading')
+parser.add_argument('start_dbm', type=float, help='starting dBm output')
 parser.add_argument('GHz_start', type=float)
 parser.add_argument('GHz_end', type=float)
 parser.add_argument('GHz_step', type=float)
@@ -56,8 +53,12 @@ args = parser.parse_args()
     #sys.stderr.write('error: GPIB address %d outside [0, 30] range\n'%(args.GPIB))
     #sys.exit(1)
 
-if args.dbm < -20.0 or args.dbm > 14.0:
-    sys.stderr.write('error: target dBm %g outside [-20, 14] range\n'%(args.dbm))
+if args.target_dbm < -20.0 or args.target_dbm > 14.0:
+    sys.stderr.write('error: target dBm %g outside [-20, 14] range\n'%(args.target_dbm))
+    sys.exit(1)
+
+if args.start_dbm < -20.0 or args._start_dbm > 14.0:
+    sys.stderr.write('error: starting dBm %g outside [-20, 14] range\n'%(args.start_dbm))
     sys.exit(1)
 
 # TODO might want to relax this for more generalized testing
@@ -123,7 +124,7 @@ def do_ghz(ghz):
     sys.stderr.write('%.6f: '%(ghz))
     sys.stderr.flush()
     delay = 0.1  # generous sleep since pmeter takes 50ms/read
-    dbm = args.dbm
+    dbm = args.start_dbm
     agilent.set_hz_dbm(ghz*1e9, dbm)
     pmeter.send(b'freq %gGHz\n'%(ghz))  # for power sensor calibration tables
     # assuming meter and generator are both reasonably accurate,
@@ -131,7 +132,7 @@ def do_ghz(ghz):
     for i in range(3):
         time.sleep(delay)
         power = read_power()
-        err = args.dbm - power
+        err = args.target_dbm - power
         sys.stderr.write('(%.2f, %.2f) '%(dbm, power))
         sys.stderr.flush()
         dbm += err
