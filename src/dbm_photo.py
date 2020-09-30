@@ -10,6 +10,12 @@ at each frequency.
 The signal generator output must be connected to a power meter, N1913A,
 which is connected directly to LAN and uses SCPI commands.
 
+NOTE: Range for the different bands, based on FLOYIG/FHIYIG:
+    b3: 18.308 - 22.153
+    b6: 18.325 - 22.162
+    b7: 23.416 - 30.571
+Typically this script will run with a simple 18:31:.01 GHz range.
+
 
 Copyright (C) 2020 East Asian Observatory
 
@@ -30,11 +36,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import jac_sw
 import namakanui.agilent
 import namakanui.util
+import namakanui.ini
 import sys
 import os
 import argparse
 import socket
 import time
+import math
 
 import logging
 logging.root.setLevel(logging.INFO)
@@ -51,6 +59,9 @@ parser.add_argument('start_dbm', type=float, help='starting dBm output')
 parser.add_argument('GHz_start', type=float)
 parser.add_argument('GHz_end', type=float)
 parser.add_argument('GHz_step', type=float)
+parser.add_argument('--table', nargs='?', default='', help='input power table file path, overrides start_dbm')
+parser.add_argument('--deadband', nargs='?', type=float, default=0.05, help='close-enough error, default 0.05 dBm')
+parser.add_argument('--note', nargs='?', default='', help='note for file header')
 args = parser.parse_args()
 
 #if args.GPIB < 0 or args.GPIB > 30:
@@ -80,6 +91,14 @@ steps = (args.GHz_end - args.GHz_start) / args.GHz_step
 if steps > 10e3:
     sys.stderr.write('error: step size too small for this range\n')
     sys.exit(1)
+
+# if we have an input table, read it in
+dbm_table = []
+if args.table:
+    dbm_table = namakanui.ini.read_ascii(args.table)
+
+# threshold to break optimization loop
+deadband = abs(args.deadband)
 
 agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
 agilent.log.setLevel(logging.INFO)
@@ -115,6 +134,12 @@ if not err.startswith(b'+0,"No error"'):
     sys.exit(1)
 
 
+# output file header
+sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
+sys.stdout.write('# %s\n'%(sys.argv))
+sys.stdout.write('#\n')
+sys.stdout.flush()
+
 
 def read_power():
     '''Return power reading in dBm.'''
@@ -122,6 +147,12 @@ def read_power():
     pmeter.send(b'fetch?\n')
     return float(pmeter.recv(256))
 
+def sign(x):
+    if x > 0:
+        return 1
+    elif x < 0:
+        return -1
+    return 0
 
 def do_ghz(ghz):
     '''Optimize power output for given frequency.'''
@@ -129,17 +160,39 @@ def do_ghz(ghz):
     sys.stderr.flush()
     delay = 0.1  # generous sleep since pmeter takes 50ms/read
     dbm = args.start_dbm
+    if dbm_table:
+        interp_row = namakanui.ini.interp_table(dbm_table, ghz)
+        dbm = interp_row.dbm
     agilent.set_hz_dbm(ghz*1e9, dbm)
     pmeter.send(b'freq %gGHz\n'%(ghz))  # for power sensor calibration tables
     # assuming meter and generator are both reasonably accurate,
     # we only need to iterate a few times to get close to optimal setting.
+    #
+    # RMB 20200930: add some basic gain estimation to speed convergence.
+    # we don't really trust the estimate, so bias toward 1.0
+    # by multiplying its logarithm with a scale factor <1.
+    prev_dbm = dbm
+    prev_power = 0.0
+    gain_bias = 0.5  # multiplied with log(gain) to skew toward 1
     for i in range(5):
         time.sleep(delay)
         power = read_power()
         err = args.target_dbm - power
-        sys.stderr.write('(%.2f, %.2f) '%(dbm, power))
+        sys.stderr.write('(%.2f, %.3f, '%(dbm, power))
+        #sys.stderr.flush()
+        if abs(err) <= deadband:
+            break
+        dout = dbm - prev_dbm
+        dpow = power - prev_power
+        prev_dbm = dbm
+        prev_power = power
+        gain = 1.0
+        if dout != 0.0 and dpow != 0.0 and sign(dout) == sign(dpow):
+            gain = dpow / dout
+            gain = 10**(math.log10(gain)*gain_bias)
+        sys.stderr.write('%.3f)'%(gain))
         sys.stderr.flush()
-        dbm += err
+        dbm += err / gain
         # NOTE: even if we rail, don't bail out early -- might have overshot
         if dbm < agilent.safe_dbm:
             dbm = agilent.safe_dbm
@@ -148,8 +201,9 @@ def do_ghz(ghz):
         agilent.set_dbm(dbm)
     time.sleep(delay)
     power = read_power()
-    sys.stderr.write('(%.2f, %.2f)\n'%(dbm, power))
-    print('%.6f %.2f %.2f'%(ghz, dbm, power))
+    sys.stderr.write('(%.2f, %.3f)\n'%(dbm, power))
+    sys.stderr.flush()
+    print('%.3f %.2f %.3f'%(ghz, dbm, power))
     sys.stdout.flush()
 
 print('#ghz dbm pow')
