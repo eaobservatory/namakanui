@@ -202,8 +202,12 @@ def tune(cart, agilent, photonics,
     dbm_start = (0.0 if dbm_ini else dbm_min) if dbm_start is None else dbm_start
     dbm_max = (3.0 if dbm_ini else agilent.max_dbm) if dbm_max is None else dbm_max
     if dbm_ini:
-        dbm_band = 0 if photonics else cart.band
-        dbm_ini = agilent.interp_dbm(dbm_band, lo_ghz)
+        ghz = lo_ghz
+        dbm_band = cart.band
+        if photonics:
+            ghz = fsig
+            dbm_band = 0
+        dbm_ini = agilent.interp_dbm(dbm_band, ghz)
         dbm_start += dbm_ini
         dbm_max += dbm_ini
     dbm_start = clip(dbm_start, dbm_min, agilent.max_dbm)
