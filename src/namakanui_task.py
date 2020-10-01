@@ -43,6 +43,7 @@ import namakanui.cryo
 import namakanui.load
 import namakanui.agilent
 import namakanui.ifswitch
+import namakanui.photonics
 import namakanui.util
 
 import argparse
@@ -68,6 +69,7 @@ agilent = None
 cryo = None
 load = None
 ifswitch = None
+photonics = None
 
 # indexed by band number (int)
 cartridge_tasknames = {}  
@@ -154,10 +156,12 @@ def INITIALISE(msg):
     del cryo
     del load
     del ifswitch
+    del photonics
     agilent = None
     cryo = None
     load = None
     ifswitch = None
+    photonics = None
     gc.collect()
     agilent = namakanui.agilent.Agilent(datapath+nconfig['agilent_ini'], drama.wait, drama.set_param, simulate)
     cryo = namakanui.cryo.Cryo(datapath+nconfig['cryo_ini'], drama.wait, drama.set_param, simulate)
@@ -165,12 +169,14 @@ def INITIALISE(msg):
     drama.wait(1)
     load = namakanui.load.Load(datapath+nconfig['load_ini'], drama.wait, drama.set_param, simulate)
     ifswitch = namakanui.ifswitch.IFSwitch(datapath+nconfig['ifswitch_ini'], drama.wait, drama.set_param, simulate)
+    if 'photonics_ini' in nconfig:
+        photonics = namakanui.photonics.Photonics(datapath+nconfig['photonics_ini'], drama.wait, drama.set_param, simulate)
     
     # publish the load.positions table for the GUI
     drama.set_param('LOAD_TABLE', load.positions)
     
     # rebuild the simulate bitmask from what was actually set
-    simulate = agilent.simulate | cryo.simulate | load.simulate | ifswitch.simulate
+    simulate = agilent.simulate | cryo.simulate | load.simulate | ifswitch.simulate | (photonics.simulate if photonics else 0)
     for band in [3,6,7]:
         task = cartridge_tasknames[band]
         simulate |= drama.get(task, 'SIMULATE').wait(5).arg['SIMULATE']
@@ -218,6 +224,8 @@ def UPDATE(msg):
     #agilent.update()
     #ifswitch.update()
     update_funcs = [cryo.update, load.update, agilent.update, ifswitch.update]
+    if photonics:
+        update_funcs.append(photonics.update)
     for f in update_funcs:
         try:
             f()
@@ -276,6 +284,24 @@ def SET_SG_OUT(msg):
     agilent.update(publish_only=True)
 
 
+def set_att_args(ATT):
+    return int(ATT)
+
+def SET_ATT(msg):
+    '''Set Photonics attenuator counts (0-63, 0.5 dB per count).'''
+    log.debug('SET_ATT(%s)', msg.arg)
+    if not initialised:
+        raise drama.BadStatus(drama.APP_ERROR, 'task needs INITIALISE')
+    if not photonics:
+        raise drama.BadStatus(drama.APP_ERROR, 'attenuator not in use')
+    args,kwargs = drama.parse_argument(msg.arg)
+    out = set_att_args(*args,**kwargs)
+    log.info('setting attenuator counts to %d', att)
+    photonics.set_attenuation(att)
+    #photonics.update()  # set_attenuation already updates
+    
+
+
 def set_band_args(BAND):
     return int(BAND)
 
@@ -291,9 +317,12 @@ def SET_BAND(msg):
         raise drama.BadStatus(drama.INVARG, 'BAND %d not one of [3,6,7]' % (band))
     if ifswitch.get_band() != band:
         log.info('setting IF switch to band %d', band)
-        agilent.set_dbm(agilent.safe_dbm)  # reduce reference signal power first
-        ifswitch.set_band(band)
+        # reduce power to minimum levels
+        agilent.set_dbm(agilent.safe_dbm)
         agilent.update(publish_only=True)
+        if photonics:
+            photonics.set_attenuation(photonics.max_att)
+        ifswitch.set_band(band)
     else:
         log.info('IF switch already at band %d', band)
 
@@ -406,7 +435,10 @@ def CART_TUNE(msg):
     
     if ifswitch.get_band() != band:
         log.info('setting IF switch to band %d', band)
-        agilent.set_dbm(agilent.safe_dbm)  # reduce reference signal power first
+        # reduce power first
+        agilent.set_dbm(agilent.safe_dbm)
+        if photonics:
+            photonics.set_attenuation(photonics.max_att)
         ifswitch.set_band(band)
     
     cartname = cartridge_tasknames[band]
@@ -418,19 +450,25 @@ def CART_TUNE(msg):
     
     fyig = lo_ghz / (cold_mult[band] * warm_mult[band])
     fsig = (fyig*warm_mult[band] + agilent.floog*lock_polarity) / agilent.harmonic
-    dbm = agilent.interp_dbm(band, lo_ghz)
+    if photonics:
+        dbm = agilent.interp_dbm(0, fsig)
+        att = photonics.interp_att(band, lo_ghz)
+        log.info('setting photonics attenuator to %d counts', att)
+    else:
+        dbm = agilent.interp_dbm(band, lo_ghz)
     dbm = min(dbm, agilent.max_dbm)
     log.info('setting agilent to %g GHz, %g dBm', fsig, dbm)
-    # try to do this safely while still maintaining the lock, if possible.
-    # if increasing power output, set the frequency first.
-    # if decreasing power output, set the output power first.
-    # these "set" calls modify agilent.state, but do not publish.
-    if dbm > agilent.state['dbm']:
-        agilent.set_hz(fsig*1e9)
-        agilent.set_dbm(dbm)
+    # set power safely while maintaining lock, if possible.
+    hz = fsig*1e9
+    if photonics:
+        if att < photonics.state['attenuation']:
+            agilent.set_hz_dbm(hz, dbm)
+            photonics.set_attenuation(att)
+        else:
+            photonics.set_attenuation(att)
+            agilent.set_hz_dbm(hz, dbm)
     else:
-        agilent.set_dbm(dbm)
-        agilent.set_hz(fsig*1e9)
+        agilent.set_hz_dbm(hz, dbm)
     agilent.set_output(1)
     agilent.update(publish_only=True)
     time.sleep(0.05)  # wait 50ms; for small changes PLL might hold lock
@@ -444,59 +482,111 @@ def CART_TUNE(msg):
         band_kwargs["LOCK_ONLY"] = lock_only
     log.info('band %d tuning to LO %g GHz%s...', band, lo_ghz, vstr)
     
-    # during commissioning, the dBm lookup table has needed constant updates.
-    # tune in a loop, adjusting the dBm to get pll_if_power in proper range.
-    orig_dbm = dbm
-    dbm_max = min(agilent.max_dbm, dbm + 3.0)  # limit to 2x nominal power
-    tries = 0
-    max_tries = 5
-    while True:
-        tries += 1
-        msg = drama.obey(cartname, 'TUNE', **band_kwargs).wait()
-        if msg.reason != drama.REA_COMPLETE:
-            raise drama.BadStatus(drama.UNEXPMSG, '%s bad TUNE msg: %s' % (cartname, msg))
-        elif msg.status == drama.INVARG:
-            # frequency out of range
-            agilent.set_dbm(agilent.safe_dbm)
-            raise drama.BadStatus(msg.status, '%s TUNE failed' % (cartname))
-        elif msg.status != 0:
-            # tune failure, raise the power and try again
+    # tune in a loop, adjusting signal to get pll_if_power in proper range.
+    # adjust attenuator if present, otherwise adjust output dBm.
+    if photonics:
+        orig_att = att
+        att_min = max(0, att-6)  # limit 2x nominal power
+        tries = 0
+        max_tries = 5
+        while True:
+            tries += 1
+            msg = drama.obey(cartname, 'TUNE', **band_kwargs).wait()
+            if msg.reason != drama.REA_COMPLETE:
+                raise drama.BadStatus(drama.UNEXPMSG, '%s bad TUNE msg: %s' % (cartname, msg))
+            elif msg.status == drama.INVARG:
+                # frequency out of range
+                agilent.set_dbm(agilent.safe_dbm)
+                photonics.set_attenuation(photonics.max_att)
+                raise drama.BadStatus(msg.status, '%s TUNE failed' % (cartname))
+            elif msg.status != 0:
+                # tune failure, raise the power and try again
+                old_att = att
+                att -= 2
+                if att < att_min:
+                    att = att_min
+                if att == old_att or tries > max_tries:  # stuck at the limit, time to give up
+                    photonics.set_attenuation(orig_att)
+                    raise drama.BadStatus(msg.status, '%s TUNE failed' % (cartname))
+                log.warning('band %d tune failed, retuning at %d attenuator counts...', band, att)
+                photonics.set_attenuation(att)
+                time.sleep(0.05)
+                continue
+            # we got a lock.  check the pll_if_power level.
+            # TODO don't assume pubname is DYN_STATE
+            dyn_state = drama.get(cartname, "DYN_STATE").wait().arg["DYN_STATE"]
+            pll_if_power = dyn_state['pll_if_power']
+            if tries > max_tries:  # avoid bouncing around forever
+                break
+            old_att = att
+            if pll_if_power < -2.5:  # power too high
+                att += 1
+            elif pll_if_power > -0.7:  # power too low
+                att -= 1
+            else:  # power is fine
+                break
+            if att < att_min:
+                att = att_min
+            elif att > photonics.max_att:
+                att = photonics.max_att
+            if att == old_att:  # stuck at the limit, so it'll have to do
+                break
+            log.warning('band %d bad pll_if_power %.2f; retuning at %d attenuator counts...', band, pll_if_power, att)
+            photonics.set_attenuation(att)
+            time.sleep(0.05)
+        log.info('band %d tuned to LO %g GHz, pll_if_power %.2f at %.2f dBm, %d attenuator counts', band, lo_ghz, pll_if_power, dbm, att)
+    else:
+        orig_dbm = dbm
+        orig_att = att if photonics else 0
+        dbm_max = min(agilent.max_dbm, dbm + 3.0)  # limit to 2x nominal power
+        att_min = max(0, att-6) if photonics else 0 # ditto
+        tries = 0
+        max_tries = 5
+        while True:
+            tries += 1
+            msg = drama.obey(cartname, 'TUNE', **band_kwargs).wait()
+            if msg.reason != drama.REA_COMPLETE:
+                raise drama.BadStatus(drama.UNEXPMSG, '%s bad TUNE msg: %s' % (cartname, msg))
+            elif msg.status == drama.INVARG:
+                # frequency out of range
+                agilent.set_dbm(agilent.safe_dbm)
+                raise drama.BadStatus(msg.status, '%s TUNE failed' % (cartname))
+            elif msg.status != 0:
+                # tune failure, raise the power and try again
+                old_dbm = dbm
+                dbm += 1.0
+                if dbm > dbm_max:
+                    dbm = dbm_max
+                if dbm == old_dbm or tries > max_tries:  # stuck at the limit, time to give up
+                    agilent.set_dbm(orig_dbm)
+                    raise drama.BadStatus(msg.status, '%s TUNE failed' % (cartname))
+                log.warning('band %d tune failed, retuning at %.2f dBm...', band, dbm)
+                agilent.set_dbm(dbm)
+                time.sleep(0.05)
+                continue
+            # we got a lock.  check the pll_if_power level.
+            # TODO don't assume pubname is DYN_STATE
+            dyn_state = drama.get(cartname, "DYN_STATE").wait().arg["DYN_STATE"]
+            pll_if_power = dyn_state['pll_if_power']
+            if tries > max_tries:  # avoid bouncing around forever
+                break
             old_dbm = dbm
-            dbm += 1.0
+            if pll_if_power < -2.5:  # power too high
+                dbm -= 0.5
+            elif pll_if_power > -0.7:  # power too low
+                dbm += 0.5
+            else:  # power is fine
+                break
             if dbm > dbm_max:
                 dbm = dbm_max
-            if dbm == old_dbm or tries > max_tries:  # stuck at the limit, time to give up
-                agilent.set_dbm(orig_dbm)
-                raise drama.BadStatus(msg.status, '%s TUNE failed' % (cartname))
-            log.warning('band %d tune failed, retuning at %.2f dBm...', band, dbm)
+            elif dbm < -20.0:
+                dbm = -20.0
+            if dbm == old_dbm:  # stuck at the limit, so it'll have to do
+                break
+            log.warning('band %d bad pll_if_power %.2f; retuning at %.2f dBm...', band, pll_if_power, dbm)
             agilent.set_dbm(dbm)
             time.sleep(0.05)
-            continue
-        # we got a lock.  check the pll_if_power level.
-        # TODO don't assume pubname is DYN_STATE
-        dyn_state = drama.get(cartname, "DYN_STATE").wait().arg["DYN_STATE"]
-        pll_if_power = dyn_state['pll_if_power']
-        if tries > max_tries:  # avoid bouncing around forever
-            break
-        old_dbm = dbm
-        if pll_if_power < -2.5:  # power too high
-            dbm -= 0.5
-        elif pll_if_power > -0.7:  # power too low
-            dbm += 0.5
-        else:  # power is fine
-            break
-        if dbm > dbm_max:
-            dbm = dbm_max
-        elif dbm < -20.0:
-            dbm = -20.0
-        if dbm == old_dbm:  # stuck at the limit, so it'll have to do
-            break
-        log.warning('band %d bad pll_if_power %.2f; retuning at %.2f dBm...', band, pll_if_power, dbm)
-        agilent.set_dbm(dbm)
-        time.sleep(0.05)
-        
-    
-    log.info('band %d tuned to LO %g GHz, pll_if_power %.2f at %.2f dBm.', band, lo_ghz, pll_if_power, dbm)
+        log.info('band %d tuned to LO %g GHz, pll_if_power %.2f at %.2f dBm.', band, lo_ghz, pll_if_power, dbm)
     # CART_TUNE
 
 
@@ -507,7 +597,7 @@ try:
                buffers = [64000, 8000, 8000, 2000],
                actions=[UPDATE, INITIALISE,
                         SET_SG_DBM, SET_SG_HZ, SET_SG_OUT,
-                        SET_BAND,
+                        SET_ATT, SET_BAND,
                         LOAD_HOME, LOAD_MOVE,
                         CART_POWER, CART_TUNE])
     log.info('%s entering main loop.', taskname)
