@@ -85,7 +85,7 @@ def INITIALISE(msg):
         INITIALISE: The ini file path
         SIMULATE: Bitmask. If given, overrides config file settings.
     '''
-    global initialised, inifile, agilent, cryo, load, ifswitch
+    global initialised, inifile, agilent, cryo, load, ifswitch, photonics
     global cartridge_tasknames, cold_mult, warm_mult
     
     log.debug('INITIALISE(%s)', msg.arg)
