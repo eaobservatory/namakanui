@@ -162,7 +162,7 @@ def get_tp2():
         return None
     tps = []
     for dcm in dcms:
-        tps.append(msg.arg['POWER%d'%(dcm)]
+        tps.append(msg.arg['POWER%d'%(dcm)])
     return tps
 
 def get_att():
@@ -172,7 +172,7 @@ def get_att():
         return None
     att = []
     for dcm in dcms:
-        att.append(msg.arg['ATTEN%d'%(dcm)]
+        att.append(msg.arg['ATTEN%d'%(dcm)])
     return att
 
 def main_loop():
@@ -228,7 +228,7 @@ def MAIN(msg):
         sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
         sys.stdout.flush()
         # retune the receiver to get settings back to nominal
-        cart.tune(lo_ghz, 0.0)
+        namakanui.util.tune(cart, agilent, None, lo_ghz)
         drama.Exit('MAIN done')
     # MAIN
         
