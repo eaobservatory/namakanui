@@ -70,6 +70,7 @@ parser.add_argument('--mv')
 parser.add_argument('--pa')
 parser.add_argument('lock_polarity', nargs='?', choices=['below','above'], default='above')
 parser.add_argument('--level_only', action='store_true')
+parser.add_argument('--note', nargs='?', default='', help='note for output file')
 args = parser.parse_args()
 
 band = args.band
@@ -245,9 +246,9 @@ def MAIN(msg):
             rows[i] = [0.0]*(yf_index+len(powers))
         
         if iv('hot', rows):
-            break
+            return
         if iv('sky', rows):
-            break
+            return
         
         n = ua_n*2
         for r in rows:

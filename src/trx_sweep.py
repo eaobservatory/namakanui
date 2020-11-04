@@ -64,6 +64,7 @@ parser.add_argument('lock_polarity', nargs='?', choices=['below','above'], defau
 parser.add_argument('--level_only', action='store_true')
 parser.add_argument('--bw_mhz', nargs='?', default='1000', help='BW MHz range, first:last:step')
 parser.add_argument('--if_ghz', nargs='?', default='6', help='IF GHz range, first:last:step')
+parser.add_argument('--note', nargs='?', default='', help='note for output file')
 args = parser.parse_args()
 
 band = args.band
