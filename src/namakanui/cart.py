@@ -60,15 +60,17 @@ class Cart(object):
     NOTE: There are three update functions, so call update_one() at 0.6 Hz.
     '''
     
-    def __init__(self, band, inifilename, sleep, publish, simulate=None):
+    def __init__(self, band, inifile, sleep, publish, simulate=None):
         '''
         Create a Cart instance from given config file.  Arguments:
-            inifilename: Path to config file.
+            inifile: Path to config file or dict-like, e.g ConfigParser.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
             simulate: Bitmask. If not None (default), overrides setting in inifilename.
         '''
-        self.config = IncludeParser(inifilename)
+        self.config = inifile
+        if not hasattr(inifile, 'items'):
+            self.config = IncludeParser(inifile)
         self.band = band
         self.ca = self.band-1  # cartridge index for FEMC
         self.sleep = sleep

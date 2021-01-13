@@ -33,16 +33,18 @@ class Cryo(object):
     Monitor and control the Namakanui cryostat.
     '''
     
-    def __init__(self, inifilename, sleep, publish, simulate=None):
+    def __init__(self, inifile, sleep, publish, simulate=None):
         '''Arguments:
-            inifilename: Path to config file.
+            inifile: Path to config file or dict-like, e.g ConfigParser.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
             simulate: Bitmask. If not None (default), overrides setting in inifilename.
         '''
         # TODO simulate granularity? unsure what bits we'll have included.
         # TODO: does the cryostat have ESNs we need to check?
-        self.config = IncludeParser(inifilename)
+        self.config = inifile
+        if not hasattr(inifile, 'items'):
+            self.config = IncludeParser(inifile)
         self.sleep = sleep
         self.publish = publish
         if simulate is not None:
