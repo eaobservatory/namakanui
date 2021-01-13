@@ -51,6 +51,9 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
+from namakanui.ini import *
+from namakanui import sim
+
 import sys
 import socket
 import struct
@@ -247,18 +250,58 @@ _lpr_edfa_driver_state = 0xd03c  # temperature alarm
 # 00505822   [5]  00 00 00 00 FF
 
 class FEMC(object):
-
-    def __init__(self, interface="can0", node_id=0x13, verbose=False, timeout=0.1):
-        self.verbose = verbose
+    
+    def __init__(self, inifile, sleep, publish, simulate=None):
+        '''Arguments:
+            inifile: Path to config file or dict-like, e.g ConfigParser.
+            sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
+            publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
+            simulate: Bitmask. If not None (default), overrides setting in inifilename.
+        '''
+        self.config = inifile
+        if not hasattr(inifile, 'items'):
+            self.config = IncludeParser(inifile)
+        cfg = self.config['femc']
+        self.sleep = sleep
+        self.publish = publish
+        if simulate is not None:
+            self.simulate = simulate
+        else:
+            self.simulate = sim.str_to_bits(cfg['simulate'])
+        self.simulate &= sim.SIM_FEMC
+        self.name = cfg['pubname']
+        
+        self.logname = cfg['logname']
+        self.log = logging.getLogger(self.logname)
+        
+        self.interface = cfg['interface']
+        self.node_id = int(cfg['node'], 0)
+        self.node = (self.node_id+1) << 18
+        self.timeout = float(cfg['timeout'])
+        self.state = {'number':0,
+                      'simulate':self.simulate,
+                      'interface':self.interface,
+                      'node':self.node_id,
+                      'timeout':self.timeout,
+                     }
+        publish(self.name, self.state)
+        
         self.s = socket.socket(socket.AF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
-        self.s.bind((interface,))
-        self.s.settimeout(timeout)
-        self.node = (node_id+1) << 18
+        
+        if self.simulate:
+            # NOTE This class does not yet handle simulate;
+            #      caller must not invoke any other methods if simulated.
+            return
+        
+        self.s.bind((self.interface,))
+        self.s.settimeout(self.timeout)
         setup = self.get_setup_info()
         if setup != 0 and setup != 5:
             estr = _setup_errors.get(setup, "unknown error")
             raise FEMC_RuntimeError("get_setup_info error: %d: %s" % (setup, estr))
+        
         # TODO: other setup/init
+        # FEMC.__init__
         
     def __del__(self):
         self.s.close()
@@ -270,7 +313,6 @@ class FEMC(object):
                          and if one process gets rescheduled while holding it,
                          the other can time out on rare occasions.  For now I
                          will just ignore socket.timeout, up to 3 times.
-                         TODO: Proper logging.
         '''
         tries = 0
         r,w,x = select.select([self.s], [], [], 0)
@@ -278,8 +320,7 @@ class FEMC(object):
             try:
                 self.s.recv(65536)  # minimize loops
             except socket.timeout:
-                if self.verbose:
-                    print('clear: recv socket.timeout')
+                self.log.debug('clear: recv socket.timeout')
                 tries += 1
                 if tries > 3:
                     raise
@@ -339,8 +380,7 @@ class FEMC(object):
            the socket is writable, then try to send until timeout.
            '''
         packet = _IB3x8s.pack(socket.CAN_EFF_FLAG | self.node | rca, len(data), data)
-        if self.verbose:
-            print('set_rca send %d bytes: 0x%s' % (len(packet), packet.hex()), file=sys.stderr)
+        self.log.debug('set_rca send %d bytes: 0x%s', len(packet), packet.hex())
         self.clear()  # empty socket buffer of any nonrelated traffic
         timeout = self.s.gettimeout() or 0
         wall_timeout = time.time() + timeout
@@ -378,18 +418,15 @@ class FEMC(object):
                 break
             if len(reply) != 16:
                 raise FEMC_RuntimeError("only received %d bytes: 0x%s" % (len(reply), reply.hex()))
-            if self.verbose:
-                print('get_rca recv %d bytes: 0x%s' % (len(reply), reply.hex()), file=sys.stderr)
+            self.log.debug('get_rca recv %d bytes: 0x%s', len(reply), reply.hex())
             r_can_id, data_len, data = _IB3x8s.unpack(reply)
             r_can_id &= socket.CAN_EFF_MASK
             if r_can_id != s_can_id:
                 badreps.append(reply.hex())
-                if self.verbose:
-                    print('get_rca %x unexpected reply id %x' % (s_can_id, r_can_id))
+                self.log.debug('get_rca %x unexpected reply id %x', s_can_id, r_can_id)
             elif not data_len:
                 badreps.append(reply.hex())
-                if self.verbose:
-                    print('get_rca %x got reply with no data' % (s_can_id))
+                self.log.debug('get_rca %x got reply with no data', s_can_id)
         if r_can_id != s_can_id or not data_len:
             raise FEMC_RuntimeError("timeout after %d bad replies: %s" % (len(badreps), "<omitted>"))#badreps))
         data = data[:data_len]
@@ -400,14 +437,13 @@ class FEMC(object):
         loop = 0
         loops = 10
         while loop < loops:
-            if self.verbose and loop:
-                print('get_rca retry %s' % (loop))
+            if loop:
+                self.log.debug('get_rca retry %s', loop)
             try:
                 data = self.try_get_rca(rca)
                 return data
             except FEMC_RuntimeError as e:
-                if self.verbose:
-                    print('get_rca %s' % (e))
+                self.log.debug('get_rca %s', e)
                 loop += 1
                 if loop >= loops:
                     raise
@@ -441,14 +477,13 @@ class FEMC(object):
         loop = 0
         loops = 10
         while loop < loops:
-            if self.verbose and loop:
-                print('set_get_rca retry %s' % (loop))
+            if loop:
+                self.log.debug('set_get_rca retry %s', loop)
             try:
                 self.try_set_get_rca(rca, data)
                 return
             except FEMC_RuntimeError as e:
-                if self.verbose:
-                    print('set_get_rca %s' % (e))
+                self.log.debug('set_get_rca %s', e)
                 loop += 1
                 if loop >= loops or str(e).startswith('error code'):
                     raise
