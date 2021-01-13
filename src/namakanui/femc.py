@@ -253,10 +253,10 @@ class FEMC(object):
     
     def __init__(self, inifile, sleep, publish, simulate=None):
         '''Arguments:
-            inifile: Path to config file or dict-like, e.g ConfigParser.
+            inifile: Path to config file or IncludeParser instance.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
-            simulate: Bitmask. If not None (default), overrides setting in inifilename.
+            simulate: Bitmask. If not None (default), overrides setting in inifile.
         '''
         self.config = inifile
         if not hasattr(inifile, 'items'):
@@ -287,6 +287,10 @@ class FEMC(object):
         publish(self.name, self.state)
         
         self.s = socket.socket(socket.AF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
+        
+        self.log.debug('__init__ %s, sim=%d, interface=%s, node=0x%x, timeout=%g',
+                       self.config.inifilename, self.simulate,
+                       self.interface, self.node_id, self.timeout)
         
         if self.simulate:
             # NOTE This class does not yet handle simulate;

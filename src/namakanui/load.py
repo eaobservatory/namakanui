@@ -57,10 +57,10 @@ class Load(object):
     
     def __init__(self, inifile, sleep, publish, simulate=None):
         '''Arguments:
-            inifile: Path to config file or dict-like, e.g ConfigParser.
+            inifile: Path to config file or IncludeParser instance.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
-            simulate: Bitmask. If not None (default), overrides setting in inifilename.
+            simulate: Bitmask. If not None (default), overrides setting in inifile.
         '''
         self.config = inifile
         if not hasattr(inifile, 'items'):
@@ -86,7 +86,7 @@ class Load(object):
         self.positions = {n:int(p) for n,p in self.config['positions'].items()}
         self.positions_r = {p:n for n,p in self.positions.items()}
         
-        self.log.debug('__init__ %s, sim=%d', inifilename, self.simulate)
+        self.log.debug('__init__ %s, sim=%d', self.config.inifilename, self.simulate)
         self.initialise()
         # Load.__init__
 

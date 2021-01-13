@@ -35,10 +35,10 @@ class Cryo(object):
     
     def __init__(self, inifile, sleep, publish, simulate=None):
         '''Arguments:
-            inifile: Path to config file or dict-like, e.g ConfigParser.
+            inifile: Path to config file or IncludeParser instance.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
-            simulate: Bitmask. If not None (default), overrides setting in inifilename.
+            simulate: Bitmask. If not None (default), overrides setting in inifile.
         '''
         # TODO simulate granularity? unsure what bits we'll have included.
         # TODO: does the cryostat have ESNs we need to check?
@@ -55,7 +55,7 @@ class Cryo(object):
         self.state = {'number':0}
         self.logname = self.config['cryo']['logname']
         self.log = logging.getLogger(self.logname)
-        self.log.debug('__init__ %s, sim=%d', inifilename, self.simulate)
+        self.log.debug('__init__ %s, sim=%d', self.config.inifilename, self.simulate)
         self.initialise()
     
     

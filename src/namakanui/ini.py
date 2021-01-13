@@ -40,6 +40,7 @@ class IncludeParser(configparser.ConfigParser):
         '''
         configparser.ConfigParser.__init__(self)
         inifilename = os.path.realpath(inifilename.strip())
+        self.inifilename = inifilename
         inidone = set()
         include = {inifilename}
         while inidone < include:

@@ -65,10 +65,10 @@ class Cart(object):
         Create a Cart instance from given config file.  Arguments:
             band: Cartridge band number, e.g. 6 for 230 GHz, 'U'u.
             femc: FEMC class instance or None if simulated.
-            inifile: Path to config file or dict-like, e.g ConfigParser.
+            inifile: Path to config file or IncludeParser instance.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
-            simulate: Bitmask. If not None (default), overrides setting in inifilename.
+            simulate: Bitmask. If not None (default), overrides setting in inifile.
         '''
         self.config = inifile
         if not hasattr(inifile, 'items'):
@@ -96,7 +96,8 @@ class Cart(object):
         # should be 0 (OPERATIONAL) to enable safety interlocks.
         self.state['fe_mode'] = int(self.config[b]['fe_mode'])
         
-        self.log.debug('__init__ %s, sim=%d, band=%d', inifilename, self.simulate, band)
+        self.log.debug('__init__ %s, sim=%d, band=%d',
+                       self.config.inifilename, self.simulate, band)
         
         cc = self.config[self.config[b]['cold']]
         wca = self.config[self.config[b]['warm']]
@@ -116,7 +117,7 @@ class Cart(object):
         self.yig_lo = float(wca['FLOYIG'])
         self.yig_hi = float(wca['FHIYIG'])
         
-        datapath = os.path.dirname(inifilename) + '/'
+        datapath = os.path.dirname(self.config.inifilename) + '/'
         
         fnames = 'freqLO, VDA, VDB, VGA, VGB' 
         self.pa_table = read_table_or_ascii(wca, 'LOParam', float, fnames, datapath)

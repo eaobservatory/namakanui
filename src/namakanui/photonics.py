@@ -44,10 +44,10 @@ class Photonics(object):
     
     def __init__(self, inifile, sleep, publish, simulate=None):
         '''Arguments:
-            inifile: Path to config file or dict-like, e.g ConfigParser.
+            inifile: Path to config file or IncludeParser instance.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
-            simulate: Bitmask. If not None (default), overrides setting in inifilename.
+            simulate: Bitmask. If not None (default), overrides setting in inifile.
         '''
         self.config = inifile
         if not hasattr(inifile, 'items'):
@@ -73,13 +73,13 @@ class Photonics(object):
         # init only saves ip/port, so this is fine even if simulating
         self.adam = adam.adam6052.Adam6052(self.ip, self.port)
         
-        datapath = os.path.dirname(inifilename) + '/'
+        datapath = os.path.dirname(self.config.inifilename) + '/'
         self.att_tables = {}  # indexed by band
         for b in [3,6,7]:
             self.att_tables[b] = read_ascii(datapath + pconfig['b%d_att'%(b)])
         
         self.log.debug('__init__ %s, sim=%d, %s:%d',
-                       inifilename, self.simulate, self.ip, self.port)
+                       self.config.inifilename, self.simulate, self.ip, self.port)
         
         self.initialise()
         # Photonics.__init__

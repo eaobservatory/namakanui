@@ -36,10 +36,10 @@ class Agilent(object):
     
     def __init__(self, inifile, sleep, publish, simulate=None):
         '''Arguments:
-            inifile: Path to config file or dict-like, e.g ConfigParser.
+            inifile: Path to config file or IncludeParser instance.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
-            simulate: Bitmask. If not None (default), overrides setting in inifilename.
+            simulate: Bitmask. If not None (default), overrides setting in inifile.
         '''
         self.config = inifile
         if not hasattr(inifile, 'items'):
@@ -62,7 +62,7 @@ class Agilent(object):
         self.harmonic = int(agconfig['harmonic'])
         self.floog = float(agconfig['floog'])
         
-        datapath = os.path.dirname(inifilename) + '/'
+        datapath = os.path.dirname(self.config.inifilename) + '/'
         self.dbm_tables = {}  # indexed by band, 0 = photonics table
         self.dbm_tables[0] = read_ascii(datapath + agconfig['photonics_dbm'])
         for b in [3,6,7]:
@@ -70,7 +70,7 @@ class Agilent(object):
             self.dbm_tables[b] = read_ascii(datapath + agconfig['b%d_dbm'%(b)])
         
         self.log.debug('__init__ %s, sim=%d, %s:%d, dbm=%g, harmonic=%d, floog=%g',
-                       inifilename, self.simulate, self.ip, self.port,
+                       self.config.inifilename, self.simulate, self.ip, self.port,
                        self.safe_dbm, self.harmonic, self.floog)
         self.initialise()
     

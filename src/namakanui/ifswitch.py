@@ -43,10 +43,10 @@ class IFSwitch(object):
     
     def __init__(self, inifile, sleep, publish, simulate=None):
         '''Arguments:
-            inifile: Path to config file or dict-like, e.g ConfigParser.
+            inifile: Path to config file or IncludeParser instance.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
-            simulate: Bitmask. If not None (default), overrides setting in inifilename.
+            simulate: Bitmask. If not None (default), overrides setting in inifile.
         '''
         self.config = inifile
         if not hasattr(inifile, 'items'):
@@ -70,7 +70,7 @@ class IFSwitch(object):
         self.adam_6024 = adam.adam6024.Adam6024(cfg['ip_6024'], int(cfg['port_6024']))
         
         self.log.debug('__init__ %s, sim=%d, 6260=%s:%d, 6024=%s:%d',
-                       inifilename, self.simulate,
+                       self.config.inifilename, self.simulate,
                        self.adam_6260.ip, self.adam_6260.port,
                        self.adam_6024.ip, self.adam_6024.port)
         
