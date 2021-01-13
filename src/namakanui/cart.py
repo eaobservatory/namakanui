@@ -60,9 +60,11 @@ class Cart(object):
     NOTE: There are three update functions, so call update_one() at 0.6 Hz.
     '''
     
-    def __init__(self, band, inifile, sleep, publish, simulate=None):
+    def __init__(self, band, femc, inifile, sleep, publish, simulate=None):
         '''
         Create a Cart instance from given config file.  Arguments:
+            band: Cartridge band number, e.g. 6 for 230 GHz, 'U'u.
+            femc: FEMC class instance or None if simulated.
             inifile: Path to config file or dict-like, e.g ConfigParser.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
@@ -73,6 +75,7 @@ class Cart(object):
             self.config = IncludeParser(inifile)
         self.band = band
         self.ca = self.band-1  # cartridge index for FEMC
+        self.femc = femc
         self.sleep = sleep
         self.publish = publish
         
@@ -170,6 +173,8 @@ class Cart(object):
         
         # fix simulate set; simulated FEMC means simulated warm and cold carts.
         self.simulate &= (SIM_FEMC | SIM_WARM | SIM_COLD)
+        if self.femc is None:
+            self.simulate |= SIM_FEMC
         if self.simulate & SIM_FEMC:
             self.simulate |= (SIM_WARM | SIM_COLD)
         
@@ -182,13 +187,9 @@ class Cart(object):
         self.sim_warm = bool(self.simulate & SIM_WARM)
         self.sim_cold = bool(self.simulate & SIM_COLD)
         
-        # (re)connect to FEMC if not simulated, otherwise delete
-        if not self.sim_femc:
-            interface = self.config['femc']['interface']
-            node = int(self.config['femc']['node'], 0)
-            self.femc = FEMC(interface, node)
-        elif hasattr(self, 'femc'):
-            del self.femc
+        # discard FEMC handle if simulated only via SIM_BX_FEMC
+        if self.sim_femc:
+            self.femc = None
         
         # RMB 20190730: cart ESNs don't seem to show up in list, so ignore.
         ## check ESNs
