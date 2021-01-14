@@ -308,6 +308,11 @@ class FEMC(object):
         # FEMC.__init__
         
     def __del__(self):
+        self.log.debug('__del__')
+        self.close()
+    
+    def close(self):
+        self.log.debug('close')
         self.s.close()
     
     def clear(self):
