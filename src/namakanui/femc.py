@@ -284,13 +284,14 @@ class FEMC(object):
                       'node':self.node_id,
                       'timeout':self.timeout,
                      }
-        publish(self.name, self.state)
         
         self.s = socket.socket(socket.AF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
         
         self.log.debug('__init__ %s, sim=%d, interface=%s, node=0x%x, timeout=%g',
                        self.config.inifilename, self.simulate,
                        self.interface, self.node_id, self.timeout)
+        
+        self.update()
         
         if self.simulate:
             # NOTE This class does not yet handle simulate;
@@ -314,6 +315,11 @@ class FEMC(object):
     def close(self):
         self.log.debug('close')
         self.s.close()
+    
+    def update(self):
+        # TODO include ppcomm and other stats in state
+        self.state['number'] += 1
+        self.publish(self.name, self.state)
     
     def clear(self):
         '''Empty the socket buffer.  Used before sending a command.

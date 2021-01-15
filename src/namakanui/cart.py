@@ -174,7 +174,7 @@ class Cart(object):
         
         # fix simulate set; simulated FEMC means simulated warm and cold carts.
         self.simulate &= (SIM_FEMC | SIM_WARM | SIM_COLD)
-        if self.femc is None:
+        if self.femc is None or self.femc.simulate:
             self.simulate |= SIM_FEMC
         if self.simulate & SIM_FEMC:
             self.simulate |= (SIM_WARM | SIM_COLD)

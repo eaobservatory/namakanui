@@ -47,7 +47,8 @@ class Instrument(object):
         '''
         self.sleep = sleep
         self.publish = publish
-        self.close_funcs = []
+        self.hardware = []
+        self.carts = {}
         self.initialise(inifile, simulate)
         # Instrument.__init__
 
@@ -61,22 +62,20 @@ class Instrument(object):
     def close(self):
         '''Close all instances and set to None'''
         self.log.debug('close')
-        for f in self.close_funcs:
+        for thing in self.hardware:
             try:
-                f()
+                thing.close()
             except:
                 pass
-        self.close_funcs = []
-        self.update_funcs_slow = []
-        self.update_funcs_cart = []
-        self.update_index_slow = -1
+        self.hardware = []
+        self.carts = {}
+        self.update_index_hw = -1
         self.update_index_cart = -1
         self.agilent = None
-        self.carts = {}
-        self.femc = None
         self.ifswitch = None
         self.load = None
         self.photonics = None
+        self.femc = None
         # Instrument.close
     
     
@@ -114,94 +113,74 @@ class Instrument(object):
         self.agilent = namakanui.agilent.Agilent(inifile, sleep, publish, simulate)
         self.ifswitch = namakanui.ifswitch.IFSwitch(inifile, sleep, publish, simulate)
         self.load = namakanui.load.Load(inifile, sleep, publish, simulate)
-        
-        self.close_funcs = [self.agilent.close, self.ifswitch.close, self.load.close]
-        self.update_funcs_slow = [self.agilent.update, self.ifswitch.update, self.load.update]
-        
-        # NOTE if SIM_PHOTONICS we just delete the instance --
-        # if we can't control the attenuator, we need to control agilent dbm.
-        # TODO have tune() check for photonics.simulate instead of None.
         self.photonics = namakanui.photonics.Photonics(inifile, sleep, publish, simulate)
-        if self.photonics.simulate:
-            self.photonics = None
-        else:
-            self.close_funcs.append(self.photonics.close)
-            self.update_funcs_slow.append(self.photonics.update)
-        
-        # NOTE if SIM_FEMC we just delete the instance (sim unsupported)
         self.femc = namakanui.femc.FEMC(inifile, sleep, publish, simulate)
-        if self.femc.simulate:
-            self.femc = None
-        else:
-            self.close_funcs.append(self.femc.close)
-            # NOTE no femc.update function
+        
+        self.hardware = [self.agilent, self.ifswitch, self.load, self.photonics, self.femc]
+        
+        # build up simulate bitmask from individual components
+        self.simulate = 0
+        for thing in self.hardware:
+            self.simulate |= thing.simulate
         
         for band in self.bands:
-            self.carts[band] = namakanui.cart.Cart(band, self.femc, inifile, sleep, publish, simulate)
+            cart = namakanui.cart.Cart(band, self.femc, inifile, sleep, publish, simulate)
+            self.carts[band] = cart
+            self.simulate |= cart.simulate
         
-        # stagger the cart update functions
-        self.update_funcs_cart += [cart.update_a for cart in self.carts.values()]
-        self.update_funcs_cart += [cart.update_b for cart in self.carts.values()]
-        self.update_funcs_cart += [cart.update_c for cart in self.carts.values()]
-        
-        # reconstruct full simulate bitmask from all components
-        things = [self.agilent, self.ifswitch, self.load]
-        things += [self.photonics] if self.photonics else []
-        things += [self.femc] if self.femc else []
-        things += list(self.carts.values())
-        self.simulate = 0
-        for thing in things:
-            self.simulate |= thing.simulate
         self.state['simulate'] = self.simulate
         self.state['sim_text'] = sim.bits_to_str(self.simulate)
+        self.state['bands'] = self.bands
         
-        # TODO REMOVE.  This may not be necessary if each component
-        #               already does an update() in its initialise().
-        self.update_all()
+        # NOTE each component already does an update() in its initialise().
+        self.update()
         # Instrument.initialise
 
+
+    def update(self):
+        '''Publish self.state only.'''
+        self.state['number'] += 1
+        self.publish(self.name, self.state)
+        # Instrument.update
 
     def update_all(self):
         '''Update and publish all instances.'''
         self.log.debug('update_all')
-        self.agilent.update() if self.agilent else None
-        self.ifswitch.update() if self.ifswitch else None
-        self.load.update() if self.load else None
-        self.photonics.update() if self.photonics else None
-        # NOTE no femc.update function
+        for thing in self.hardware:
+            thing.update()
         for cart in self.carts.values():
             cart.update_all()
-        self.state['number'] += 1
-        self.publish(self.name, self.state)
-        # Instrument.update_all()
+        self.update()
+        # Instrument.update_all
     
     
-    def update_one_slow(self):
-        '''Call a single update function and advance the index.
-            Updates one of: agilent, ifswitch, load, photonics.
-            Recommended 10s cycle, call delay 10.0/len(update_funcs_slow).
+    def update_one_hw(self):
+        '''Call a single hardware update function and advance the index.
+            Updates one of: agilent, ifswitch, load, photonics, femc.
+            Recommended 10s cycle, call delay 10.0/len(hardware).
         '''
-        self.log.debug('update_one_slow')
-        if not self.update_funcs_slow:  # called after close()
+        self.log.debug('update_one_hw')
+        if not self.hardware:  # called after close()
             return
-        self.update_index_slow = (self.update_index_slow + 1) % len(self.update_funcs_slow)
-        self.update_funcs_slow[self.update_index_slow]()
-        # Instrument.update_one_slow()
+        self.update_index_hw = (self.update_index_hw + 1) % len(self.hardware)
+        self.hardware[update_index_hw].update()
+        # Instrument.update_one_hw
     
     
     def update_one_cart(self):
-        '''Call a single update function and advance the index.
-            Recommended 20s cycle, call delay 20.0/len(update_funcs_cart).
+        '''Call a single update_one function and advance the cart index.
+            Recommended 20s cycle, call delay 20.0/(len(carts)*3).
             NOTE: Background carts really don't need fast updates.
                   Use a separate 5s cycle to monitor the current band:
                   carts[band].update_one(); sleep(1.66)
         '''
         self.log.debug('update_one_cart')
-        if not self.update_funcs_cart:  # called after close()
+        if not self.carts:  # called after close()
             return
-        self.update_index_cart = (self.update_index_cart + 1) % len(self.update_funcs_cart)
-        self.update_funcs_cart[self.update_index_cart]()
-        # Instrument.update_one_cart()
+        self.update_index_cart = (self.update_index_cart + 1) % len(self.carts)
+        cart = list(self.carts.values())[self.update_index_cart]
+        cart.update_one()
+        # Instrument.update_one_cart
     
 
 # switching bands needs to set power to safe levels, so it belongs here.
