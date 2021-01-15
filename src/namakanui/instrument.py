@@ -139,6 +139,7 @@ class Instrument(object):
 
     def update(self):
         '''Publish self.state only.'''
+        self.log.debug('update')
         self.state['number'] += 1
         self.publish(self.name, self.state)
         # Instrument.update
@@ -182,12 +183,31 @@ class Instrument(object):
         cart.update_one()
         # Instrument.update_one_cart
     
+    
+    def set_band(self, band):
+        '''Switch to given band, if not already selected.'''
+        self.log.debug('set_band(%s)', band)
+        band = int(band)
+        if band not in self.bands:
+            raise ValueError('band %d not in %s'%(band, self.bands))
+        if band == self.ifswitch.get_band():
+            self.log.debug('ifswitch already at band %d', band)
+            return
+        self.log.info('switching to band %d', band)
+        # reduce reference signal power to minimum levels
+        self.photonics.set_attenuation(self.photonics.max_att)
+        self.agilent.set_dbm(self.agilent.safe_dbm)
+        self.agilent.update(publish_only=True)
+        # zero bias/amps/magnets on all carts to reduce interference
+        for cart in self.carts.values():
+            cart.zero()
+            cart.update_all()
+        self.ifswitch.set_band(band)
+        # Instrument.set_band
+        
+        
+        
 
-# switching bands needs to set power to safe levels, so it belongs here.
-# it should also cut PA/LNA power to other bands to avoid interference.
-# cart should have a zero() function to ramp down without power-off.
-# even "single-band" scripts will want to do this, so perhaps it's
-# inappropriate not to include the other carts.  remove "band" option.
 
 # TODO: speed up cart init by saving offsets to config file.
 # if they were being logged somewhere i could verify that the offsets

@@ -962,6 +962,24 @@ class Cart(object):
         # Cart._servo_pa
     
     
+    def zero(self):
+        '''
+        Disable amplifiers and ramp bias voltages and magnet currents to zero.
+        Does not publish state.
+        '''
+        self.log.info('zero')
+        if not self.state['pd_enable']:
+            return
+        self._set_pa([0.0]*4)
+        for po in range(2):
+            for sb in range(2):
+                self._set_lna(po, sb, [0.0]*9)
+        self._set_lna_enable(0)
+        self._ramp_sis_bias_voltages([0.0]*4)
+        self._ramp_sis_magnet_currents([0.0]*4)
+        # Cart.zero
+    
+    
     def power(self, enable):
         '''
         Enable or disable power to the cartridge (state['pd_enable']).
@@ -993,10 +1011,7 @@ class Cart(object):
             self.log.info('power-on complete.')
         elif self.state['pd_enable'] and not enable:  # power-off
             self.log.info('power(0): power-off...')
-            self._set_lna_enable(0)  # necessary?  set LNAs to 0 first?
-            self._set_pa([0.0]*4)
-            self._ramp_sis_bias_voltages([0.0]*4)
-            self._ramp_sis_magnet_currents([0.0]*4)
+            self.zero()  # disable amps and ramp everything to 0
             if not self.sim_femc:
                 self.femc.set_pd_enable(self.ca, 0)
                 self.state['pd_enable'] = 0  # so background UPDATE doesn't choke
