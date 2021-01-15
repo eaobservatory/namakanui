@@ -26,7 +26,6 @@ import logging
 
 import namakanui.agilent
 import namakanui.cart
-import namakanui.cryo
 import namakanui.femc
 import namakanui.ifswitch
 import namakanui.load
@@ -74,7 +73,6 @@ class Instrument(object):
         self.update_index_cart = -1
         self.agilent = None
         self.carts = {}
-        self.cryo = None
         self.femc = None
         self.ifswitch = None
         self.load = None
@@ -114,13 +112,11 @@ class Instrument(object):
         self.close()
         
         self.agilent = namakanui.agilent.Agilent(inifile, sleep, publish, simulate)
-        self.cryo = namakanui.cryo.Cryo(inifile, sleep, publish, simulate)
         self.ifswitch = namakanui.ifswitch.IFSwitch(inifile, sleep, publish, simulate)
         self.load = namakanui.load.Load(inifile, sleep, publish, simulate)
         
         self.close_funcs = [self.agilent.close, self.ifswitch.close, self.load.close]
-        self.update_funcs_slow = [self.agilent.update, self.cryo.update,
-                                  self.ifswitch.update, self.load.update]
+        self.update_funcs_slow = [self.agilent.update, self.ifswitch.update, self.load.update]
         
         # NOTE if SIM_PHOTONICS we just delete the instance --
         # if we can't control the attenuator, we need to control agilent dbm.
@@ -149,7 +145,7 @@ class Instrument(object):
         self.update_funcs_cart += [cart.update_c for cart in self.carts.values()]
         
         # reconstruct full simulate bitmask from all components
-        things = [self.agilent, self.cryo, self.ifswitch, self.load]
+        things = [self.agilent, self.ifswitch, self.load]
         things += [self.photonics] if self.photonics else []
         things += [self.femc] if self.femc else []
         things += list(self.carts.values())
@@ -169,7 +165,6 @@ class Instrument(object):
         '''Update and publish all instances.'''
         self.log.debug('update_all')
         self.agilent.update() if self.agilent else None
-        self.cryo.update() if self.cryo else None
         self.ifswitch.update() if self.ifswitch else None
         self.load.update() if self.load else None
         self.photonics.update() if self.photonics else None
@@ -183,7 +178,7 @@ class Instrument(object):
     
     def update_one_slow(self):
         '''Call a single update function and advance the index.
-            Updates one of: agilent, cryo, ifswitch, load, photonics.
+            Updates one of: agilent, ifswitch, load, photonics.
             Recommended 10s cycle, call delay 10.0/len(update_funcs_slow).
         '''
         self.log.debug('update_one_slow')
