@@ -21,7 +21,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 from namakanui.ini import *
-from namakanui.femc import FEMC
 from namakanui import sim
 import logging
 import time
@@ -91,10 +90,6 @@ class Cart(object):
         # this list is used by update_one() and update_all()
         self.update_functions = [self.update_a, self.update_b, self.update_c]
         self.update_index = -1
-        
-        # fe_mode must be 1 (TROUBLESHOOTING) for warm testing, but otherwise
-        # should be 0 (OPERATIONAL) to enable safety interlocks.
-        self.state['fe_mode'] = int(self.config[b]['fe_mode'])
         
         self.log.debug('__init__ %s, sim=%d, band=%d',
                        self.config.inifilename, self.simulate, band)
@@ -201,9 +196,6 @@ class Cart(object):
                 #raise RuntimeError(self.logname + ' warm cartridge ESN %s not found in list: %s' % (self.warm_esn, esns))
             #if not self.sim_cold and self.cold_esn not in esns:
                 #raise RuntimeError(self.logname + ' cold cartridge ESN %s not found in list: %s' % (self.cold_esn, esns))
-        
-        # set fe_mode from current state (set in __init__ or by last set_fe_mode)
-        self.set_fe_mode(self.state['fe_mode'])
         
         self.state['ppcomm_time'] = 0.0  # put this near the top of state
         
@@ -504,19 +496,6 @@ class Cart(object):
             return True
         nom_magnet = interp_table(self.magnet_table, self.state['lo_ghz'])[1:]
         return bool(nom_magnet[po*2 + sb])
-    
-    
-    def set_fe_mode(self, mode):
-        '''
-        Calls set_fe_mode on the FEMC.  Use 1 (TROUBLESHOOTING) for warm tests,
-        otherwise use 0 (OPERATIONAL) to enable software interlocks.
-        TODO: Actually read back using get_fe_mode, in an update function.
-        '''
-        self.log.info('set_fe_mode(%s)', mode)
-        mode = int(mode)
-        if not self.sim_femc:
-            self.femc.set_fe_mode(mode)
-        self.state['fe_mode'] = mode
     
     
     def tune(self, lo_ghz, voltage, skip_servo_pa=False, lock_only=False):

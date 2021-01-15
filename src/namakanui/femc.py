@@ -278,24 +278,27 @@ class FEMC(object):
         self.node_id = int(cfg['node'], 0)
         self.node = (self.node_id+1) << 18
         self.timeout = float(cfg['timeout'])
+        self.fe_mode = int(cfg['fe_mode'])
+        
         self.state = {'number':0,
                       'simulate':self.simulate,
                       'interface':self.interface,
                       'node':self.node_id,
                       'timeout':self.timeout,
+                      'fe_mode':self.fe_mode,
                      }
         
+        # create a socket even if simulated so close() is simple
         self.s = socket.socket(socket.AF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
         
         self.log.debug('__init__ %s, sim=%d, interface=%s, node=0x%x, timeout=%g',
                        self.config.inifilename, self.simulate,
                        self.interface, self.node_id, self.timeout)
         
-        self.update()
-        
+        # NOTE This class does not yet handle simulate;
+        #      caller must not invoke any other methods if simulated.
         if self.simulate:
-            # NOTE This class does not yet handle simulate;
-            #      caller must not invoke any other methods if simulated.
+            self.update()
             return
         
         self.s.bind((self.interface,))
@@ -305,7 +308,11 @@ class FEMC(object):
             estr = _setup_errors.get(setup, "unknown error")
             raise FEMC_RuntimeError("get_setup_info error: %d: %s" % (setup, estr))
         
+        self.set_fe_mode(self.fe_mode, do_publish=False)
+        
         # TODO: other setup/init
+        
+        self.update()
         # FEMC.__init__
         
     def __del__(self):
@@ -569,7 +576,7 @@ class FEMC(object):
             arg = 1
         self.set_special(0x09, arg)
     
-    def set_fe_mode(self, mode):
+    def set_fe_mode(self, mode, do_publish=True):
         '''Set FEMC operating mode.
              0: Operational
              1: Troubleshooting: no software interlocks in place, trained staff only.
@@ -577,6 +584,10 @@ class FEMC(object):
         if mode < 0 or mode > 2:
             raise FEMC_ValueError("mode %s not in [0,2] range" % (repr(mode)))
         self.set_special(0x0e, mode)
+        self.fe_mode = mode
+        self.state['fe_mode'] = mode
+        if do_publish:
+            self.update()
     
     def set_read_esn(self):
         '''Search the ESNs available on the One Wire Bus.  This process is
