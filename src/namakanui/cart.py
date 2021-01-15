@@ -221,37 +221,11 @@ class Cart(object):
         else:
             self.state['pd_enable'] = 0
         
-        if self.state['pd_enable'] and not self.sim_cold:
-            sis_open_loop = []
-            lna_enable = []
-            #lna_led_enable = [] # error -12: undefined RCA
-            for po in range(2):
-                for sb in range(2):
-                    sis_open_loop.append(self.femc.get_sis_open_loop(self.ca, po, sb))
-                    lna_enable.append(self.femc.get_lna_enable(self.ca, po, sb))
-                    #lna_led_enable.append(self.femc.get_lna_led_enable(self.ca, po, sb))
-            self.state['sis_open_loop'] = sis_open_loop
-            self.state['lna_enable'] = lna_enable
-            #self.state['lna_led_enable'] = lna_led_enable
-        else:
-            self.state['sis_open_loop'] = [0]*4
-            self.state['lna_enable'] = [0]*4
-            #self.state['lna_led_enable'] = [0]*4
-        
-        if self.state['pd_enable'] and not self.sim_warm:
-            self.state['yto_coarse'] = self.femc.get_cartridge_lo_yto_coarse_tune(self.ca)
-            #self.state[''] = femc.get_cartridge_lo_photomixer_enable(self.ca)
-            self.state['pll_loop_bw'] = self.femc.get_cartridge_lo_pll_loop_bandwidth_select(self.ca)
-            self.state['pll_sb_lock'] = self.femc.get_cartridge_lo_pll_sb_lock_polarity_select(self.ca)
-            self.state['pll_null_int'] = self.femc.get_cartridge_lo_pll_null_loop_integrator(self.ca)
-        else:
-            self.state['yto_coarse'] = 0
-            self.state['pll_loop_bw'] = 0
-            self.state['pll_sb_lock'] = 0
-            self.state['pll_null_int'] = 0
-        
         # create this entry so update_c doesn't need to check existence every time
         self.state['cart_temp'] = [0.0]*6
+        
+        # create this just for position in state structure
+        self.state['pll_temp'] = 0.0
         
         # reset the hot flag so we zero params on first high_temperature()
         self.hot = False
@@ -260,7 +234,9 @@ class Cart(object):
         # will call _ramp_sis_bias_voltages to zero
         self.bias_error = [0.0]*4
 
-        self.update_all()  # fill out rest of state dict
+        # fill out rest of state dict, but don't publish yet
+        for f in self.update_functions:
+            f(do_publish=False)
         
         # if the cart is already powered, measure SIS bias error.
         # sets PA gate/drain voltages to 0 as a side effect.
@@ -269,6 +245,14 @@ class Cart(object):
         if self.state['pd_enable']:
             self._calc_sis_bias_error()
         
+        # if config has a lock_side parameter, set it now
+        if 'lock_side' in self.config[str(self.band)]:
+            lock_side = self.config[str(self.band)]['lock_side']
+            self.set_lock_side(lock_side)
+        
+        # publish state
+        self.state['number'] += 1
+        self.publish(self.name, self.state)
         # Cart.initialise
     
     # TODO: it might make more logical sense to break up updates into
@@ -276,27 +260,31 @@ class Cart(object):
     
     def update_a(self, do_publish=True):
         '''
-        Update LNA parameters. Expect this to take ~36ms.
+        Update LNA parameters. Expect this to take ~40ms.
         '''
         self.log.debug('update_a(do_publish=%s)', do_publish)
         
         if self.state['pd_enable'] and not self.sim_cold:
+            lna_enable = []
             dv = []
             dc = []
             gv = []
             for po in range(2):  # polarization
                 for sb in range(2):  # sideband
+                    lna_enable.append(self.femc.get_lna_enable(self.ca, po, sb))
                     for st in range(3):  # LNA stage
                         dv.append(self.femc.get_lna_drain_voltage(self.ca, po, sb, st))
                         dc.append(self.femc.get_lna_drain_current(self.ca, po, sb, st))
                         gv.append(self.femc.get_lna_gate_voltage(self.ca, po, sb, st))
-            self.state['lna_drain_v'] = dv;
-            self.state['lna_drain_c'] = dc;
-            self.state['lna_gate_v'] = gv;
+            self.state['lna_enable'] = lna_enable
+            self.state['lna_drain_v'] = dv
+            self.state['lna_drain_c'] = dc
+            self.state['lna_gate_v'] = gv
         else:
-            self.state['lna_drain_v'] = [0.0]*12;
-            self.state['lna_drain_c'] = [0.0]*12;
-            self.state['lna_gate_v'] = [0.0]*12;
+            self.state['lna_enable'] = [0]*4
+            self.state['lna_drain_v'] = [0.0]*12
+            self.state['lna_drain_c'] = [0.0]*12
+            self.state['lna_gate_v'] = [0.0]*12
         
         if do_publish:
             self.state['number'] += 1
@@ -306,16 +294,17 @@ class Cart(object):
     
     def update_b(self, do_publish=True):
         '''
-        Update params for PLL lock, PA, SIS mixers. Expect this to take ~25ms.
+        Update params for PLL lock, PA, SIS mixers. Expect this to take ~39ms.
         '''
         self.log.debug('update_b(do_publish=%s)', do_publish)
         
-        if not self.sim_femc:
-            self.state['ppcomm_time'] = self.femc.get_ppcomm_time()  # expect ~1ms, TODO warn if long
-        else:
-            self.state['ppcomm_time'] = 0.0
-        
         if self.state['pd_enable'] and not self.sim_warm:
+            self.state['yto_coarse'] = self.femc.get_cartridge_lo_yto_coarse_tune(self.ca)
+            self.state['pll_ref_power'] = self.femc.get_cartridge_lo_pll_ref_total_power(self.ca)
+            self.state['pll_if_power'] = self.femc.get_cartridge_lo_pll_if_total_power(self.ca)
+            self.state['pll_loop_bw'] = self.femc.get_cartridge_lo_pll_loop_bandwidth_select(self.ca)
+            self.state['pll_null_int'] = self.femc.get_cartridge_lo_pll_null_loop_integrator(self.ca)
+            self.state['pll_sb_lock'] = self.femc.get_cartridge_lo_pll_sb_lock_polarity_select(self.ca)
             self.state['pll_lock_v'] = self.femc.get_cartridge_lo_pll_lock_detect_voltage(self.ca)
             self.state['pll_corr_v'] = self.femc.get_cartridge_lo_pll_correction_voltage(self.ca)
             self.state['pll_unlock'] = self.femc.get_cartridge_lo_pll_unlock_detect_latch(self.ca)
@@ -330,6 +319,12 @@ class Cart(object):
             self.state['pa_drain_v'] = pa_dv
             self.state['pa_drain_c'] = pa_dc
         else:
+            self.state['yto_coarse'] = 0
+            self.state['pll_ref_power'] = 0.0
+            self.state['pll_if_power'] = 0.0
+            self.state['pll_loop_bw'] = 0
+            self.state['pll_null_int'] = 0
+            self.state['pll_sb_lock'] = 0
             self.state['pll_lock_v'] = 0.0
             self.state['pll_corr_v'] = 0.0
             self.state['pll_unlock'] = 0
@@ -342,21 +337,25 @@ class Cart(object):
             self.state['pa_drain_s'] = [0.0]*2
         
         if self.state['pd_enable'] and not self.sim_cold:
+            sis_open_loop = []
             sis_v = []
             sis_c = []
             sis_mag_v = []
             sis_mag_c = []
             for po in range(2):  # polarization
                 for sb in range(2):  # sideband
+                    sis_open_loop.append(self.femc.get_sis_open_loop(self.ca, po, sb))
                     sis_v.append(self.femc.get_sis_voltage(self.ca, po, sb))
                     sis_c.append(self.femc.get_sis_current(self.ca, po, sb))
                     sis_mag_v.append(self.femc.get_sis_magnet_voltage(self.ca, po, sb))
                     sis_mag_c.append(self.femc.get_sis_magnet_current(self.ca, po, sb))
+            self.state['sis_open_loop'] = sis_open_loop
             self.state['sis_v'] = sis_v
             self.state['sis_c'] = sis_c
             self.state['sis_mag_v'] = sis_mag_v
             self.state['sis_mag_c'] = sis_mag_c
         else:
+            self.state['sis_open_loop'] = [0]*4
             self.state['sis_v'] = [0.0]*4
             self.state['sis_c'] = [0.0]*4
             self.state['sis_mag_v'] = [0.0]*4
@@ -381,10 +380,15 @@ class Cart(object):
     
     def update_c(self, do_publish=True):
         '''
-        Update params for AMC, temperatures, misc. Expect this to take ~24ms.
+        Update params for AMC, temperatures, misc. Expect this to take ~23ms.
         TODO could probably bundle into fewer top-level state params.
         '''
         self.log.debug('update_c(do_publish=%s)', do_publish)
+        
+        if not self.sim_femc:
+            self.state['ppcomm_time'] = self.femc.get_ppcomm_time()  # TODO warn if >>1ms
+        else:
+            self.state['ppcomm_time'] = 0.0
         
         if self.state['pd_enable'] and not self.sim_warm:
             self.state['amc_gate_a_v'] = self.femc.get_cartridge_lo_amc_gate_a_voltage(self.ca)
@@ -404,8 +408,6 @@ class Cart(object):
             self.state['pa_5v'] = self.femc.get_cartridge_lo_pa_supply_voltage_5v(self.ca)
             self.state['pll_temp'] = self.femc.get_cartridge_lo_pll_assembly_temp(self.ca)
             self.state['yig_heater_c'] = self.femc.get_cartridge_lo_yig_heater_current(self.ca) 
-            self.state['pll_ref_power'] = self.femc.get_cartridge_lo_pll_ref_total_power(self.ca)
-            self.state['pll_if_power'] = self.femc.get_cartridge_lo_pll_if_total_power(self.ca)
         else:
             self.state['amc_gate_a_v'] = 0.0
             self.state['amc_drain_a_v'] = 0.0
@@ -423,8 +425,6 @@ class Cart(object):
             self.state['pa_5v'] = 0.0
             self.state['pll_temp'] = 0.0
             self.state['yig_heater_c'] = 0.0
-            self.state['pll_ref_power'] = 0.0
-            self.state['pll_if_power'] = 0.0
         
         # disconnected temperature sensors raise -5: hardware conversion error.
         # during testing with band3, i found that attempting to read such a
@@ -452,17 +452,8 @@ class Cart(object):
         if not self.hot:
             self.hot = self.high_temperature()
             if self.hot and self.state['pd_enable']:
-                self.log.debug('high temperature, cart temps: %s', self.state['cart_temp'])
-                if not self.sim_warm:
-                    self.log.warn('high temperature, setting pa to zero')
-                    self._set_pa([0.0]*4)
-                if not self.sim_cold:
-                    self.log.warn('high temperature, setting lna/sis to zero')
-                    self._ramp_sis_magnet_currents([0.0]*4)
-                    for i in range(4):
-                        self._set_lna(i//2,i%2, [0.0]*9)
-                    self._set_lna_enable(0)
-                    self._ramp_sis_bias_voltages([0.0]*4)
+                self.log.warn('high temperature, cart temps: %s', self.state['cart_temp'])
+                self.zero()
         
         if do_publish:
             self.state['number'] += 1
@@ -967,14 +958,14 @@ class Cart(object):
         Disable amplifiers and ramp bias voltages and magnet currents to zero.
         Does not publish state.
         '''
-        self.log.info('zero')
+        self.log.info('zeroing pa/lna/sis/mag')
         if not self.state['pd_enable']:
             return
         self._set_pa([0.0]*4)
         for po in range(2):
             for sb in range(2):
                 self._set_lna(po, sb, [0.0]*9)
-        self._set_lna_enable(0)
+        self._set_lna_enable(0, force=True)
         self._ramp_sis_bias_voltages([0.0]*4)
         self._ramp_sis_magnet_currents([0.0]*4)
         # Cart.zero
@@ -1416,14 +1407,6 @@ class Cart(object):
         '''
         Internal function, does not publish state.
         Given lna is [VD1, VD2, VD3, ID1, ID2, ID3, VG1, VG2, VG3] (same as table row).
-        
-        TODO: Where do we need to ENABLE the LNA?  Powerup? Tune? Here?
-              Should we enable LNA before or after setting drain v/c?
-              Do we need a pause after enabling the LNA?
-        
-        TODO: Are we supposed to compare to nominal gate voltage?
-        
-        TODO: What does LNA LED do?
         '''
         self.log.debug('_set_lna(%d, %d, %s)', po, sb, lna)
         lna_state_i = (po*2 + sb) * 3
@@ -1440,12 +1423,13 @@ class Cart(object):
         # Cart._set_lna
 
 
-    def _set_lna_enable(self, enable):
+    def _set_lna_enable(self, enable, force=False):
         '''
         Internal function, does not publish state.
-        Calls set_lna_enable for all mixers.
+        Calls set_lna_enable for all mixers where enable doesn't match
+        current state, which is kept updated by the update_a function.
         '''
-        self.log.info('_set_lna_enable(%s)', enable)
+        self.log.info('_set_lna_enable(%s, force=%s)', enable, force)
         enable = int(bool(enable))
         if self.sim_cold:
             self.state['lna_enable'] = [enable]*4
@@ -1454,9 +1438,36 @@ class Cart(object):
             raise RuntimeError(self.logname + ' power disabled')
         for po in range(2):
             for sb in range(2):
-                self.femc.set_lna_enable(self.ca, po, sb, enable)
-                self.state['lna_enable'][po*2 + sb] = enable  # TODO check in update
+                if force or enable != self.state['lna_enable'][po*2 + sb]:
+                    self.femc.set_lna_enable(self.ca, po, sb, enable)
+                    self.state['lna_enable'][po*2 + sb] = enable
         # Cart._set_lna_enable
 
-
-
+    
+    def set_lock_side(self, lock_side, force=False):
+        '''
+        Set PLL to lock above or below the reference signal.
+        Argument lock_side:
+            0 or "below": lock below reference
+            1 or "above": lock above reference
+            None: no change
+        Updates state but does not publish.
+        Does nothing if lock_side already matches state[pll_sb_lock],
+        which is kept updated by the update_b function.
+        '''
+        if lock_side is None:
+            lock_side = self.state['pll_sb_lock']
+        else:
+            lock_side = lock_side.lower() if hasattr(lock_side, 'lower') else lock_side
+            lock_side = {0:0, 1:1, '0':0, '1':1, 'below':0, 'above':1}[lock_side]
+        lock_str = {0:'below', 1:'above'}[lock_side]
+        self.log.info('set_lock_side(%d, force=%s): %s', lock_side, force, lock_str)
+        if self.sim_warm:
+            self.state['pll_sb_lock'] = lock_side
+            return
+        if not self.state['pd_enable']:
+            raise RuntimeError(self.logname + ' power disabled')
+        if force or lock_side != self.state['pll_sb_lock']:
+            self.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, lock_side)
+            self.state['pll_sb_lock'] = lock_side
+        # Cart.set_lock_side
