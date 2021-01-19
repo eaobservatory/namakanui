@@ -125,7 +125,7 @@ def adjust_att(lo_ghz):
         return
     # RMB 20200316: use new utility function
     if namakanui.util.tune(cart, agilent, photonics, lo_ghz, pll_range=[-1.5,-1.5],
-                           att_ini=use_ini, att_start=args.att, att_min=0,
+                           att_ini=use_ini, att_start=args.att, att_min=-photonics.max_att,
                            dbm_ini=True, dbm_start=0, dbm_max=0):
         sys.stdout.write('%.3f %d %.3f %.3f %.3f\n' % (lo_ghz, att, cart.state['pll_if_power'], cart.state['pa_drain_s'][0], cart.state['pa_drain_s'][1]))
         sys.stdout.flush()

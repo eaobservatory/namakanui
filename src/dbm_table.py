@@ -66,7 +66,6 @@ parser.add_argument('LO_GHz_end', type=float)
 parser.add_argument('LO_GHz_step', type=float)
 parser.add_argument('lock_polarity', choices=['below','above'])
 parser.add_argument('dbm')
-parser.add_argument('att')
 args = parser.parse_args()
 #print(args.band, args.LO_GHz_start, args.LO_GHz_end, args.LO_GHz_step)
 
@@ -87,24 +86,13 @@ except:
     dbm_use_ini = True
     args.dbm = float(args.dbm[3:] or '0')
 
-att_use_ini = False
-try:
-    args.att = float(args.att)
-except:
-    if not args.att.startswith('ini'):
-        logging.error('invalid att, must be a number or "ini"')
-        sys.exit(1)
-    att_use_ini = True
-    args.att = float(args.att[3:] or '0')
 
 # if tune.sh, relax tuning constraints
 pll_range = [-1.5,-1.5]
 dbm_max = agilent.max_dbm
-att_min = 0
 if args.LO_GHZ_start == args.LO_GHZ_end:
     pll_range = [-.8, -2.5]
     dbm_max = None
-    att_min = None
 
 
 #sys.exit(0)
@@ -121,6 +109,7 @@ agilent.set_output(1)
 photonics = None
 nconfig = namakanui.ini.IncludeParser(datapath+'namakanui.ini')
 if 'photonics_ini' in nconfig['namakanui']:
+    logging.warning('using photonics, holding attenuation at table values')
     pini = nconfig['namakanui']['photonics_ini']
     photonics = namakanui.photonics.Photonics(datapath+pini, time.sleep, mypub)
     photonics.log.setLevel(logging.INFO)
@@ -161,7 +150,7 @@ def adjust_dbm(lo_ghz):
     #if namakanui.util.tune(cart, agilent, lo_ghz, use_ini=use_ini, dbm_range=[args.dbm,100], pll_range=[-1.5,-1.5]):
     if namakanui.util.tune(cart, agilent, photonics, lo_ghz, pll_range=pll_range,
                            dbm_ini=dbm_use_ini, dbm_start=args.dbm, dbm_max=dbm_max,
-                           att_ini=att_use_ini, att_start=args.att, att_min=att_min):
+                           att_ini=True, att_start=0, att_min=0):
         sys.stdout.write('%.3f %6.2f %.3f %.3f %.3f\n' % (lo_ghz, agilent.state['dbm'], cart.state['pll_if_power'], cart.state['pa_drain_s'][0], cart.state['pa_drain_s'][1]))
         sys.stdout.flush()
 
