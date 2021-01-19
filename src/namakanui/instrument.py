@@ -154,7 +154,6 @@ class Instrument(object):
         self.update()
         # Instrument.update_all
     
-    
     def update_one_hw(self):
         '''Call a single hardware update function and advance the index.
             Updates one of: agilent, ifswitch, load, photonics, femc.
@@ -166,7 +165,6 @@ class Instrument(object):
         self.update_index_hw = (self.update_index_hw + 1) % len(self.hardware)
         self.hardware[update_index_hw].update()
         # Instrument.update_one_hw
-    
     
     def update_one_cart(self):
         '''Call a single update_one function and advance the cart index.
@@ -206,12 +204,227 @@ class Instrument(object):
         # Instrument.set_band
         
         
+    def set_reference(self, hz, dbm, att):
+        '''Set reference signal to desired parameters,
+           in the proper order to avoid power spikes.
+           Arguments:
+            hz: agilent output frequency, Hz
+            dbm: agilent output power, dBm
+            att: photonics attenuation, counts
+        '''
+        self.log.debug('set_reference(%g, %g, %d)', hz, dbm, att)
+        # if increasing power output, set the frequency first.
+        # if decreasing power output, set the attenuation first.
+        if att < self.photonics.state['attenuation']:
+            self.agilent.set_hz_dbm(hz, dbm)
+            self.photonics.set_attenuation(att)
+        else:
+            self.photonics.set_attenuation(att)
+            self.agilent.set_hz_dbm(hz, dbm)
+        # set_hz_dbm doesn't call update (but set_attenuation does)
+        self.agilent.update()
+        # Instrument.set_reference
+    
+    
+    def _try_tune(self, cart, lo_ghz, voltage, msg, skip_servo_pa, lock_only):
+        '''Helper function used by tune(): catch and log BadLock exceptions.'''
+        self.log.info('cart.tune %.3f ghz, %s', lo_ghz, msg)
+        try:
+            cart.tune(lo_ghz, voltage, skip_servo_pa=skip_servo_pa, lock_only=lock_only)
+        except namakanui.cart.BadLock as e:
+            self.log.error('tune failed at %.3f ghz, %s', lo_ghz, msg)
+        cart.update_all()
+        # Instrument._try_tune
+
+    def _try_att(self, cart, lo_ghz, voltage, att, skip_servo_pa, lock_only, delay_secs):
+        '''Helper function used by tune(): set new attenuation, retune if needed.'''
+        self.photonics.set_attenuation(att)
+        self.sleep(delay_secs)
+        self.photonics.update()
+        cart.update_all()
+        if cart.state['pll_unlock']:
+            self._try_tune(cart, lo_ghz, voltage, 'att %d'%(att), skip_servo_pa, lock_only)
+        # Instrument._try_att
+
+    def _try_dbm(self, cart, lo_ghz, voltage, dbm, skip_servo_pa, lock_only, delay_secs):
+        '''Helper function used by tune(): set a new dbm, retune if needed.'''
+        self.agilent.set_dbm(dbm)
+        self.sleep(delay_secs)
+        self.agilent.update()
+        cart.update_all()
+        if cart.state['pll_unlock']:
+            self._try_tune(cart, lo_ghz, voltage, 'dbm %.2f'%(dbm), skip_servo_pa, lock_only)
+        # Instrument._try_dbm
+    
+    
+    def tune(self, band, lo_ghz, voltage=0.0,
+             lock_side='above', pll_range=[-.8,-2.5],
+             att_ini=True, att_start=None, att_min=None,
+             dbm_ini=True, dbm_start=None, dbm_max=None,
+             skip_servo_pa=False, lock_only=False):
+        '''Tune the receiver and optimize PLL IF power by adjusting
+           photonics attenuation and/or agilent output power.
+           Returns True on success, False on failure.  (TODO throw on failure?)
+           Arguments:
+            band: Band to tune
+            lo_ghz: Frequency to tune to, GHz
+            voltage: Target PLL control voltage [-10, 10]; None skips FM adjustment
+            lock_side: Lock PLL "below"(0) or "above"(1) ref signal; if None no change
+            pll_range: [min_power, max_power].
+            att_ini: If True, att_range is relative to interpolated table value.
+            att_start: If None, is (att_ini ?  0 : photonics.max_att)
+            att_min:   If None, is (att_ini ? -6 : 0)
+            dbm_ini: If True, dbm_range is relative to interpolated table value.
+               NOTE: If not photonics.simulate, use shared photonics_dbm table (band 0).
+            dbm_start: If None, is (dbm_ini ? 0 : agilent.safe_dbm)
+            dbm_max:   If None, is (dbm_ini ? 3 : agilent.max_dbm)
+            skip_servo_pa: If true, PA not adjusted for target mixer current.
+            lock_only: If true, pa/lna/sis/magnets held at previous values.
+        '''
+        band = int(band)
+        lo_ghz = float(lo_ghz)
+        self.log.info('tuning band %d to %g ghz...', band, lo_ghz)
         
+        # TODO: band 7 may require a longer delay
+        delay_secs = 0.05
+        
+        # set ifswitch; will raise if band is invalid
+        self.set_band(band)
+        
+        cart = self.carts[band]
+        
+        # set PLL lock side and compute frequencies
+        cart.set_lock_side(lock_side)
+        lock_side = cart.state['pll_sb_lock']  # 0 or 1
+        floog = self.agilent.floog * [1.0, -1.0][lock_side]  # [below, above]
+        fyig = lo_ghz / (cart.cold_mult * cart.warm_mult)
+        fsig = (fyig*cart.warm_mult + floog) / self.agilent.harmonic
+        
+        # function alias
+        clip = namakanui.util.clip
+        
+        # photonics attenuation search range
+        att_max = self.photonics.max_att
+        att_start = (0 if att_ini else att_max) if att_start is None else att_start
+        att_min = (-6 if att_ini else 0) if att_min is None else att_min
+        if att_ini:
+            att_ini = self.photonics.interp_att(cart.band, lo_ghz)
+            att_start += att_ini
+            att_min += att_ini
+        # int+round because user may have passed floats for att_start/min
+        att_start = int(round(clip(att_start, 0, att_max)))
+        att_min = int(round(clip(att_min, 0, att_max)))
+        
+        # agilent output power search range
+        dbm_min = self.agilent.safe_dbm
+        dbm_start = (0.0 if dbm_ini else dbm_min) if dbm_start is None else dbm_start
+        dbm_max = (3.0 if dbm_ini else agilent.max_dbm) if dbm_max is None else dbm_max
+        if dbm_ini:
+            ghz = lo_ghz
+            dbm_band = cart.band
+            if not self.photonics.simulate:
+                # use the shared photonics_dbm power table
+                ghz = fsig
+                dbm_band = 0
+            dbm_ini = self.agilent.interp_dbm(dbm_band, ghz)
+            dbm_start += dbm_ini
+            dbm_max += dbm_ini
+        dbm_start = clip(dbm_start, dbm_min, self.agilent.max_dbm)
+        dbm_max = clip(dbm_max, dbm_min, self.agilent.max_dbm)
+        
+        self.log.info('att_start: %d, att_min: %d', att_start, att_min)
+        self.log.info('dbm_start: %.2f, dbm_max: %.2f', dbm_start, dbm_max)
+        
+        # make sure pll_range signs and order are correct (must exist)
+        pll_range = [-abs(pll_range[0]), -abs(pll_range[1])]
+        pll_range.sort()
+        pll_range.reverse()
+        self.log.info('pll_range: [%.2f, %.2f]', pll_range[0], pll_range[1])
+        
+        att = att_start
+        dbm = dbm_start
+        hz = fsig*1e9
+        self.log.info('agilent hz: %.1f', hz)
+        
+        # from here on, any uncaught exception needs to set power to safe levels
+        try:
+            self.set_reference(hz, dbm, att)
+            self.sleep(delay_secs)
+            self._try_tune(cart, lo_ghz, voltage, 'att %d, dbm %.2f'%(att,dbm), skip_servo_pa, lock_only)
+            
+            ### PHOTONICS ATTENUATOR ADJUSTMENT
+            if not self.photonics.simulate:
+                # quickly decrease attenuation (raise power) if needed
+                while (cart.state['pll_unlock'] or cart.state['pll_if_power'] > pll_range[0]) and att > att_min:
+                    att -= 4  # 2 dB for 6-bit 31.5 dB attenuator
+                    if att < att_min:
+                        att = att_min
+                    self.log.info('unlock: %d, pll_if: %.3f; decreasing att to %d', cart.state['pll_unlock'], cart.state['pll_if_power'], att)
+                    self._try_att(cart, lo_ghz, voltage, att, skip_servo_pa, lock_only, delay_secs)
+                # increase attenuation (decrease power) if too strong
+                while (not cart.state['pll_unlock']) and cart.state['pll_if_power'] < pll_range[1] and att < att_max:
+                    att += 2  # 1 dB for 6-bit 31.5 dB attenuator
+                    if att > att_max:
+                        att = att_max
+                    self.log.info('unlock: %d, pll_if: %.3f; increasing att to %d', cart.state['pll_unlock'], cart.state['pll_if_power'], att)
+                    self._try_att(cart, lo_ghz, voltage, att, skip_servo_pa, lock_only, delay_secs)
+                # slowly decrease attenuation to target (and relock if needed)
+                while (cart.state['pll_unlock'] or cart.state['pll_if_power'] > pll_range[0]) and att > att_min:
+                    att -= 1  # .5 dB for 6-bit 31.5 dB attenuator
+                    if att < att_min:
+                        att = att_min
+                    self.log.info('unlock: %d, pll_if: %.3f; decreasing att to %d', cart.state['pll_unlock'], cart.state['pll_if_power'], att)
+                    self._try_att(cart, lo_ghz, voltage, att, skip_servo_pa, lock_only, delay_secs)
+            
+            ### AGILENT OUTPUT POWER ADJUSTMENT
+            if not self.agilent.simulate:
+                # quickly increase power if needed
+                while (cart.state['pll_unlock'] or cart.state['pll_if_power'] > pll_range[0]) and dbm < dbm_max:
+                    dbm += 1.0
+                    if dbm > dbm_max:
+                        dbm = dbm_max
+                    self.log.info('unlock: %d, pll_if: %.3f; increasing dbm to %.2f', cart.state['pll_unlock'], cart.state['pll_if_power'], dbm)
+                    self._try_dbm(cart, lo_ghz, voltage, dbm, skip_servo_pa, lock_only, delay_secs)
+                # decrease power if too strong
+                while (not cart.state['pll_unlock']) and cart.state['pll_if_power'] < pll_range[1] and dbm > dbm_min:
+                    dbm -= 0.3
+                    if dbm < dbm_min:
+                        dbm = dbm_min
+                    self.log.info('unlock: %d, pll_if: %.3f; decreasing dbm to %.2f', cart.state['pll_unlock'], cart.state['pll_if_power'], dbm)
+                    self._try_dbm(cart, lo_ghz, voltage, dbm, skip_servo_pa, lock_only, delay_secs)
+                # slowly increase power to target (and relock if needed)
+                while (cart.state['pll_unlock'] or cart.state['pll_if_power'] > pll_range[0]) and dbm < dbm_max:
+                    dbm += 0.1
+                    if dbm > dbm_max:
+                        dbm = dbm_max
+                    self.log.info('unlock: %d, pll_if: %.3f; increasing dbm to %.2f', cart.state['pll_unlock'], cart.state['pll_if_power'], dbm)
+                    self._try_dbm(cart, lo_ghz, voltage, dbm, skip_servo_pa, lock_only, delay_secs)
+            
+            if cart.state['pll_unlock']:
+                self.log.error('unlocked at %.3f ghz, pll_if %.3f, final att %d, dbm %.2f. setting power to safe levels.', lo_ghz, cart.state['pll_if_power'], att, dbm)
+                try:
+                    self.agilent.set_dbm(self.agilent.safe_dbm)
+                finally:
+                    self.photonics.set_attenuation(self.photonics.max_att)
+                return False
+            
+            log.info('tuned to %.3f ghz, pll_if %.3f, final att %d, dbm %.2f', lo_ghz, cart.state['pll_if_power'], att, dbm)
+            return True
+        
+        except:
+            log.exception('unhandled error tuning to %.3f ghz. setting power to safe levels.', lo_ghz)
+            # nested try/finally block will attempt to set power on both devices,
+            # even if one fails, while still raising any errors produced.
+            try:
+                self.agilent.set_dbm(self.agilent.safe_dbm)
+            finally:
+                self.photonics.set_attenuation(self.photonics.max_att)
+            raise
+        # Instrument.tune
+
 
 
 # TODO: speed up cart init by saving offsets to config file.
 # if they were being logged somewhere i could verify that the offsets
 # are consistent and/or use an average value.
 
-# tuning involves multiple systems and should also switch bands if needed,
-# so it belongs here too.
