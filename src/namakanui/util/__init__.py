@@ -1,7 +1,10 @@
 '''
-namakanui/util.py   RMB 20200227
+namakanui/util/__init__.py   RMB 20200227
 
-Utility functions for scripts.
+This file contains some basic utility functions.
+
+The rest of this package directory contains modules that can be invoked
+by the namakanui_util.py script, or as actions by namakanui_task.py.
 
 
 Copyright (C) 2020 East Asian Observatory
@@ -24,7 +27,7 @@ import sys
 import os
 import logging
 import time
-import namakanui.cart  # needed for BadLock
+
 
 def get_paths():
     '''Return binpath and datapath for this script.'''
