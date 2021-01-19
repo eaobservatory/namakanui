@@ -48,8 +48,10 @@ import time
 import argparse
 import namakanui.cart
 import namakanui.agilent
+import namakanui.photonics
 import namakanui.ifswitch
 import namakanui.util
+import namakanui.ini
 import logging
 
 logging.root.setLevel(logging.DEBUG)
@@ -64,6 +66,7 @@ parser.add_argument('LO_GHz_end', type=float)
 parser.add_argument('LO_GHz_step', type=float)
 parser.add_argument('lock_polarity', choices=['below','above'])
 parser.add_argument('dbm')
+parser.add_argument('att')
 args = parser.parse_args()
 #print(args.band, args.LO_GHz_start, args.LO_GHz_end, args.LO_GHz_step)
 
@@ -74,15 +77,35 @@ if args.LO_GHz_start > args.LO_GHz_end:
     logging.error('start/end out of order')
     sys.exit(1)
 
-use_ini = False
+dbm_use_ini = False
 try:
     args.dbm = float(args.dbm)
 except:
     if not args.dbm.startswith('ini'):
         logging.error('invalid dbm, must be a number or "ini"')
         sys.exit(1)
-    use_ini = True
+    dbm_use_ini = True
     args.dbm = float(args.dbm[3:] or '0')
+
+att_use_ini = False
+try:
+    args.att = float(args.att)
+except:
+    if not args.att.startswith('ini'):
+        logging.error('invalid att, must be a number or "ini"')
+        sys.exit(1)
+    att_use_ini = True
+    args.att = float(args.att[3:] or '0')
+
+# if tune.sh, relax tuning constraints
+pll_range = [-1.5,-1.5]
+dbm_max = agilent.max_dbm
+att_min = 0
+if args.LO_GHZ_start == args.LO_GHZ_end:
+    pll_range = [-.8, -2.5]
+    dbm_max = None
+    att_min = None
+
 
 #sys.exit(0)
 
@@ -94,6 +117,15 @@ agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, mypub)
 agilent.log.setLevel(logging.INFO)
 agilent.set_dbm(agilent.safe_dbm)
 agilent.set_output(1)
+
+photonics = None
+nconfig = namakanui.ini.IncludeParser(datapath+'namakanui.ini')
+if 'photonics_ini' in nconfig['namakanui']:
+    pini = nconfig['namakanui']['photonics_ini']
+    photonics = namakanui.photonics.Photonics(datapath+pini, time.sleep, mypub)
+    photonics.log.setLevel(logging.INFO)
+    photonics.set_attenuation(photonics.max_att)
+    
 
 ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, mypub)
 ifswitch.set_band(args.band)
@@ -127,7 +159,9 @@ def adjust_dbm(lo_ghz):
     # RMB 20200313: new utility function adjusts dbm as needed.
     # TODO: early, rough tables could go faster by widening pll_range and using skip_servo_pa.  add option.
     #if namakanui.util.tune(cart, agilent, lo_ghz, use_ini=use_ini, dbm_range=[args.dbm,100], pll_range=[-1.5,-1.5]):
-    if namakanui.util.tune(cart, agilent, None, lo_ghz, pll_range=[-1.5,-1.5], dbm_ini=use_ini, dbm_start=args.dbm, dbm_max=agilent.max_dbm):
+    if namakanui.util.tune(cart, agilent, photonics, lo_ghz, pll_range=pll_range,
+                           dbm_ini=dbm_use_ini, dbm_start=args.dbm, dbm_max=dbm_max,
+                           att_ini=att_use_ini, att_start=args.att, att_min=att_min):
         sys.stdout.write('%.3f %6.2f %.3f %.3f %.3f\n' % (lo_ghz, agilent.state['dbm'], cart.state['pll_if_power'], cart.state['pa_drain_s'][0], cart.state['pa_drain_s'][1]))
         sys.stdout.flush()
 
@@ -137,6 +171,7 @@ def try_adjust_dbm(lo_ghz):
         adjust_dbm(lo_ghz)
     except Exception as e:
         agilent.set_dbm(agilent.safe_dbm)
+        photonics.set_attenuation(photonics.max_att) if photonics else None
         logging.error('unhandled exception: %s', e)
         raise
 
@@ -160,16 +195,17 @@ if cart.state['lo_ghz'] == lo_ghz and not cart.state['pll_unlock']:
         cart.update_all()
         if cart.state['pll_unlock']:
             agilent.set_dbm(agilent.safe_dbm)
+            photonics.set_attenuation(photonics.max_att) if photonics else None
             logging.error('lost lock at %g', lo_ghz)
         logging.info('band %d tuned to %g GHz, IF power: %g', args.band, lo_ghz, cart.state['pll_if_power'])
     except Exception as e:
         agilent.set_dbm(agilent.safe_dbm)
+        photonics.set_attenuation(photonics.max_att) if photonics else None
         logging.error('final retune exception: %s', e)
 
 # show the last dbm setting
 agilent.update()
 logging.info('final dbm: %.2f', agilent.state['dbm'])
-
 logging.info('done.')
 
 

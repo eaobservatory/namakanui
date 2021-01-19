@@ -54,7 +54,7 @@ binpath, datapath = namakanui.util.get_paths()
 parser = argparse.ArgumentParser()
 #parser.add_argument('IP', help='prologix adapter IP address')
 #parser.add_argument('GPIB', type=int, help='power meter GPIB address')
-parser.add_argument('IP', help='N1913A power meter IP address')
+parser.add_argument('IP', help='N1913A power meter IP address')  # 128.171.92.36
 parser.add_argument('target_dbm', type=float, help='target dBm reading')
 parser.add_argument('start_att', type=int, help='starting attenuator setting (counts)')
 parser.add_argument('ghz_range', help='synth freq range, start:end:step')

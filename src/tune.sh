@@ -30,4 +30,4 @@ BAND=$1
 LO_GHZ=$2
 #DBM_TABLE=/jac_sw/itsroot/install/namakanui/bin/Linux-x86_64/dbm_table.py
 DBM_TABLE=`dirname "$0"`/dbm_table.py
-${DBM_TABLE} "$BAND" "$LO_GHZ" "$LO_GHZ" 1 above ini-0
+${DBM_TABLE} "$BAND" "$LO_GHZ" "$LO_GHZ" 1 above ini-0 ini+0
