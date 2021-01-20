@@ -68,7 +68,7 @@ if args.target_dbm < -20.0 or args.target_dbm > 14.0:
     sys.exit(1)
 
 if args.start_att < 0 or args.start_att > 255:
-    sys.stderr.write('error: starting att %d outside [0, 63] range\n'%(args.start_att))
+    sys.stderr.write('error: starting att %d outside [0, 255] range\n'%(args.start_att))
     sys.exit(1)
 
 ghz_range = namakanui.util.parse_range(args.ghz_range, maxlen=100e3)
