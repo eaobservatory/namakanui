@@ -114,6 +114,12 @@ if rp > -0.5:
     logging.error('Please make sure the IF switch has band %d selected.', args.band)
     sys.exit(1)
 
+# zero out cart mixers, we only care about the PLL
+cart._set_lna_enable(0)
+cart._set_pa([0]*4)
+cart._ramp_sis_bias_voltages([0]*4)
+cart._ramp_sis_magnet_currents([0]*4)
+
 
 def adjust_att(lo_ghz):
     # sanity check, skip impossible freqs
@@ -124,10 +130,10 @@ def adjust_att(lo_ghz):
                       lo_ghz, lo_min, lo_max, args.band)
         return
     # RMB 20200316: use new utility function
-    if namakanui.util.tune(cart, agilent, photonics, lo_ghz, pll_range=[-1.5,-1.5],
+    if namakanui.util.tune(cart, agilent, photonics, lo_ghz, pll_range=[-1.4,-1.6],
                            att_ini=use_ini, att_start=args.att, att_min=-photonics.max_att,
-                           dbm_ini=True, dbm_start=0, dbm_max=0):
-        sys.stdout.write('%.3f %d %.3f %.3f %.3f\n' % (lo_ghz, att, cart.state['pll_if_power'], cart.state['pa_drain_s'][0], cart.state['pa_drain_s'][1]))
+                           dbm_ini=True, dbm_start=0, dbm_max=0, lock_only=True):
+        sys.stdout.write('%.3f %d %.3f %.3f %.3f\n' % (lo_ghz, photonics.state['attenuation'], cart.state['pll_if_power'], cart.state['pa_drain_s'][0], cart.state['pa_drain_s'][1]))
         sys.stdout.flush()
 
 
@@ -164,6 +170,7 @@ if cart.state['lo_ghz'] == lo_ghz and not cart.state['pll_unlock']:
             logging.error('lost lock at %g', lo_ghz)
         logging.info('band %d tuned to %g GHz, IF power: %g', args.band, lo_ghz, cart.state['pll_if_power'])
     except Exception as e:
+        photonics.set_attenuation(photonics.max_att)
         agilent.set_dbm(agilent.safe_dbm)
         logging.error('final retune exception: %s', e)
 

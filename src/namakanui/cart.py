@@ -140,7 +140,7 @@ class Cart(object):
     
     def update_all(self):
         '''Call all functions in self.update_functions, publishing once.'''
-        self.log.debug('update_all')
+        #self.log.debug('update_all')
         for f in self.update_functions:
             f(do_publish=False)
         self.state['number'] += 1
@@ -149,7 +149,7 @@ class Cart(object):
     
     def update_one(self):
         '''Call the next function in self.update_functions.'''
-        self.log.debug('update_one')
+        #self.log.debug('update_one')
         self.update_index = (self.update_index + 1) % len(self.update_functions)
         self.update_functions[self.update_index]()
 
@@ -274,7 +274,7 @@ class Cart(object):
         '''
         Update LNA parameters. Expect this to take ~36ms.
         '''
-        self.log.debug('update_a(do_publish=%s)', do_publish)
+        #self.log.debug('update_a(do_publish=%s)', do_publish)
         
         if self.state['pd_enable'] and not self.sim_cold:
             dv = []
@@ -304,7 +304,7 @@ class Cart(object):
         '''
         Update params for PLL lock, PA, SIS mixers. Expect this to take ~25ms.
         '''
-        self.log.debug('update_b(do_publish=%s)', do_publish)
+        #self.log.debug('update_b(do_publish=%s)', do_publish)
         
         if not self.sim_femc:
             self.state['ppcomm_time'] = self.femc.get_ppcomm_time()  # expect ~1ms, TODO warn if long
@@ -380,7 +380,7 @@ class Cart(object):
         Update params for AMC, temperatures, misc. Expect this to take ~24ms.
         TODO could probably bundle into fewer top-level state params.
         '''
-        self.log.debug('update_c(do_publish=%s)', do_publish)
+        #self.log.debug('update_c(do_publish=%s)', do_publish)
         
         if self.state['pd_enable'] and not self.sim_warm:
             self.state['amc_gate_a_v'] = self.femc.get_cartridge_lo_amc_gate_a_voltage(self.ca)
@@ -671,7 +671,8 @@ class Cart(object):
             # correction voltage might need longer to update, but check anyway
             cv = femc.get_cartridge_lo_pll_correction_voltage(self.ca)
             self.state['pll_corr_v'] = cv
-            self.log.debug('_lock_pll already locked, corr_v %.2f', cv)
+            #self.log.debug('_lock_pll already locked, corr_v %.2f', cv)
+            self.log.debug('_lock_pll already locked, corr_v %.2f, pll_ref %.2f, pll_if %.2f', cv, rfp, ifp)
             return
         
         # if we don't have good reference power, give up now
@@ -723,7 +724,7 @@ class Cart(object):
             self.state['pll_unlock'] = 0
             cv = femc.get_cartridge_lo_pll_correction_voltage(self.ca)
             self.state['pll_corr_v'] = cv
-            self.log.debug('_lock_pll locked, corr_v %.2f', cv)
+            self.log.debug('_lock_pll locked, corr_v %.2f, pll_ref %.2f, pll_if %.2f', cv, rfp, ifp)
             return
         
         self.state['pll_unlock'] = 1

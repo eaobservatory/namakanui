@@ -60,7 +60,7 @@ class Photonics(object):
         self.name = pconfig['pubname']
         self.logname = pconfig['logname']
         self.log = logging.getLogger(self.logname)
-        self.nbits = pconfig['nbits']
+        self.nbits = int(pconfig['nbits'])
         self.max_att = (1 << self.nbits) - 1
         self.state = {'number':0}
         self.state['DO'] = [0]*8  # needs to match ADAM type, not nbits

@@ -5,5 +5,7 @@ DATA += $(wildcard ../*.ent)
 DATA += $(wildcard ../*.xml)
 DATA += $(wildcard ../*.tide)
 DATA += $(wildcard ../*.ascii)
+DATA += $(wildcard ../*.txt)
+DATA += $(wildcard ../*.test*)
 
 include $(TOP)/config/RULES.Build

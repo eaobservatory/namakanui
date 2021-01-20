@@ -67,7 +67,7 @@ if args.target_dbm < -20.0 or args.target_dbm > 14.0:
     sys.stderr.write('error: target dBm %g outside [-20, 14] range\n'%(args.target_dbm))
     sys.exit(1)
 
-if args.start_att < 0 or args.start_att > 63:
+if args.start_att < 0 or args.start_att > 255:
     sys.stderr.write('error: starting att %d outside [0, 63] range\n'%(args.start_att))
     sys.exit(1)
 
@@ -169,7 +169,7 @@ for ghz in ghz_range:
     sys.stderr.flush()
     # quickly decrease attenuation until above target power
     while att > 0 and power < args.target_dbm:
-        dcounts = (args.target_dbm - power) * 2 + 1
+        dcounts = (args.target_dbm - power) * 8 + 1
         att -= dcounts
         if att < 0:
             att = 0
@@ -180,7 +180,7 @@ for ghz in ghz_range:
         sys.stderr.flush()
     # quickly increase attenuation until below target power
     while att < photonics.max_att and power >= args.target_dbm:
-        dcounts = (power - args.target_dbm) * 2 + 1
+        dcounts = (power - args.target_dbm) * 4 + 1
         att += dcounts
         if att > photonics.max_att:
             att = photonics.max_att

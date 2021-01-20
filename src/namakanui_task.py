@@ -486,7 +486,7 @@ def CART_TUNE(msg):
     # adjust attenuator if present, otherwise adjust output dBm.
     if photonics:
         orig_att = att
-        att_min = max(0, att-6)  # limit 2x nominal power
+        att_min = max(0, att-24)  # limit 2x nominal power
         tries = 0
         max_tries = 5
         while True:
@@ -502,7 +502,7 @@ def CART_TUNE(msg):
             elif msg.status != 0:
                 # tune failure, raise the power and try again
                 old_att = att
-                att -= 2
+                att -= 8
                 if att < att_min:
                     att = att_min
                 if att == old_att or tries > max_tries:  # stuck at the limit, time to give up
@@ -520,9 +520,9 @@ def CART_TUNE(msg):
                 break
             old_att = att
             if pll_if_power < -2.5:  # power too high
-                att += 1
+                att += 4
             elif pll_if_power > -0.7:  # power too low
-                att -= 1
+                att -= 4
             else:  # power is fine
                 break
             if att < att_min:

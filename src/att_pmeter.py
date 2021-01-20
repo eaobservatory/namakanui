@@ -30,6 +30,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import jac_sw
 import namakanui.agilent
 import namakanui.photonics
+import namakanui.ifswitch
 import namakanui.util
 import namakanui.ini
 import sys
@@ -49,6 +50,7 @@ parser = argparse.ArgumentParser()
 #parser.add_argument('IP', help='prologix adapter IP address')
 #parser.add_argument('GPIB', type=int, help='power meter GPIB address')
 parser.add_argument('IP', help='N1913A power meter IP address')  # 128.171.92.36
+parser.add_argument('band', type=int)
 parser.add_argument('ghz', type=float, help='synth freq ghz')
 parser.add_argument('dbm', type=float, help='synth power')
 parser.add_argument('--note', nargs='?', default='', help='note for file header')
@@ -60,8 +62,14 @@ agilent.log.setLevel(logging.INFO)
 agilent.set_dbm(agilent.safe_dbm)
 agilent.set_output(1)
 
+ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop)
+ifswitch.set_band(args.band)
+ifswitch.close()  # done with ifswitch
+
 photonics = namakanui.photonics.Photonics(datapath+'photonics.ini', time.sleep, namakanui.nop)
 photonics.set_attenuation(photonics.max_att)
+
+
 
 #prologix = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 #prologix.settimeout(1)
@@ -109,10 +117,20 @@ def read_power():
 
 agilent.set_hz_dbm(args.ghz*1e9, args.dbm)
 att = photonics.max_att + 1
-pmeter.send(b'freq %gGHz\n'%(ghz))  # for power sensor cal tables
+pmeter.send(b'freq %gGHz\n'%(args.ghz))  # for power sensor cal tables
 
 while att > 0:
     att -= 1
+    delay = 0.1  # generous sleep since pmeter takes 50ms/read
+    photonics.set_attenuation(att)
+    time.sleep(delay)
+    power = read_power()
+    sys.stdout.write('%d %.2f\n'%(att,power))
+    sys.stdout.flush()
+
+att = -1
+while att < photonics.max_att:
+    att += 1
     delay = 0.1  # generous sleep since pmeter takes 50ms/read
     photonics.set_attenuation(att)
     time.sleep(delay)

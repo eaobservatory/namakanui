@@ -188,11 +188,11 @@ def tune(cart, agilent, photonics,
     fyig = lo_ghz / (cart.cold_mult * cart.warm_mult)
     fsig = (fyig*cart.warm_mult + floog) / agilent.harmonic
     
-    att_max = photonics.max_att if photonics else 63
+    att_max = photonics.max_att if photonics else 255
     att_start = (0 if att_ini else att_max) if att_start is None else att_start
-    att_min = (-6 if att_ini else 0) if att_min is None else att_min
+    att_min = (-24 if att_ini else 0) if att_min is None else att_min
     if att_ini and photonics:
-        att_ini = photonics.interp_att(cart.band, lo_ghz)
+        att_ini = photonics.interp_attenuation(cart.band, lo_ghz)
         att_start += att_ini
         att_min += att_ini
     att_start = int(round(clip(att_start, 0, att_max)))
@@ -253,7 +253,7 @@ def tune(cart, agilent, photonics,
         
         # quickly decrease attenuation if needed
         while photonics and (cart.state['pll_unlock'] or cart.state['pll_if_power'] > pll_range[0]) and att > att_min:
-            att -= 4  # 2 dB for 6-bit 31.5 dB attenuator
+            att -= 8  # 1 dB for 8-bit 31.5 dB attenuator
             if att < att_min:
                 att = att_min
             log.info('unlock: %d, pll_if: %.3f; decreasing att to %d', cart.state['pll_unlock'], cart.state['pll_if_power'], att)
@@ -261,7 +261,7 @@ def tune(cart, agilent, photonics,
         
         # increase attenuation if too strong
         while photonics and (not cart.state['pll_unlock']) and cart.state['pll_if_power'] < pll_range[1] and att < att_max:
-            att += 2  # 1 dB for 6-bit 31.5 dB attenuator
+            att += 3  # .37 dB for 8-bit 31.5 dB attenuator
             if att > att_max:
                 att = att_max
             log.info('unlock: %d, pll_if: %.3f; increasing att to %d', cart.state['pll_unlock'], cart.state['pll_if_power'], att)
@@ -269,7 +269,7 @@ def tune(cart, agilent, photonics,
         
         # slowly decrease attenuation to target (and relock if needed)
         while photonics and (cart.state['pll_unlock'] or cart.state['pll_if_power'] > pll_range[0]) and att > att_min:
-            att -= 1  # .5 dB for 6-bit 31.5 dB attenuator
+            att -= 1  # .12 dB for 8-bit 31.5 dB attenuator
             if att < att_min:
                 att = att_min
             log.info('unlock: %d, pll_if: %.3f; decreasing att to %d', cart.state['pll_unlock'], cart.state['pll_if_power'], att)
