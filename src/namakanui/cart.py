@@ -541,7 +541,7 @@ class Cart(object):
         doppler tracking during an observation, especially if there are
         step-changes in the tuning tables.
         '''
-        self.log.info('tune(%g, %g, skip_servo_pa=%s, lock_only=%s)', lo_ghz, voltage, skip_servo_pa, lock_only)
+        self.log.info('tune(%g, %s, skip_servo_pa=%s, lock_only=%s)', lo_ghz, voltage, skip_servo_pa, lock_only)
         try:
             self._lock_pll(lo_ghz)
             self._adjust_fm(voltage)

@@ -452,7 +452,7 @@ def CART_TUNE(msg):
     fsig = (fyig*warm_mult[band] + agilent.floog*lock_polarity) / agilent.harmonic
     if photonics:
         dbm = agilent.interp_dbm(0, fsig)
-        att = photonics.interp_att(band, lo_ghz)
+        att = photonics.interp_attenuation(band, lo_ghz)
         log.info('setting photonics attenuator to %d counts', att)
     else:
         dbm = agilent.interp_dbm(band, lo_ghz)
