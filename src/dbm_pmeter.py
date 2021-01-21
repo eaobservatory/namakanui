@@ -7,7 +7,7 @@ Writes table to stdout; use 'tee' to monitor output progress.
 
 NOTE: This script does not set the Namakanui IF Switch, since it's assumed
 that we're running in a nonstandard configuration.  If needed,
-use tune.sh or other script to set the IF switch to the desired position
+use tune.py or other script to set the IF switch to the desired position
 before running this script.
 
 This script runs in three different modes:
@@ -52,6 +52,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import jac_sw
 import namakanui.agilent
 import namakanui.util
+import namakanui.ini
 import sys
 import os
 import argparse
@@ -85,8 +86,7 @@ sys.stdout.write('# %s\n'%(sys.argv))
 sys.stdout.write('#\n')
 sys.stdout.flush()
 
-# RMB 20200911: paranoia, make sure we don't accidentally use keysight
-agilent = namakanui.agilent.Agilent(datapath+'agilent_cabin.ini', time.sleep, namakanui.nop)
+agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
 agilent.log.setLevel(logging.INFO)
 agilent.set_dbm(agilent.safe_dbm)
 agilent.set_output(1)
@@ -130,11 +130,18 @@ if args.band:
         logging.info('done.')
         sys.exit(1)
     # tune rx to range of values and take power readings.
+    # for this mode we might be using the photonics attenuator as well.
     band = args.band
     import namakanui.cart
     cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop)
     cart.power(1)
     cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
+    photonics = None
+    nconfig = namakanui.ini.IncludeParser(datapath+'namakanui.ini')
+    if 'photonics_ini' in nconfig['namakanui']:
+        pini = nconfig['namakanui']['photonics_ini']
+        photonics = namakanui.photonics.Photonics(datapath+pini, time.sleep, namakanui.nop)
+        photonics.set_attenuation(photonics.max_att)
     los = namakanui.util.parse_range(args.lo_ghz)
     if args.pa:
         pas = namakanui.util.parse_range(args.pa)
@@ -144,7 +151,7 @@ if args.band:
         sys.stdout.write('#lo_ghz wca_ghz pa0 pa1 vd0 vd1 id0 id1 pmeter_dbm\n')
     sys.stdout.flush()
     for lo_ghz in los:
-        if not namakanui.util.tune(cart, agilent, None, lo_ghz):
+        if not namakanui.util.tune(cart, agilent, photonics, lo_ghz):
             logging.error('failed to tune to %.3f ghz', lo_ghz)
             continue
         if args.if_ghz:

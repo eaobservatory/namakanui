@@ -80,22 +80,15 @@ if not lo_range[0] <= lo_ghz <= lo_range[1]:
 
 pas = namakanui.util.parse_range(args.pa, maxlen=300)
 
-# set agilent output to a safe level before setting ifswitch
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
-agilent.set_dbm(agilent.safe_dbm)
-agilent.set_output(1)
-ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop)
-ifswitch.set_band(band)
+# perform basic setup and get handles
+cart, agilent, photonics = namakanui.util.setup_script(args.band, args.lock_side)
 
 # init load controller and set to hot (ambient) load for this band
 load = namakanui.load.Load(datapath+'load.ini', time.sleep, namakanui.nop)
 load.move('b%d_hot'%(band))
 
 # setup cartridge and tune, adjusting power as needed
-cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop)
-cart.power(1)
-cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
-if not namakanui.util.tune(cart, agilent, None, lo_ghz):
+if not namakanui.util.tune(cart, agilent, photonics, lo_ghz):
     logging.error('failed to tune to %.3f ghz', lo_ghz)
     sys.exit(1)
 
@@ -117,6 +110,7 @@ dcm_1U = namakanui.util.get_dcms('N%s1U'%(uw))
 dcm_1L = namakanui.util.get_dcms('N%s1L'%(uw))
 dcm_0 = dcm_0U + dcm_0L
 dcm_1 = dcm_1U + dcm_1L
+dcms = dcm_0 + dcm_1
 powers = []
 powers += ['0_dcm%d'%(x) for x in dcm_0]
 powers += ['1_dcm%d'%(x) for x in dcm_1]
@@ -140,28 +134,6 @@ yf_index = sky_p_index + len(powers)
 # TODO might be able to increase this without impacting runtime due to ITIME,
 # but it depends on the actual value of ppcomm_time.
 ua_n = 10
-
-
-def if_setup(adjust):
-    # LEVEL_ADJUST 0=setup_only, 1=setup_and_level, 2=level_only
-    # BIT_MASK is DCMs to use: bit0=DCM0, bit1=DCM1, ... bit31=DCM31.
-    setup_type = ['setup_only', 'setup_and_level', 'level_only']
-    logging.info('setup IFTASK, LEVEL_ADJUST %d: %s', adjust, setup_type[adjust])
-    bitmask = 0
-    for dcm in dcm_0 + dcm_1:
-        bitmask |= 1<<dcm
-    # TODO configurable IF_FREQ?  will 6 be default for both bands?
-    msg = drama.obey('IFTASK@if-micro', 'TEST_SETUP',
-                     NASM_SET='R_CABIN', BAND_WIDTH=1000, QUAD_MODE=4,
-                     IF_FREQ=6, LEVEL_ADJUST=adjust, BIT_MASK=bitmask).wait(90)
-    if msg.reason != drama.REA_COMPLETE or msg.status != 0:
-        if msg.status == 261456746:  # ACSISIF__ATTEN_ZERO
-            logging.warning('low attenuator setting from IFTASK.TEST_SETUP')
-        else:
-            logging.error('bad reply from IFTASK.TEST_SETUP: %s', msg)
-            return 1
-    return 0
-
 
 
 def ip(target, rows, pas):
@@ -233,7 +205,7 @@ def adjust_levels(dup_pas):
     p0_pas.sort()
     p1_pas.sort()
     cart._set_pa([p0_pas[4],p1_pas[4]])
-    if if_setup(2):  # level only
+    if namakanui.util.iftask_setup(2, 1000, 6, dcms):  # level only
         return 0,0  # fail
     return p0_pas[4],p1_pas[4]
 
@@ -267,7 +239,7 @@ def MAIN(msg):
     # TODO obey/kick check
     try:
         if_arg = [1,2][int(args.level_only)]
-        if if_setup(if_arg):
+        if namakanui.util.iftask_setup(if_arg, 1000, 6, dcms):
             return
         
         # we want to level close to the max power for each pair of mixers.

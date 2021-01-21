@@ -64,7 +64,7 @@ parser.add_argument('band', type=int, choices=[3,6,7])
 parser.add_argument('LO_GHz_start', type=float)
 parser.add_argument('LO_GHz_end', type=float)
 parser.add_argument('LO_GHz_step', type=float)
-parser.add_argument('lock_polarity', choices=['below','above'])
+parser.add_argument('lock_side', choices=['below','above'])
 parser.add_argument('dbm')
 args = parser.parse_args()
 #print(args.band, args.LO_GHz_start, args.LO_GHz_end, args.LO_GHz_step)
@@ -88,7 +88,7 @@ except:
 
 
 # if tune.sh, relax tuning constraints
-pll_range = [-1.5,-1.5]
+pll_range = [-1.4,-1.6]
 dbm_max = agilent.max_dbm
 if args.LO_GHZ_start == args.LO_GHZ_end:
     pll_range = [-.8, -2.5]
@@ -97,57 +97,19 @@ if args.LO_GHZ_start == args.LO_GHZ_end:
 
 #sys.exit(0)
 
-def mypub(n,s):
-    pass
+# perform basic setup and get handles
+cart, agilent, photonics = namakanui.util.setup_script(args.band, args.lock_side)
 
-
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, mypub)
-agilent.log.setLevel(logging.INFO)
-agilent.set_dbm(agilent.safe_dbm)
-agilent.set_output(1)
-
-photonics = None
-nconfig = namakanui.ini.IncludeParser(datapath+'namakanui.ini')
-if 'photonics_ini' in nconfig['namakanui']:
-    logging.warning('using photonics, holding attenuation at table values')
-    pini = nconfig['namakanui']['photonics_ini']
-    photonics = namakanui.photonics.Photonics(datapath+pini, time.sleep, mypub)
-    photonics.log.setLevel(logging.INFO)
-    photonics.set_attenuation(photonics.max_att)
-    
-
-ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, mypub)
-ifswitch.set_band(args.band)
-ifswitch.close()  # done with ifswitch
-
-cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, mypub)
-cart.power(1)
-cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
-floog = agilent.floog * {'below':1.0, 'above':-1.0}[args.lock_polarity]
-
-
-
-# check to make sure this receiver is selected.
-rp = cart.state['pll_ref_power']
-if rp < -3.0:
-    logging.error('PLL reference power (FLOOG, 31.5 MHz) is too strong (%.2f V).  Please attenuate.', rp)
-    sys.exit(1)
-if rp > -0.5:
-    logging.error('PLL reference power (FLOOG, 31.5 MHz) is too weak (%.2f V).', rp)
-    logging.error('Please make sure the IF switch has band %d selected.', args.band)
-    sys.exit(1)
+floog = agilent.floog * {'below':1.0, 'above':-1.0}[args.lock_side]
+lo_min = cart.yig_lo * cart.cold_mult * cart.warm_mult
+lo_max = cart.yig_hi * cart.cold_mult * cart.warm_mult
 
 
 def adjust_dbm(lo_ghz):
     # sanity check, avoid setting agilent for impossible freqs
-    lo_min = cart.yig_lo * cart.cold_mult * cart.warm_mult
-    lo_max = cart.yig_hi * cart.cold_mult * cart.warm_mult
     if lo_ghz < lo_min or lo_ghz > lo_max:
         logging.error('skipping lo_ghz %g, outside range [%.3f, %.3f] for band %d', lo_ghz, lo_min, lo_max, args.band)
         return
-    # RMB 20200313: new utility function adjusts dbm as needed.
-    # TODO: early, rough tables could go faster by widening pll_range and using skip_servo_pa.  add option.
-    #if namakanui.util.tune(cart, agilent, lo_ghz, use_ini=use_ini, dbm_range=[args.dbm,100], pll_range=[-1.5,-1.5]):
     if namakanui.util.tune(cart, agilent, photonics, lo_ghz, pll_range=pll_range,
                            dbm_ini=dbm_use_ini, dbm_start=args.dbm, dbm_max=dbm_max,
                            att_ini=True, att_start=0, att_min=0):

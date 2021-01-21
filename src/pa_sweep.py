@@ -45,44 +45,22 @@ logging.root.addHandler(logging.StreamHandler())
 logging.info('importing pylab...')
 from pylab import *
 
-binpath, datapath = namakanui.util.get_paths()
 
 parser = argparse.ArgumentParser()
 parser.add_argument('band', type=int, choices=[3,6,7])
 parser.add_argument('lo_ghz', type=float)
-parser.add_argument('lock_polarity', choices=['below','above'])
+parser.add_argument('lock_side', choices=['below','above'])
 # NOTE the documented value of 2.5/255 causes aliasing
 # due to float32 rounding (I think), so we use a slightly higher value.
 parser.add_argument('pa_step', type=float, nargs='?', default=0.009803923)
 args = parser.parse_args()
 
-def mypub(n,s):
-    pass
+# perform basic setup and get handles
+cart, agilent, photonics = namakanui.util.setup_script(args.band, args.lock_side)
 
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, mypub)
-agilent.log.setLevel(logging.INFO)
-agilent.set_dbm(agilent.safe_dbm)
-agilent.set_output(1)
-cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, mypub)
-cart.power(1)
-cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
-floog = agilent.floog * {'below':1.0, 'above':-1.0}[args.lock_polarity]
-
-logging.info('setting agilent...')
-
-fyig = args.lo_ghz / (cart.cold_mult * cart.warm_mult)
-fsig = (fyig*cart.warm_mult + floog) / agilent.harmonic
-agilent.set_hz(fsig*1e9)
-dbm = agilent.interp_dbm(args.band, args.lo_ghz)
-agilent.set_dbm(dbm)
-
-logging.info('tuning cartridge...')
-
-try:
-    cart.tune(args.lo_ghz, 0.0)
-except Exception as e:
+if not namakanui.util.tune(cart, agilent, photonics, args.lo_ghz):
     agilent.set_dbm(agilent.safe_dbm)
-    logging.error('tune error: %s, IF power: %g', e, cart.state['pll_if_power'])
+    photonics.set_attenuation(photonics.max_att) if photonics else None
     sys.exit(1)
 
 cart.update_all()
@@ -144,6 +122,7 @@ try:
     cart.tune(args.lo_ghz, 0.0)
 except Exception as e:
     agilent.set_dbm(agilent.safe_dbm)
+    photonics.set_attenuation(photonics.max_att) if photonics else None
     logging.error('tune error: %s, IF power: %g', e, cart.state['pll_if_power'])
 
 logging.info('done, plotting...')

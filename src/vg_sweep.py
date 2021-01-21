@@ -45,26 +45,19 @@ parser.add_argument('band', type=int, choices=[6,7])
 parser.add_argument('--lo')  # range
 parser.add_argument('--vg')  # range
 parser.add_argument('--vd', type=float)  # optional, fixed vd value for both pols
-# we'll just always use 'above' reference tuning; add later if needed
 args = parser.parse_args()
+# we'll just always use 'above' reference tuning; add later if needed
+args.lock_side = 'above'
 
 los = namakanui.util.parse_range(args.lo, maxlen=1e3)
 vgs = namakanui.util.parse_range(args.vg, maxlen=1e2)
 
-# set agilent output to a safe level before setting ifswitch
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
-agilent.set_dbm(agilent.safe_dbm)
-ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop)
-ifswitch.set_band(args.band)
+# perform basic setup and get handles
+cart, agilent, photonics = namakanui.util.setup_script(args.band, args.lock_side)
 
 # init load controller and set to hot (ambient) load for this band
 load = namakanui.load.Load(datapath+'load.ini', time.sleep, namakanui.nop)
 load.move('b%d_hot'%(args.band))
-
-# setup cartridge
-cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, namakanui.nop)
-cart.power(1)
-cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}['above'])#args.lock_polarity])
 
 # write out a header for our output file
 print(time.strftime('# %Y%m%d %H:%M:%S HST', time.localtime()))
@@ -74,7 +67,7 @@ print('#lo_ghz vg ua01 ua02 ua11 ua12 drain_c0 drain_c1')
 
 # main loops
 for lo_ghz in los:
-    if not namakanui.util.tune(cart, agilent, None, lo_ghz, pll_range=[-1.0, -2.0]):
+    if not namakanui.util.tune(cart, agilent, photonics, lo_ghz, pll_range=[-1.0, -2.0]):
         continue
     
     if args.vd:
@@ -100,7 +93,7 @@ for lo_ghz in los:
         print('%.3f %.2f %.2f %.2f %.2f %.2f %.2f %.2f'%tuple(a))
 
 logging.info('tuning back to starting freq to reset pa...')
-namakanui.util.tune(cart, agilent, None, los[0], pll_range=[-1.0, -2.0])
+namakanui.util.tune(cart, agilent, photonics, los[0], pll_range=[-1.0, -2.0])
 logging.info('done.')
 
 

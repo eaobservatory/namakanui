@@ -51,26 +51,19 @@ parser.add_argument('band', type=int, choices=[6,7])
 parser.add_argument('--lo')  # range
 parser.add_argument('--vg')  # range (for b6, use -.40:.14:.01)
 parser.add_argument('--vd', type=float, default=2.5)  # vd for both pols during vg sweep
-# note: always use 'above' reference tuning
 args = parser.parse_args()
+args.lock_side = 'above'
 
 los = namakanui.util.parse_range(args.lo, maxlen=1e3)
 vgs = namakanui.util.parse_range(args.vg, maxlen=1e2)  # TODO okay for b7?
 
-# set agilent output to a safe level before setting ifswitch
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
-agilent.set_dbm(agilent.safe_dbm)
-ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop)
-ifswitch.set_band(args.band)
+# perform basic setup and get handles
+cart, agilent, photonics = namakanui.util.setup_script(args.band, args.lock_side)
 
 # init load controller and set to hot (ambient) load for this band
 load = namakanui.load.Load(datapath+'load.ini', time.sleep, namakanui.nop)
 load.move('b%d_hot'%(args.band))
 
-# setup cartridge
-cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, namakanui.nop)
-cart.power(1)
-cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}['above'])#args.lock_polarity])
 
 # for _servo_pa output
 cart.log.setLevel(logging.DEBUG)
@@ -104,7 +97,7 @@ def smooth(y):
 
 # main loops
 for lo_ghz in los:
-    if not namakanui.util.tune(cart, agilent, None, lo_ghz, pll_range=[-1.0, -2.0]):
+    if not namakanui.util.tune(cart, agilent, photonics, lo_ghz, pll_range=[-1.0, -2.0]):
         continue
     
     # get nominal pa, it's probably close to target and will save time later

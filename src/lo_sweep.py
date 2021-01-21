@@ -44,7 +44,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('band', type=int, choices=[6,7])
 parser.add_argument('--lo')  # range
 parser.add_argument('--load', nargs='?', default='hot')
-parser.add_argument('lock_polarity', nargs='?', choices=['below','above'], default='above')
+parser.add_argument('lock_side', nargs='?', choices=['below','above'], default='above')
 parser.add_argument('--note', nargs='?', default='', help='note for file header')
 args = parser.parse_args()
 
@@ -76,23 +76,13 @@ if args.load == 'hot' or args.load == 'sky':
     args.load = 'b%d_'%(band) + args.load
 load.move(args.load)
 
-# set agilent output to a safe level before setting ifswitch
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
-agilent.set_dbm(agilent.safe_dbm)
-agilent.set_output(1)
-ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop)
-ifswitch.set_band(band)
-
-# power up the cartridge
-cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop)
-cart.power(1)
-cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
-floog = agilent.floog * {'below':1.0, 'above':-1.0}[args.lock_polarity]
+# perform basic setup and get handles
+cart, agilent, photonics = namakanui.util.setup_script(args.band, args.lock_side)
 
 
 # main loop
 for lo in los:
-    if not namakanui.util.tune(cart, agilent, None, lo):
+    if not namakanui.util.tune(cart, agilent, photonics, lo):
         continue
     sys.stdout.write('%.3f '%(lo))
     pa_drain_s = cart.state['pa_drain_s']

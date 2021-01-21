@@ -48,7 +48,8 @@ if band == 7:
     n = 1  # single junction
     vgap = 2.8  # nominal
     #vgap = 2.7  # this would be a better fit with band 6
-    margin = .2  # from "ALMA SIS mixer optimization for stable operation" paper
+    #margin = .2  # from "ALMA SIS mixer optimization for stable operation" paper
+    margin = .3  # plus a little (a lot) extra
     xr = [280,370]
     #xr = [600,700]  # SMA paper
 elif band == 6:
@@ -98,6 +99,9 @@ for i in range(10):
 # shapiro regions
 for i in range(10):
     plot(x, x*h*n*i*.5, 'm', label='shapiro%d'%(i))
+    if band == 7:
+        offset = 0.09
+        plot(x, x*h*n*i*.5 + offset, 'm--', label='shapoff%d'%(i))
 
 def avoid(ghz, mv, margin):
     '''
@@ -109,6 +113,9 @@ def avoid(ghz, mv, margin):
     for i in range(10):
         photon = ghz*h*n*i - vgap
         shapiro = ghz*h*n*i*.5
+        if band == 7:
+            photon = 0.0  # ignore negative photon steps
+            shapiro += 0.09  # empirical fudge factor
         if lo < photon < hi:
             steps.append(photon)
         if lo < shapiro < hi:
@@ -196,6 +203,14 @@ if args.filename:
     fname = args.filename.rpartition('/')[-1]
     title_str += ', ' + fname
 
+if band == 7:
+    # empirical shapiro region centers
+    x = [283, 287, 291, 295, 299, 303, 307,  331, 339,  365]
+    y1 = [1.90, 1.91, 1.92, 1.94, 1.96, 1.97, 2.00, 1.41,  1.55,  1.62]
+    y2 = [2.42, 2.46, 2.48, 2.51, 2.55, 2.57, 2.61, 2.13,  2.18,  2.35]
+    plot(x,y1, 'go')
+    plot(x,y2, 'go')
+
 title(title_str)
 
 grid()
@@ -204,3 +219,37 @@ xlim(xr)
 ylim(yr)
 show()
 
+'''
+empirical shapiro regions for band 7.  need to find a better relation.
+plot edges and avg to find center; don't use the central spike.
+      a1    a2    ac    b1   b2   bc     c1   c2   cc
+283:                   1.72 2.02 1.87   2.26 2.57 2.41
+                       1.78 2.06 1.92   2.30 2.58 2.44
+                       
+287:                   1.73 2.05 1.89   2.29 2.60 2.45
+                       1.78 2.07 1.93   2.32 2.62 2.47
+                       
+291:                   1.74 2.06 1.90   2.33 2.61 2.47
+                       1.79 2.09 1.94   2.36 2.63 2.49
+                       
+295:                   1.77 2.08 1.92   2.37 2.63 2.50
+                       1.81 2.11 1.96   2.41 2.66 2.53
+                       
+299:                   1.78 2.10 1.94   2.41 2.67 2.54
+                       1.83 2.13 1.98   2.44 2.68 2.56
+
+303:                   1.80 2.13 1.96   2.44 2.69 2.56
+                       1.84 2.14 1.99   2.48 2.70 2.59
+
+307:                   1.81 2.15 1.98   2.48 2.70 2.59
+                       1.87 2.17 2.02   2.52 2.74 2.63
+
+331:                   1.31 1.51 1.41   1.93 2.30 2.12
+                       1.26 1.55 1.40   1.98 2.32 2.15
+
+339:                   1.98 2.35 2.16
+                       2.02 2.37 2.20
+                       
+365:                   1.43 1.80 1.61   2.15 2.52 2.33
+                       1.48 1.79 1.63   2.21 2.53 2.37
+'''
