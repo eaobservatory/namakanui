@@ -3,6 +3,9 @@ namakanui/util.py   RMB 20200227
 
 Utility functions for scripts.
 
+This module also includes a set of DRAMA functions that are only defined
+if the user has already imported drama before importing this module.
+
 
 Copyright (C) 2020 East Asian Observatory
 
@@ -321,4 +324,139 @@ def tune(cart, agilent, photonics,
             photonics.set_attenuation(photonics.max_att) if photonics else None
         raise
     # tune
+
+
+def setup_script(band, lock_side, sleep=time.sleep, publish=namakanui.nop):
+    '''
+    Perform common setup for a standalone script:
+        - Create agilent and set to safe levels with output enabled.
+        - Create photonics (if in namaknui.ini) and set max attenuation.
+        - Create cart(band) and set given lock side.
+        - Zero out pa/lna on unused bands.
+        - Set ifswitch to given band.
+        - Check reference (floog) power level.
+    Returns cart, agilent, photonics.
+    '''
+    import namakanui.ini
+    import namakanui.cart
+    import namakanui.agilent
+    import namakanui.photonics
+    import namakanui.ifswitch
+    
+    binpath, datapath = get_paths()
+    
+    agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', sleep, publish)
+    agilent.set_dbm(agilent.safe_dbm)
+    agilent.set_output(1)
+    
+    photonics = None
+    nconfig = namakanui.ini.IncludeParser(datapath+'namakanui.ini')
+    if 'photonics_ini' in nconfig['namakanui']:
+        pini = nconfig['namakanui']['photonics_ini']
+        photonics = namakanui.photonics.Photonics(datapath+pini, sleep, publish)
+        photonics.set_attenuation(photonics.max_att)
+    
+    ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', sleep, publish)
+    ifswitch.set_band(band)
+    ifswitch.close()  # done with ifswitch
+    
+    cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), sleep, publish)
+    cart.power(1)
+    if lock_side is not None:
+        lock_side = lock_side.lower() if hasattr(lock_side, 'lower') else lock_side
+        lock_side = {0:0, 1:1, 'below':0, 'above':1}[lock_side]
+        cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, lock_side)
+        cart.state['pll_sb_lock'] = lock_side  # cart never updates this
+    
+    # zero out unused carts
+    femc = cart.femc
+    for b in [3,6,7]:
+        if b == band:
+            continue
+        ca = b-1
+        if not femc.get_pd_enable(ca):
+            continue
+        for po in range(2):
+            femc.set_cartridge_lo_pa_pol_drain_voltage_scale(ca, po, 0)
+            femc.set_cartridge_lo_pa_pol_gate_voltage(ca, po, 0)
+            for sb in range(2):
+                femc.set_lna_enable(ca, po, sb, 0)
+    
+    # this mainly checks that the IF switch really has this band selected
+    cart.update_all()
+    rp = cart.state['pll_ref_power']
+    if rp < -3.0:
+        raise RuntimeError('PLL ref (FLOOG 31.5 MHz) power high (%.2fV), needs padding'%(rp))
+    if rp > -0.5:
+        raise RuntimeError('PLL ref (FLOOG 31.5 MHz) power low (%.2fV), check IF switch'%(rp))
+    
+    return cart, agilent, photonics
+    # setup_script
+
+
+
+# DRAMA functions only defined if drama was already imported.
+if 'drama' in sys.modules:
+    import drama
+    
+    def iftask_setup(adjust, bw_mhz, if_ghz, dcms):
+        # LEVEL_ADJUST 0=setup_only, 1=setup_and_level, 2=level_only
+        # BIT_MASK is DCMs to use: bit0=DCM0, bit1=DCM1, ... bit31=DCM31.
+        setup_type = ['setup_only', 'setup_and_level', 'level_only']
+        logging.info('setup IFTASK, LEVEL_ADJUST %d: %s', adjust, setup_type[adjust])
+        bitmask = 0
+        for dcm in dcms:
+            bitmask |= 1<<dcm
+        msg = drama.obey('IFTASK@if-micro', 'TEST_SETUP',
+                        NASM_SET='R_CABIN', BAND_WIDTH=bw_mhz, QUAD_MODE=4,
+                        IF_FREQ=if_ghz, LEVEL_ADJUST=adjust, BIT_MASK=bitmask).wait(90)
+        if msg.reason != drama.REA_COMPLETE or msg.status != 0:
+            if msg.status == 261456746:  # ACSISIF__ATTEN_ZERO
+                logging.warning('low attenuator setting from IFTASK.TEST_SETUP')
+            else:
+                logging.error('bad reply from IFTASK.TEST_SETUP: %s', msg)
+                return 1
+        return 0
+
+
+    def iftask_set_bw(bw_mhz):
+        # this goes fast; probably doesn't do much.
+        logging.info('set bandwidth %g MHz', bw_mhz)
+        msg = drama.obey('IFTASK@if-micro', 'SET_DCM_BW', DCM=-1, MHZ=bw_mhz).wait(10)
+        if msg.reason != drama.REA_COMPLETE or msg.status != 0:
+            logging.error('bad reply from IFTASK.SET_DCM_BW: %s', msg)
+            return 1
+        return 0
+
+
+    def iftask_set_lo2(lo2_mhz):
+        # this can take ~20s, or ~40s if it needs to change the coax switches.
+        logging.info('set lo2 freq %g MHz', lo2_mhz)
+        msg = drama.obey('IFTASK@if-micro', 'SET_LO2_FREQ', LO2=-1, MHZ=lo2_mhz).wait(90)
+        if msg.reason != drama.REA_COMPLETE or msg.status != 0:
+            logging.error('bad reply from IFTASK.SET_LO2_FREQ: %s', msg)
+            return 1
+        return 0
+
+
+    def iftask_get_tp2(dcms, itime=0.1):
+        msg = drama.obey("IFTASK@if-micro", "WRITE_TP2", FILE="NONE", ITIME=itime).wait(5)
+        if msg.reason != drama.REA_COMPLETE or msg.status != 0:
+            logging.error('bad reply from IFTASK.WRITE_TP2: %s', msg)
+            return None
+        tps = []
+        for dcm in dcms:
+            tps.append(msg.arg['POWER%d'%(dcm)])
+        return tps
+
+
+    def iftask_get_att(dcms):
+        msg = drama.obey('IFTASK@if-micro', 'GET_DCM_ATTEN', DCM=-1).wait(5)
+        if msg.reason != drama.REA_COMPLETE or msg.status != 0:
+            logging.error('bad reply from IFTASK.GET_DCM_ATTEN: %s', msg)
+            return None
+        att = []
+        for dcm in dcms:
+            att.append(msg.arg['ATTEN%d'%(dcm)])
+        return att
 
