@@ -482,8 +482,10 @@ def CART_TUNE(msg):
         band_kwargs["LOCK_ONLY"] = lock_only
     log.info('band %d tuning to LO %g GHz%s...', band, lo_ghz, vstr)
     
+    pll_if_power = 0.0
+    
     # tune in a loop, adjusting signal to get pll_if_power in proper range.
-    # adjust attenuator if present, otherwise adjust output dBm.
+    # adjust attenuator if present, then adjust output dBm.
     if photonics:
         orig_att = att
         att_min = max(0, att-24)  # limit 2x nominal power
@@ -535,7 +537,8 @@ def CART_TUNE(msg):
             photonics.set_attenuation(att)
             time.sleep(0.05)
         log.info('band %d tuned to LO %g GHz, pll_if_power %.2f at %.2f dBm, %d attenuator counts', band, lo_ghz, pll_if_power, dbm, att)
-    else:
+    #else:
+    if not (-2.5 <= pll_if_power <= -0.7):  # adjust dbm after photonics if needed
         orig_dbm = dbm
         orig_att = att if photonics else 0
         dbm_max = min(agilent.max_dbm, dbm + 3.0)  # limit to 2x nominal power
