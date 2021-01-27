@@ -2,7 +2,17 @@
 '''
 tune.py    RMB 20210119
 
-Tune the receiver.
+Tune receiver <band> to <lo_ghz>.
+
+The [lock_side] argument controls whether the warm cartridge LO
+will be above (default) or below the reference signal harmonic.
+
+The [dbm] and [att] arguments control the initial reference signal power.
+These can be absolute values or relative to the tables in the .ini config file.
+To start e.g. 1 dBm lower with 1 dB extra attenuation, use "ini-1 ini+8".
+
+The [pll_if] argument is permissive by default.  To duplicate the behavior
+of the dbm_table.py or att_table.py scripts, use "-1.4:-1.6".
 
 
 Copyright (C) 2020 East Asian Observatory
@@ -26,25 +36,27 @@ import sys
 import os
 import time
 import argparse
+import logging
 import namakanui.cart
 import namakanui.agilent
 import namakanui.photonics
 import namakanui.ifswitch
 import namakanui.util
 import namakanui.ini
-import logging
+
 
 logging.root.setLevel(logging.DEBUG)
 logging.root.addHandler(logging.StreamHandler())
 
 binpath, datapath = namakanui.util.get_paths()
 
-parser = argparse.ArgumentParser()
-parser.add_argument('band', type=int, choices=[3,6,7])
+parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description=__doc__[__doc__.find('Tune'):__doc__.find('Copyright')].strip())
+parser.add_argument('band', type=int, choices=[3,6,7], metavar='band', help='one of [%(choices)s]')
 parser.add_argument('lo_ghz', type=float)
-parser.add_argument('lock_side', choices=['below','above'], nargs='?', default='above')
-parser.add_argument('dbm', nargs='?', default='ini-0')
-parser.add_argument('att', nargs='?', default='ini+0')
+parser.add_argument('lock_side', choices=['below','above'], nargs='?', default='above', metavar='lock_side', help='lock LO [%(choices)s] reference signal (default: %(default)s)')
+parser.add_argument('dbm', nargs='?', default='ini-0', help='signal generator starting output power (default: %(default)s)')
+parser.add_argument('att', nargs='?', default='ini+0', help='photonics attenuator starting counts (default: %(default)s)')
+parser.add_argument('pll_if', nargs='?', default='-0.8:-2.5', help='target PLL IF power range (default: %(default)s)')
 args = parser.parse_args()
 
 
@@ -68,8 +80,14 @@ except:
     att_use_ini = True
     args.att = float(args.att[3:] or '0')
 
-# use the defaults for now
-pll_range = [-.8, -2.5]
+if args.pll_if.count(':') > 1:
+    logging.error('invalid pll_if range %s, cannot have step', args.pll_if)
+    sys.exit(1)
+pll_range = namakanui.util.parse_range(args.pll_if, maxlen=2)
+if len(pll_range) < 2:
+    pll_range.append(pll_range[0])
+
+# use default search range limits
 dbm_max = None
 att_min = None
 
