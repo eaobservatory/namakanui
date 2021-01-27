@@ -21,6 +21,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
+import jac_sw
 import logging
 import argparse
 import namakanui.util
@@ -82,7 +83,7 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawTextHelpFormatter,
-        description = __doc__[__doc__.find('Tune'):__doc__.find('Copyright')]
+        description=namakanui.util.get_description(__doc__)
         )
     parser.add_argument('band', type=int)
     parser.add_argument('lo_ghz', type=float)

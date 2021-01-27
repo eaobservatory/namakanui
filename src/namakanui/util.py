@@ -33,6 +33,16 @@ def setup_logging():
     s.setFormatter(f)
     logging.root.addHandler(s)
     logging.root.setLevel(logging.INFO)
+    # setup_logging
+
+
+def get_description(s):
+    '''
+    Get script description (for -h) from given docstring s.
+    Assumes all docstrings start with filename and end with copyright notice.
+    '''
+    return s[s.find('\n',s.find('.py')):s.find('Copyright')].strip()
+    # get_description
 
 
 def get_paths():

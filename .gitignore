@@ -28,3 +28,6 @@ version.py
 # Plots
 *.png
 
+# Dummy jac_sw module
+jac_sw.py
+

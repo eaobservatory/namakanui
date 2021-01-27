@@ -39,7 +39,7 @@ namakanui.util.setup_logging()
 import argparse
 parser = argparse.ArgumentParser(
     formatter_class=argparse.RawTextHelpFormatter,
-    description = __doc__[__doc__.find('Control'):__doc__.find('Copyright')]
+    description=namakanui.util.get_description(__doc__)
     )
 parser.add_argument('-v', '--verbose', action='store_true', help='print additional debug output')
 parser.add_argument('position', help='"home", counts, or a named position from load.ini')
@@ -52,13 +52,13 @@ if args.verbose:
 binpath, datapath = namakanui.util.get_paths()
 load = namakanui.load.Load(datapath+'load.ini', time.sleep, namakanui.nop)
 
-pos = args.pos.strip()
-if pos.lower() == 'home':
+pos = args.position.strip()
+if position.lower() == 'home':
     logging.info('homing load controller...')
     load.home()
 else:
-    logging.info('moving to %s...', pos)
-    load.move(pos)
+    logging.info('moving to %s...', position)
+    load.move(position)
 
 load.update()
 logging.info('done, load at %d: %s', load.state['pos_counts'], load.state['pos_name'])
