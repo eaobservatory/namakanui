@@ -206,8 +206,8 @@ class Instrument(object):
             cart.update_all()
         self.ifswitch.set_band(band)
         # Instrument.set_band
-        
-        
+    
+    
     def set_reference(self, hz, dbm, att):
         '''Set reference signal to desired parameters,
            in the proper order to avoid power spikes.
@@ -217,6 +217,7 @@ class Instrument(object):
             att: photonics attenuation, counts
         '''
         self.log.debug('set_reference(%g, %g, %d)', hz, dbm, att)
+        
         # if increasing power output, set the frequency first.
         # if decreasing power output, set the attenuation first.
         if att < self.photonics.state['attenuation']:
@@ -225,9 +226,24 @@ class Instrument(object):
         else:
             self.photonics.set_attenuation(att)
             self.reference.set_hz_dbm(hz, dbm)
-        # set_hz_dbm doesn't call update (but set_attenuation does)
+        
+        if not self.reference.state['output']:
+            self.reference.set_output(1)
+        
+        # reference set funcs don't call update (but set_attenuation does)
         self.reference.update()
         # Instrument.set_reference
+    
+    
+    def set_safe(self):
+        '''Set reference power to minimum and attenuation to maximum.'''
+        self.log.debug('set_safe')
+        # ensure we try to set both, even if one fails
+        try:
+            self.reference.set_dbm(self.reference.safe_dbm)
+        finally:
+            self.photonics.set_attenuation(self.photonics.max_att)
+        # Instrument.set_safe
     
     
     def _try_tune(self, cart, lo_ghz, voltage, msg, skip_servo_pa, lock_only):
@@ -413,10 +429,7 @@ class Instrument(object):
             
             if cart.state['pll_unlock']:
                 self.log.error('unlocked at %.3f ghz, pll_if %.3f, final att %d, dbm %.2f. setting power to safe levels.', lo_ghz, cart.state['pll_if_power'], att, dbm)
-                try:
-                    self.reference.set_dbm(self.reference.safe_dbm)
-                finally:
-                    self.photonics.set_attenuation(self.photonics.max_att)
+                self.set_safe()
                 return False
             
             log.info('tuned to %.3f ghz, pll_if %.3f, final att %d, dbm %.2f', lo_ghz, cart.state['pll_if_power'], att, dbm)
@@ -424,12 +437,7 @@ class Instrument(object):
         
         except:
             log.exception('unhandled error tuning to %.3f ghz. setting power to safe levels.', lo_ghz)
-            # nested try/finally block will attempt to set power on both devices,
-            # even if one fails, while still raising any errors produced.
-            try:
-                self.reference.set_dbm(self.reference.safe_dbm)
-            finally:
-                self.photonics.set_attenuation(self.photonics.max_att)
+            self.set_safe()
             raise
         # Instrument.tune
 

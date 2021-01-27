@@ -1,6 +1,7 @@
 #!/local/python3/bin/python3
 '''
-deflux.py   RMB 20200414
+namakanui_deflux.py   RMB 20200414
+
 Demagnetize and deflux (via mixer heating) a receiver.
 
 
@@ -29,16 +30,15 @@ import namakanui.cart
 import namakanui.util
 import logging
 
-logging.root.setLevel(logging.INFO)
-logging.root.addHandler(logging.StreamHandler())
+namakanui.util.setup_logging()
 
 binpath,datapath = namakanui.util.get_paths()
 
-parser = argparse.ArgumentParser(description='''
-Demagnetize and deflux a receiver.
-''', formatter_class=argparse.RawTextHelpFormatter)
-
-parser.add_argument('band', type=int, choices=[6,7])
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawTextHelpFormatter,
+    description=namakanui.util.get_description(__doc__)
+    )
+parser.add_argument('band', type=int, choices=[6,7])  # TODO choices from config
 parser.add_argument('--skip', choices=['demag', 'heat'])
 args = parser.parse_args()
 
@@ -48,11 +48,9 @@ cart.log.setLevel(logging.DEBUG)  # TODO: ought to be an __init__ arg for this
 cart.power(1)
 
 if not args.skip:
-    cart.demagnetize_and_deflux()
+    cart.demagnetize_and_deflux(heat=True)
 else:
-    cart._set_pa([0.0]*4)
-    cart._ramp_sis_bias_voltages([0.0]*4)  # harmless if not SIS mixers
-    cart._ramp_sis_magnet_currents([0.0]*4)  # harmless if no SIS magnets
+    cart.zero()
     if args.skip == 'demag':
         cart._mixer_heating()
     else:

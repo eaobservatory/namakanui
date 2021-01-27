@@ -1,10 +1,11 @@
 #!/local/python3/bin/python3
 '''
-power_down.py   RMB 20190827
+namakanui_power_down.py   RMB 20190827
 
-Set Agilent to a safe level, then power down all cartridges.
-Uses the Cart class to properly disable the amplifiers
-and ramp voltages and currents to 0.
+Set reference to a safe level, then power down all cartridges.
+
+Run this script before turning off the FEMC to avoid sudden changes
+in the SIS mixers that might cause trapped flux.
 
 
 Copyright (C) 2020 East Asian Observatory
@@ -24,36 +25,39 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw
-import namakanui.agilent
-import namakanui.cart
+import namakanui.instrument
 import namakanui.util
+import namakanui.sim as sim
 import socket
 import time
 import os
 import sys
+import argparse
 
 import logging
-logging.root.addHandler(logging.StreamHandler())
-logging.root.setLevel(logging.INFO)
+namakanui.util.setup_logging()
 
-binpath, datapath = namakanui.util.get_paths()
+# just for the sake of a -h message
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawTextHelpFormatter,
+    description=namakanui.util.get_description(__doc__)
+    )
+args = parser.parse_args()
 
-def mypub(n,s):
-    pass
+# we don't care about the load or ifswitch here
+simulate = sim.SIM_LOAD | sim.SIM_IFSW_6260 | sim.SIM_IFSW_6024
+instrument = namakanui.instrument.Instrument(simulate=simulate)
 
-logging.info('\ndisabling agilent output')
+logging.info('\nDisabling reference signal')
 try:
-    agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
-    agilent.set_dbm(agilent.safe_dbm)
-    agilent.set_output(0)
-except socket.timeout as e:
-    logging.warning('*** WARNING: socket.timeout, skipping agilent. ***')
+    instrument.set_safe()
+    instrument.reference.set_output(0)
+except:
+    logging.exception('*** WARNING reference signal may still have power ***')
 
+for band in instrument.bands:
+    logging.info('\nBand %d:', band)
+    instrument.carts[band].power(0)
 
-for band in [3,6,7]:
-    logging.info('\nband %d:', band)
-    cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, mypub)
-    cart.power(0)
-    
-
-logging.info('\nall cartridges powered down.')
+logging.info('\nAll cartridges powered down.')
+logging.info('Now safe to turn off FEMC (telnet jpower13).')
