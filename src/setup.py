@@ -14,7 +14,7 @@ uae.setup(
                'power_down.py',
                'set_load.py',
                'temp_mon.py',
-               'tune.sh',
+               'namakanui_tune.py',
                'yfactor.py'],
     packages = ['namakanui'],
 )
