@@ -4,7 +4,7 @@ namakanui/instrument.py   RMB 20210113
 Instrument class to contain instances for the whole receiver system.
 
 
-Copyright (C) 2020 East Asian Observatory
+Copyright (C) 2021 East Asian Observatory
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from namakanui.ini import *
 from namakanui import sim
 import logging
+import time
 
 import namakanui.agilent
 import namakanui.cart
@@ -38,9 +39,9 @@ class Instrument(object):
     Class to contain instances for the whole receiver system.
     '''
     
-    def __init__(self, inifile, sleep, publish, simulate=None):
+    def __init__(self, inifile=None, sleep=time.sleep, publish=namakanui.nop, simulate=None):
         '''Arguments:
-            inifile: Path to config file or IncludeParser instance.
+            inifile: Path to config file (instrument.ini if None) or IncludeParser instance.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
             simulate: Bitmask. If not None (default), overrides settings in inifiles.
@@ -49,6 +50,9 @@ class Instrument(object):
         self.publish = publish
         self.hardware = []
         self.carts = {}
+        if inifile is None:
+            binpath, datapath = namakanui.util.get_paths()
+            inifile = datapath + 'instrument.ini'
         self.initialise(inifile, simulate)
         # Instrument.__init__
 
@@ -258,7 +262,7 @@ class Instrument(object):
     
     
     def tune(self, band, lo_ghz, voltage=0.0,
-             lock_side='above', pll_range=[-.8,-2.5],
+             lock_side='above', pll_if_range=[-.8,-2.5],
              att_ini=True, att_start=None, att_min=None,
              dbm_ini=True, dbm_start=None, dbm_max=None,
              skip_servo_pa=False, lock_only=False):
@@ -270,7 +274,7 @@ class Instrument(object):
             lo_ghz: Frequency to tune to, GHz
             voltage: Target PLL control voltage [-10, 10]; None skips FM adjustment
             lock_side: Lock PLL "below"(0) or "above"(1) ref signal; if None no change
-            pll_range: [min_power, max_power].
+            pll_if_range: [min_power, max_power].
             att_ini: If True, att_range is relative to interpolated table value.
             att_start: If None, is (att_ini ?  0 : photonics.max_att)
             att_min:   If None, is (att_ini ? -6 : 0)
@@ -287,6 +291,16 @@ class Instrument(object):
         
         # TODO: band 7 may require a longer delay
         delay_secs = 0.05
+        
+        # make sure pll_if_range signs and order are correct (must exist)
+        pll_range = [-abs(pll_if_range[0]), -abs(pll_if_range[1])]
+        pll_range.sort()
+        pll_range.reverse()
+        pmin = -0.5
+        pmax = -3.0
+        if pll_range[0] > -0.5 or pll_range[1] < -3.0:
+            raise ValueError(f'pll_if_range {pll_range} outside [{pmin},{pmax}]')
+        self.log.info('pll_if_range: [%.2f, %.2f]', pll_range[0], pll_range[1])
         
         # set ifswitch; will raise if band is invalid
         self.set_band(band)
@@ -335,12 +349,6 @@ class Instrument(object):
         self.log.info('att_start: %d, att_min: %d', att_start, att_min)
         self.log.info('dbm_start: %.2f, dbm_max: %.2f', dbm_start, dbm_max)
         
-        # make sure pll_range signs and order are correct (must exist)
-        pll_range = [-abs(pll_range[0]), -abs(pll_range[1])]
-        pll_range.sort()
-        pll_range.reverse()
-        self.log.info('pll_range: [%.2f, %.2f]', pll_range[0], pll_range[1])
-        
         att = att_start
         dbm = dbm_start
         hz = fsig*1e9
@@ -355,22 +363,25 @@ class Instrument(object):
             ### PHOTONICS ATTENUATOR ADJUSTMENT
             if not self.photonics.simulate:
                 # quickly decrease attenuation (raise power) if needed
+                datt = max(4, int(round(photonics.counts_per_db)))
                 while (cart.state['pll_unlock'] or cart.state['pll_if_power'] > pll_range[0]) and att > att_min:
-                    att -= 4  # 2 dB for 6-bit 31.5 dB attenuator
+                    att -= datt
                     if att < att_min:
                         att = att_min
                     self.log.info('unlock: %d, pll_if: %.3f; decreasing att to %d', cart.state['pll_unlock'], cart.state['pll_if_power'], att)
                     self._try_att(cart, lo_ghz, voltage, att, skip_servo_pa, lock_only, delay_secs)
                 # increase attenuation (decrease power) if too strong
+                datt = max(2, int(round(photonics.counts_per_db/3)))
                 while (not cart.state['pll_unlock']) and cart.state['pll_if_power'] < pll_range[1] and att < att_max:
-                    att += 2  # 1 dB for 6-bit 31.5 dB attenuator
+                    att += datt
                     if att > att_max:
                         att = att_max
                     self.log.info('unlock: %d, pll_if: %.3f; increasing att to %d', cart.state['pll_unlock'], cart.state['pll_if_power'], att)
                     self._try_att(cart, lo_ghz, voltage, att, skip_servo_pa, lock_only, delay_secs)
                 # slowly decrease attenuation to target (and relock if needed)
+                datt = max(1, int(round(photonics.counts_per_db/9)))
                 while (cart.state['pll_unlock'] or cart.state['pll_if_power'] > pll_range[0]) and att > att_min:
-                    att -= 1  # .5 dB for 6-bit 31.5 dB attenuator
+                    att -= datt
                     if att < att_min:
                         att = att_min
                     self.log.info('unlock: %d, pll_if: %.3f; decreasing att to %d', cart.state['pll_unlock'], cart.state['pll_if_power'], att)

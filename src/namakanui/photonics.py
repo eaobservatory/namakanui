@@ -62,7 +62,8 @@ class Photonics(object):
         self.name = pconfig['pubname']
         self.logname = pconfig['logname']
         self.log = logging.getLogger(self.logname)
-        self.nbits = pconfig['nbits']
+        self.nbits = int(pconfig['nbits'])
+        self.counts_per_db = float(pconfig['counts_per_db'])
         self.max_att = (1 << self.nbits) - 1
         self.state = {'number':0}
         self.state['DO'] = [0]*8  # needs to match ADAM type, not nbits
@@ -129,7 +130,6 @@ class Photonics(object):
             self.state['DO'] = DO
             # TODO lock status
         
-        # I don't know sense or which bit is which yet
         att = 0
         for i,b in enumerate(self.state['DO']):
             # TODO account for if len(DO) > self.nbits?
