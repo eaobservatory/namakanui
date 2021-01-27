@@ -1,8 +1,11 @@
 '''
-namakanui/agilent.py    RMB 20181010
+namakanui/reference.py    RMB 20181010
 
-TCP/IP socket interface to the Agilent N5173B / E8257D signal generator,
+TCP/IP socket interface to the reference signal generator,
+which is either an Agilent N5173B or Keysight E8257D,
 using SCPI command language.
+
+Renamed to "Reference" (from "Agilent") 20210127.
 
 
 Copyright (C) 2020 East Asian Observatory
@@ -29,9 +32,9 @@ import logging
 import os
 
 
-class Agilent(object):
+class Reference(object):
     '''
-    Class to control an Agilent N5173B signal generator.
+    Class to control an Agilent N5173B or Keysight E8257D signal generator.
     '''
     
     def __init__(self, inifile, sleep, publish, simulate=None):
@@ -44,30 +47,30 @@ class Agilent(object):
         self.config = inifile
         if not hasattr(inifile, 'items'):
             self.config = IncludeParser(inifile)
-        agconfig = self.config['agilent']
+        rconfig = self.config['reference']
         self.sleep = sleep
         self.publish = publish
         if simulate is not None:
             self.simulate = simulate
         else:
-            self.simulate = sim.str_to_bits(agconfig['simulate'])
-        self.name = agconfig['pubname']
+            self.simulate = sim.str_to_bits(rconfig['simulate'])
+        self.name = rconfig['pubname']
         self.state = {'number':0}
-        self.logname = agconfig['logname']
+        self.logname = rconfig['logname']
         self.log = logging.getLogger(self.logname)
-        self.ip = agconfig['ip']
-        self.port = int(agconfig['port'])
-        self.safe_dbm = float(agconfig['safe_dbm'])
-        self.max_dbm = float(agconfig['max_dbm'])
-        self.harmonic = int(agconfig['harmonic'])
-        self.floog = float(agconfig['floog'])
+        self.ip = rconfig['ip']
+        self.port = int(rconfig['port'])
+        self.safe_dbm = float(rconfig['safe_dbm'])
+        self.max_dbm = float(rconfig['max_dbm'])
+        self.harmonic = int(rconfig['harmonic'])
+        self.floog = float(rconfig['floog'])
         
         datapath = os.path.dirname(self.config.inifilename) + '/'
         self.dbm_tables = {}  # indexed by band, 0 = photonics table
-        self.dbm_tables[0] = read_ascii(datapath + agconfig['photonics_dbm'])
+        self.dbm_tables[0] = read_ascii(datapath + rconfig['photonics_dbm'])
+        dbm_config = self.config[rconfig['dbm_tables']]
         for b in [3,6,7]:
-            #self.dbm_tables[b] = read_table(self.config['dbm_b%d'%(b)], 'dbm', float, ['lo', 'dbm'])
-            self.dbm_tables[b] = read_ascii(datapath + agconfig['b%d_dbm'%(b)])
+            self.dbm_tables[b] = read_ascii(datapath + dbm_config['b%d_dbm'%(b)])
         
         self.log.debug('__init__ %s, sim=%d, %s:%d, dbm=%g, harmonic=%d, floog=%g',
                        self.config.inifilename, self.simulate, self.ip, self.port,
@@ -79,18 +82,18 @@ class Agilent(object):
         self.close()
     
     def close(self):
-        '''Close the socket connection to the Agilent.'''
+        '''Close the socket connection to the signal generator.'''
         if hasattr(self, 's'):
             self.log.debug('closing socket')
             self.s.close()
             del self.s
     
     def initialise(self):
-        '''Open the socket connection to the Agilent and get/publish state.'''
+        '''Open the socket connection to the hardware and get/publish state.'''
         self.log.debug('initialise')
         
         # fix simulate set
-        self.simulate &= sim.SIM_AGILENT
+        self.simulate &= sim.SIM_REFERENCE
         
         self.state['simulate'] = self.simulate
         self.state['sim_text'] = sim.bits_to_str(self.simulate)
@@ -113,7 +116,7 @@ class Agilent(object):
     
     def update(self, publish_only=False):
         '''
-        Update Agilent parameters.  If publish_only, do not query params first.
+        Update parameters.  If publish_only, do not query params first.
         Call at ~0.1Hz.
         '''
         self.log.debug('update')
@@ -174,7 +177,7 @@ class Agilent(object):
         while True:
             e.append(self.cmd(':syst:err?'))
             if not e[-1]:
-                raise RuntimeError('Agilent bad reply to error query, queue so far %s' % (e))
+                raise RuntimeError('Reference bad reply to error query, queue so far %s' % (e))
             if e[-1].startswith('+0,'):
                 break
         return e
@@ -190,7 +193,7 @@ class Agilent(object):
         self.cmd(param + ' ' + v)
         rv = self.cmd(param + '?')
         if t(v) != t(rv):
-            raise RuntimeError('Agilent failed to set %s to %s, reply %s, errors %s' % (param, v, rv, self.get_errors()))
+            raise RuntimeError('Reference failed to set %s to %s, reply %s, errors %s' % (param, v, rv, self.get_errors()))
     
     # NOTE: These 'set' functions do not call update(), since we expect
     #       the user to make multiple set_ calls followed by a single update().

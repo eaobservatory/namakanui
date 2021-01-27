@@ -25,7 +25,7 @@ from namakanui import sim
 import logging
 import time
 
-import namakanui.agilent
+import namakanui.reference
 import namakanui.cart
 import namakanui.femc
 import namakanui.ifswitch
@@ -75,7 +75,7 @@ class Instrument(object):
         self.carts = {}
         self.update_index_hw = -1
         self.update_index_cart = -1
-        self.agilent = None
+        self.reference = None
         self.ifswitch = None
         self.load = None
         self.photonics = None
@@ -114,13 +114,13 @@ class Instrument(object):
         
         self.close()
         
-        self.agilent = namakanui.agilent.Agilent(inifile, sleep, publish, simulate)
+        self.reference = namakanui.reference.Reference(inifile, sleep, publish, simulate)
         self.ifswitch = namakanui.ifswitch.IFSwitch(inifile, sleep, publish, simulate)
         self.load = namakanui.load.Load(inifile, sleep, publish, simulate)
         self.photonics = namakanui.photonics.Photonics(inifile, sleep, publish, simulate)
         self.femc = namakanui.femc.FEMC(inifile, sleep, publish, simulate)
         
-        self.hardware = [self.agilent, self.ifswitch, self.load, self.photonics, self.femc]
+        self.hardware = [self.reference, self.ifswitch, self.load, self.photonics, self.femc]
         
         # build up simulate bitmask from individual components
         self.simulate = 0
@@ -160,7 +160,7 @@ class Instrument(object):
     
     def update_one_hw(self):
         '''Call a single hardware update function and advance the index.
-            Updates one of: agilent, ifswitch, load, photonics, femc.
+            Updates one of: reference, ifswitch, load, photonics, femc.
             Recommended 10s cycle, call delay 10.0/len(hardware).
         '''
         self.log.debug('update_one_hw')
@@ -198,8 +198,8 @@ class Instrument(object):
         self.log.info('switching to band %d', band)
         # reduce reference signal power to minimum levels
         self.photonics.set_attenuation(self.photonics.max_att)
-        self.agilent.set_dbm(self.agilent.safe_dbm)
-        self.agilent.update(publish_only=True)
+        self.reference.set_dbm(self.reference.safe_dbm)
+        self.reference.update(publish_only=True)
         # zero bias/amps/magnets on all carts to reduce interference
         for cart in self.carts.values():
             cart.zero()
@@ -212,21 +212,21 @@ class Instrument(object):
         '''Set reference signal to desired parameters,
            in the proper order to avoid power spikes.
            Arguments:
-            hz: agilent output frequency, Hz
-            dbm: agilent output power, dBm
+            hz: reference output frequency, Hz
+            dbm: reference output power, dBm
             att: photonics attenuation, counts
         '''
         self.log.debug('set_reference(%g, %g, %d)', hz, dbm, att)
         # if increasing power output, set the frequency first.
         # if decreasing power output, set the attenuation first.
         if att < self.photonics.state['attenuation']:
-            self.agilent.set_hz_dbm(hz, dbm)
+            self.reference.set_hz_dbm(hz, dbm)
             self.photonics.set_attenuation(att)
         else:
             self.photonics.set_attenuation(att)
-            self.agilent.set_hz_dbm(hz, dbm)
+            self.reference.set_hz_dbm(hz, dbm)
         # set_hz_dbm doesn't call update (but set_attenuation does)
-        self.agilent.update()
+        self.reference.update()
         # Instrument.set_reference
     
     
@@ -252,9 +252,9 @@ class Instrument(object):
 
     def _try_dbm(self, cart, lo_ghz, voltage, dbm, skip_servo_pa, lock_only, delay_secs):
         '''Helper function used by tune(): set a new dbm, retune if needed.'''
-        self.agilent.set_dbm(dbm)
+        self.reference.set_dbm(dbm)
         self.sleep(delay_secs)
-        self.agilent.update()
+        self.reference.update()
         cart.update_all()
         if cart.state['pll_unlock']:
             self._try_tune(cart, lo_ghz, voltage, 'dbm %.2f'%(dbm), skip_servo_pa, lock_only)
@@ -267,7 +267,7 @@ class Instrument(object):
              dbm_ini=True, dbm_start=None, dbm_max=None,
              skip_servo_pa=False, lock_only=False):
         '''Tune the receiver and optimize PLL IF power by adjusting
-           photonics attenuation and/or agilent output power.
+           photonics attenuation and/or reference output power.
            Returns True on success, False on failure.  (TODO throw on failure?)
            Arguments:
             band: Band to tune
@@ -280,8 +280,8 @@ class Instrument(object):
             att_min:   If None, is (att_ini ? -6 : 0)
             dbm_ini: If True, dbm_range is relative to interpolated table value.
                NOTE: If not photonics.simulate, use shared photonics_dbm table (band 0).
-            dbm_start: If None, is (dbm_ini ? 0 : agilent.safe_dbm)
-            dbm_max:   If None, is (dbm_ini ? 3 : agilent.max_dbm)
+            dbm_start: If None, is (dbm_ini ? 0 : reference.safe_dbm)
+            dbm_max:   If None, is (dbm_ini ? 3 : reference.max_dbm)
             skip_servo_pa: If true, PA not adjusted for target mixer current.
             lock_only: If true, pa/lna/sis/magnets held at previous values.
         '''
@@ -310,9 +310,9 @@ class Instrument(object):
         # set PLL lock side and compute frequencies
         cart.set_lock_side(lock_side)
         lock_side = cart.state['pll_sb_lock']  # 0 or 1
-        floog = self.agilent.floog * [1.0, -1.0][lock_side]  # [below, above]
+        floog = self.reference.floog * [1.0, -1.0][lock_side]  # [below, above]
         fyig = lo_ghz / (cart.cold_mult * cart.warm_mult)
-        fsig = (fyig*cart.warm_mult + floog) / self.agilent.harmonic
+        fsig = (fyig*cart.warm_mult + floog) / self.reference.harmonic
         
         # function alias
         clip = namakanui.util.clip
@@ -329,10 +329,10 @@ class Instrument(object):
         att_start = int(round(clip(att_start, 0, att_max)))
         att_min = int(round(clip(att_min, 0, att_max)))
         
-        # agilent output power search range
-        dbm_min = self.agilent.safe_dbm
+        # reference output power search range
+        dbm_min = self.reference.safe_dbm
         dbm_start = (0.0 if dbm_ini else dbm_min) if dbm_start is None else dbm_start
-        dbm_max = (3.0 if dbm_ini else agilent.max_dbm) if dbm_max is None else dbm_max
+        dbm_max = (3.0 if dbm_ini else reference.max_dbm) if dbm_max is None else dbm_max
         if dbm_ini:
             ghz = lo_ghz
             dbm_band = cart.band
@@ -340,11 +340,11 @@ class Instrument(object):
                 # use the shared photonics_dbm power table
                 ghz = fsig
                 dbm_band = 0
-            dbm_ini = self.agilent.interp_dbm(dbm_band, ghz)
+            dbm_ini = self.reference.interp_dbm(dbm_band, ghz)
             dbm_start += dbm_ini
             dbm_max += dbm_ini
-        dbm_start = clip(dbm_start, dbm_min, self.agilent.max_dbm)
-        dbm_max = clip(dbm_max, dbm_min, self.agilent.max_dbm)
+        dbm_start = clip(dbm_start, dbm_min, self.reference.max_dbm)
+        dbm_max = clip(dbm_max, dbm_min, self.reference.max_dbm)
         
         self.log.info('att_start: %d, att_min: %d', att_start, att_min)
         self.log.info('dbm_start: %.2f, dbm_max: %.2f', dbm_start, dbm_max)
@@ -352,7 +352,7 @@ class Instrument(object):
         att = att_start
         dbm = dbm_start
         hz = fsig*1e9
-        self.log.info('agilent hz: %.1f', hz)
+        self.log.info('reference hz: %.1f', hz)
         
         # from here on, any uncaught exception needs to set power to safe levels
         try:
@@ -387,8 +387,8 @@ class Instrument(object):
                     self.log.info('unlock: %d, pll_if: %.3f; decreasing att to %d', cart.state['pll_unlock'], cart.state['pll_if_power'], att)
                     self._try_att(cart, lo_ghz, voltage, att, skip_servo_pa, lock_only, delay_secs)
             
-            ### AGILENT OUTPUT POWER ADJUSTMENT
-            if not self.agilent.simulate:
+            ### REFERENCE OUTPUT POWER ADJUSTMENT
+            if not self.reference.simulate:
                 # quickly increase power if needed
                 while (cart.state['pll_unlock'] or cart.state['pll_if_power'] > pll_range[0]) and dbm < dbm_max:
                     dbm += 1.0
@@ -414,7 +414,7 @@ class Instrument(object):
             if cart.state['pll_unlock']:
                 self.log.error('unlocked at %.3f ghz, pll_if %.3f, final att %d, dbm %.2f. setting power to safe levels.', lo_ghz, cart.state['pll_if_power'], att, dbm)
                 try:
-                    self.agilent.set_dbm(self.agilent.safe_dbm)
+                    self.reference.set_dbm(self.reference.safe_dbm)
                 finally:
                     self.photonics.set_attenuation(self.photonics.max_att)
                 return False
@@ -427,7 +427,7 @@ class Instrument(object):
             # nested try/finally block will attempt to set power on both devices,
             # even if one fails, while still raising any errors produced.
             try:
-                self.agilent.set_dbm(self.agilent.safe_dbm)
+                self.reference.set_dbm(self.reference.safe_dbm)
             finally:
                 self.photonics.set_attenuation(self.photonics.max_att)
             raise
