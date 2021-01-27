@@ -21,6 +21,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
+import logging
 import argparse
 import namakanui.util
 
@@ -101,8 +102,10 @@ if __name__ == '__main__':
     except ValueError as e:
         parser.error(e)  # calls sys.exit
     
-    # debug
-    #print(args)
+    namakanui.util.setup_logging()
+    logging.root.setLevel(logging.DEBUG)
+    
+    logging.debug('args: %s', args)
     
     import namakanui.instrument
     instrument = namakanui.instrument.Instrument(config)

@@ -3,9 +3,6 @@ namakanui/util/__init__.py   RMB 20200227
 
 This file contains some basic utility functions.
 
-The rest of this package directory contains modules that can be invoked
-as scripts by namakanui_util.py, or as actions by namakanui_task.py.
-
 
 Copyright (C) 2020 East Asian Observatory
 
@@ -27,6 +24,15 @@ import sys
 import os
 import logging
 import time
+
+
+def setup_logging():
+    '''Perform basic logging setup for scripts.'''
+    f = logging.Formatter('%(levelname)s:%(name)s: %(message)s')
+    s = logging.StreamHandler()
+    s.setFormatter(f)
+    logging.root.addHandler(s)
+    logging.root.setLevel(logging.INFO)
 
 
 def get_paths():
