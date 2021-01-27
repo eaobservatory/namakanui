@@ -59,7 +59,7 @@ class Cart(object):
     NOTE: There are three update functions, so call update_one() at 0.6 Hz.
     '''
     
-    def __init__(self, band, femc, inifile, sleep, publish, simulate=None):
+    def __init__(self, band, femc, inifile, sleep, publish, simulate=0):
         '''
         Create a Cart instance from given config file.  Arguments:
             band: Cartridge band number, e.g. 6 for 230 GHz, 'U'u.
@@ -67,7 +67,7 @@ class Cart(object):
             inifile: Path to config file or IncludeParser instance.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
-            simulate: Bitmask. If not None (default), overrides setting in inifile.
+            simulate: Mask, bitwise ORed with config settings.
         '''
         self.config = inifile
         if not hasattr(inifile, 'items'):
@@ -82,10 +82,7 @@ class Cart(object):
         self.logname = self.config[b]['logname']
         self.log = logging.getLogger(self.logname)
         self.name = self.config[b]['pubname']
-        if simulate is not None:
-            self.simulate = simulate
-        else:
-            self.simulate = sim.str_to_bits(self.config[b]['simulate'])
+        self.simulate = sim.str_to_bits(self.config[b]['simulate']) | simulate
         self.state = {'number':0}
         # this list is used by update_one() and update_all()
         self.update_functions = [self.update_a, self.update_b, self.update_c]

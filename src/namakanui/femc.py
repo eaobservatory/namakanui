@@ -251,12 +251,12 @@ _lpr_edfa_driver_state = 0xd03c  # temperature alarm
 
 class FEMC(object):
     
-    def __init__(self, inifile, sleep, publish, simulate=None):
+    def __init__(self, inifile, sleep, publish, simulate=0):
         '''Arguments:
             inifile: Path to config file or IncludeParser instance.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
-            simulate: Bitmask. If not None (default), overrides setting in inifile.
+            simulate: Mask, bitwise ORed with config settings.
         '''
         self.config = inifile
         if not hasattr(inifile, 'items'):
@@ -264,10 +264,7 @@ class FEMC(object):
         cfg = self.config['femc']
         self.sleep = sleep
         self.publish = publish
-        if simulate is not None:
-            self.simulate = simulate
-        else:
-            self.simulate = sim.str_to_bits(cfg['simulate'])
+        simulate = sim.str_to_bits(cfg['simulate']) | simulate
         self.simulate &= sim.SIM_FEMC
         self.name = cfg['pubname']
         

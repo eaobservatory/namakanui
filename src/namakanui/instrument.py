@@ -39,12 +39,12 @@ class Instrument(object):
     Class to contain instances for the whole receiver system.
     '''
     
-    def __init__(self, inifile=None, sleep=time.sleep, publish=namakanui.nop, simulate=None):
+    def __init__(self, inifile=None, sleep=time.sleep, publish=namakanui.nop, simulate=0):
         '''Arguments:
             inifile: Path to config file (instrument.ini if None) or IncludeParser instance.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
-            simulate: Bitmask. If not None (default), overrides settings in inifiles.
+            simulate: Mask, bitwise ORed with config settings.
         '''
         self.sleep = sleep
         self.publish = publish
@@ -83,11 +83,11 @@ class Instrument(object):
         # Instrument.close
     
     
-    def initialise(self, inifile, simulate=None):
+    def initialise(self, inifile, simulate=0):
         '''Create all instances.
            Arguments:
             inifile: Path to config file or IncludeParser instance.
-            simulate: Bitmask. If not None (default), overrides settings in inifiles.
+            simulate: Mask, bitwise ORed with config settings.
         '''
         self.log.debug('initialise')
         

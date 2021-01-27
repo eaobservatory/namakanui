@@ -37,12 +37,12 @@ class Reference(object):
     Class to control an Agilent N5173B or Keysight E8257D signal generator.
     '''
     
-    def __init__(self, inifile, sleep, publish, simulate=None):
+    def __init__(self, inifile, sleep, publish, simulate=0):
         '''Arguments:
             inifile: Path to config file or IncludeParser instance.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
-            simulate: Bitmask. If not None (default), overrides setting in inifile.
+            simulate: Mask, bitwise ORed with config settings.
         '''
         self.config = inifile
         if not hasattr(inifile, 'items'):
@@ -50,10 +50,7 @@ class Reference(object):
         rconfig = self.config['reference']
         self.sleep = sleep
         self.publish = publish
-        if simulate is not None:
-            self.simulate = simulate
-        else:
-            self.simulate = sim.str_to_bits(rconfig['simulate'])
+        self.simulate = sim.str_to_bits(rconfig['simulate']) | simulate
         self.name = rconfig['pubname']
         self.state = {'number':0}
         self.logname = rconfig['logname']
