@@ -197,9 +197,7 @@ class Instrument(object):
             return
         self.log.info('switching to band %d', band)
         # reduce reference signal power to minimum levels
-        self.photonics.set_attenuation(self.photonics.max_att)
-        self.reference.set_dbm(self.reference.safe_dbm)
-        self.reference.update(publish_only=True)
+        self.set_safe()
         # zero bias/amps/magnets on all carts to reduce interference
         for cart in self.carts.values():
             cart.zero()
@@ -240,9 +238,10 @@ class Instrument(object):
         self.log.debug('set_safe')
         # ensure we try to set both, even if one fails
         try:
-            self.reference.set_dbm(self.reference.safe_dbm)
-        finally:
             self.photonics.set_attenuation(self.photonics.max_att)
+        finally:
+            self.reference.set_dbm(self.reference.safe_dbm)
+            self.reference.update(publish_only=True)
         # Instrument.set_safe
     
     
@@ -278,7 +277,7 @@ class Instrument(object):
     
     
     def tune(self, band, lo_ghz, voltage=0.0,
-             lock_side='above', pll_if_range=[-.8,-2.5],
+             lock_side='above', pll_if=[-.8,-2.5],
              att_ini=True, att_start=None, att_min=None,
              dbm_ini=True, dbm_start=None, dbm_max=None,
              skip_servo_pa=False, lock_only=False):
@@ -290,7 +289,7 @@ class Instrument(object):
             lo_ghz: Frequency to tune to, GHz
             voltage: Target PLL control voltage [-10, 10]; None skips FM adjustment
             lock_side: Lock PLL "below"(0) or "above"(1) ref signal; if None no change
-            pll_if_range: [min_power, max_power].
+            pll_if: [min_power, max_power].
             att_ini: If True, att_range is relative to interpolated table value.
             att_start: If None, is (att_ini ?  0 : photonics.max_att)
             att_min:   If None, is (att_ini ? -6 : 0)
@@ -308,20 +307,21 @@ class Instrument(object):
         # TODO: band 7 may require a longer delay
         delay_secs = 0.05
         
-        # make sure pll_if_range signs and order are correct (must exist)
-        pll_range = [-abs(pll_if_range[0]), -abs(pll_if_range[1])]
+        # make sure pll_if signs and order are correct (must exist)
+        pll_range = [-abs(pll_if[0]), -abs(pll_if[1])]
         pll_range.sort()
         pll_range.reverse()
         pmin = -0.5
         pmax = -3.0
-        if pll_range[0] > -0.5 or pll_range[1] < -3.0:
-            raise ValueError(f'pll_if_range {pll_range} outside [{pmin},{pmax}]')
-        self.log.info('pll_if_range: [%.2f, %.2f]', pll_range[0], pll_range[1])
+        if pll_range[0] > pmin or pll_range[1] < pmax:
+            raise ValueError(f'pll_if {pll_range} outside [{pmin},{pmax}]')
+        self.log.info('pll_if: [%.2f, %.2f]', pll_range[0], pll_range[1])
         
         # set ifswitch; will raise if band is invalid
         self.set_band(band)
         
         cart = self.carts[band]
+        cart.power(1)
         
         # set PLL lock side and compute frequencies
         cart.set_lock_side(lock_side)

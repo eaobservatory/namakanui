@@ -63,13 +63,13 @@ def tune_args(config, band, lo_ghz, voltage=0.0,
     
     if pll_if.count(':') > 1:
         raise ValueError(f'pll_if {pll_if} range step not allowed')
-    pll_if_range = namakanui.util.parse_range(pll_if, maxlen=2)
-    if len(pll_if_range) < 2:
-        pll_if_range.append(pll_if_range[0])
+    pll_if = namakanui.util.parse_range(pll_if, maxlen=2)
+    if len(pll_if) < 2:
+        pll_if.append(pll_if[0])
     pll_if_valid = namakanui.util.interval(-0.5, -3.0)
-    if pll_if_range[0] not in pll_if_valid or pll_if_range[1] not in pll_if_valid:
-        raise ValueError(f'pll_if {pll_if_range} not in range {pll_if_valid}')
-    args.pll_if_range = pll_if_range
+    if pll_if[0] not in pll_if_valid or pll_if[1] not in pll_if_valid:
+        raise ValueError(f'pll_if {pll_if} not in range {pll_if_valid}')
+    args.pll_if = pll_if
     
     return args
     # tune_args
@@ -79,7 +79,6 @@ if __name__ == '__main__':
     import namakanui.ini
     binpath, datapath = namakanui.util.get_paths()
     config = namakanui.ini.IncludeParser(datapath+'instrument.ini')
-    bands = sorted([int(b) for b in config['bands']])
     
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawTextHelpFormatter,

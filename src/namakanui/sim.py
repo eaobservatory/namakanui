@@ -103,7 +103,8 @@ def bits_to_str(bits):
 
 def str_to_bits(s):
     '''Return a bitmask for given SIM fields in string s.'''
-    s = s.replace(',',' ','|').split()
+    s = s.replace(',',' ')
+    s = s.replace('|',' ').split()
     b = 0
     for k in s:
         b |= str_to_bit_dict[k]

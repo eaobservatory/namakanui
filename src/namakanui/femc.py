@@ -59,6 +59,7 @@ import socket
 import struct
 import time
 import select
+import logging
 
 # Custom exception types for more obvious fault messages
 class FEMC_RuntimeError(RuntimeError):
@@ -264,7 +265,7 @@ class FEMC(object):
         cfg = self.config['femc']
         self.sleep = sleep
         self.publish = publish
-        simulate = sim.str_to_bits(cfg['simulate']) | simulate
+        self.simulate = sim.str_to_bits(cfg['simulate']) | simulate
         self.simulate &= sim.SIM_FEMC
         self.name = cfg['pubname']
         

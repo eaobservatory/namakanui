@@ -987,9 +987,9 @@ class Cart(object):
             self.initialise()
             self.log.info('power-off complete.')
         elif enable:
-            self.log.info('power(1): power already on')
+            self.log.debug('power(1): power already on')
         else:
-            self.log.info('power(0): power already off')
+            self.log.debug('power(0): power already off')
         # Cart.power
     
     

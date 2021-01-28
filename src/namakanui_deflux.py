@@ -2,7 +2,7 @@
 '''
 namakanui_deflux.py   RMB 20200414
 
-Demagnetize and deflux (via mixer heating) a receiver.
+Deflux a receiver by demagnetizing and heating.
 
 
 Copyright (C) 2020 East Asian Observatory
@@ -23,45 +23,81 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import jac_sw
 import sys
-import os
 import time
+import logging
 import argparse
+import namakanui.femc
 import namakanui.cart
 import namakanui.util
-import logging
+import namakanui.ini
 
-namakanui.util.setup_logging()
 
-binpath,datapath = namakanui.util.get_paths()
+log = logging.getLogger(__name__)
+skip_valid = ['demag', 'heat']
 
-parser = argparse.ArgumentParser(
-    formatter_class=argparse.RawTextHelpFormatter,
-    description=namakanui.util.get_description(__doc__)
-    )
-parser.add_argument('band', type=int, choices=[6,7])  # TODO choices from config
-parser.add_argument('--skip', choices=['demag', 'heat'])
-args = parser.parse_args()
 
-# setup cartridge
-cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, namakanui.nop)
-cart.log.setLevel(logging.DEBUG)  # TODO: ought to be an __init__ arg for this
-cart.power(1)
-
-if not args.skip:
-    cart.demagnetize_and_deflux(heat=True)
-else:
-    cart.zero()
-    if args.skip == 'demag':
-        cart._mixer_heating()
+def deflux(instrument, band, skip=None):
+    '''Deflux a receiver by demagnetizing and heating.
+       Arguments:
+        instrument: Created if None
+        band: Band to deflux
+        skip: If not None, which step ["demag", "heat"] to skip over
+    '''
+    if instrument:
+        bands = instrument.bands
     else:
-        for po in range(2):
-            for sb in range(2):
-                cart._demagnetize(po,sb)
-
-cart.update_all()
-logging.info('done.')
-
-
+        binpath, datapath = namakanui.util.get_paths()
+        config = namakanui.ini.IncludeParser(datapath+'instrument.ini')
+        bands = sorted([int(b) for b in config['bands']])
+    
+    band = int(band)
+    if band not in bands:
+        raise ValueError(f'band {band} not in {bands}')
+    
+    # TODO check if this band can actually be defluxed
+    
+    if skip and skip not in skip_valid:
+        raise ValueError(f'skip {skip} not in {skip_valid}')
+    
+    log.info('deflux band %d, skip %s', band, skip)
+    
+    if instrument:
+        cart = instrument.carts[band]
+    else:
+        femc = namakanui.femc.FEMC(config, time.sleep, namakanui.nop)
+        cart = namakanui.cart.Cart(band, femc, config, time.sleep, namakanui.nop)
+        cart.log.setLevel(logging.DEBUG)
+    
+    cart.power(1)
+    if not skip:
+        cart.demagnetize_and_deflux(heat=True)
+    else:
+        cart.zero()
+        if skip == 'demag':
+            cart._mixer_heating()
+        else:
+            for po in range(2):
+                for sb in range(2):
+                    cart._demagnetize(po,sb)
+    cart.update_all()
+    log.info('deflux done.')
+    # deflux
         
 
+if __name__ == '__main__':
+    
+    namakanui.util.setup_logging()
+    
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawTextHelpFormatter,
+        description=namakanui.util.get_description(__doc__)
+        )
+    parser.add_argument('band', type=int)
+    parser.add_argument('--skip', choices=skip_valid)
+    args = parser.parse_args()
+    
+    try:
+        deflux(None, **vars(args))
+    except ValueError as e:
+        parser.error(e)  # calls sys.exit
 
