@@ -1,6 +1,6 @@
 #!/local/python3/bin/python3
 '''
-fe_namakanui.py     20190620 RMB
+namakanui_fe.py     20190620 RMB
 
 RTS client task, frontend to Namakanui engineering control task.
 The task name will be set from the command line, and will likely be one of
@@ -36,7 +36,11 @@ import namakanui.sim
 import numpy
 
 # taskname argument is required
-taskname = sys.argv[1]
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('taskname')
+args = parser.parse_args()
+taskname = args.taskname
 
 import drama.log
 drama.log.setup(taskname)  # save to file in /jac_logs
@@ -46,6 +50,7 @@ log = logging.getLogger(taskname)
 #log.setLevel(logging.DEBUG)
 log.info('startup')
 
+# TODO use a separate "band" argument to be taskname-agnostic
 g_band = 0
 if '3' in taskname or 'ALAIHI' in taskname.upper():
     g_band = 3
@@ -60,16 +65,15 @@ else:
 
 ANTENNA_TASK = 'PTCS'
 NAMAKANUI_TASK = 'NAMAKANUI'
-CART_TASK = None  # set by INITIALISE
+
+# formerly DYN_STATE
+# TODO query this name instead of assuming
+CART_STATE = f'BAND{g_band}'
 
 # import error codes as global vars, e.g. WRAP__WRONG_INSTRUMENT_NAME
 wrapper_err_h = '/jac_sw/itsroot/install/wrappers/include/wrapper_err.h'
 wrapper_err_d = drama.errors_from_header(wrapper_err_h)
 globals().update(wrapper_err_d)
-# error number to name lookup -- yagni?
-wrapper_err_n = {}
-for name,number in wrapper_err_d.items():
-    wrapper_err_n[number] = name
 
 # the STATE structure for every frame; field order chosen to match fesim
 g_state = { 
@@ -222,13 +226,6 @@ def initialise(msg):
         
         # skipping waveBand stuff
         
-        # get name and path to our cartridge task
-        global CART_TASK
-        msg = drama.get(NAMAKANUI_TASK, 'TASKNAMES').wait(5)
-        check_message(msg, f'get({NAMAKANUI_TASK},TASKNAMES)')
-        CART_TASK = msg.arg['TASKNAMES'][f'B{g_band}']
-        drama.cache_path(CART_TASK)
-        
         # get SIMULATE value and mask out the bits we don't care about
         msg = drama.get(NAMAKANUI_TASK, 'SIMULATE').wait(5)
         check_message(msg, f'get({NAMAKANUI_TASK},SIMULATE)')
@@ -240,7 +237,7 @@ def initialise(msg):
             for bit in namakanui.sim.bits_for_band(band):
                 otherbits |= bit
         simulate &= ~otherbits
-        drama.set_param('SIMULATE', numpy.int32(simulate))  # might need to be 4-byte int
+        drama.set_param('SIMULATE', numpy.int32(simulate))
         
         # send load to AMBIENT, will fail if not already homed
         pos = f'b{g_band}_hot'
@@ -403,16 +400,16 @@ def configure(msg, wait_set, done_set):
         g_state['LOCKED'] = 'NO'
         drama.set_param('LOCK_STATUS', numpy.int32(0))
         log.info('tuning receiver LO to %.9f GHz, %.3f V...', lo_freq, voltage)
-        msg = drama.obey(NAMAKANUI_TASK, 'CART_TUNE', g_band, lo_freq, voltage).wait(30)
-        check_message(msg, f'obey({NAMAKANUI_TASK},CART_TUNE,{g_band},{lo_freq},{voltage})')
+        msg = drama.obey(NAMAKANUI_TASK, 'TUNE', g_band, lo_freq, voltage).wait(30)
+        check_message(msg, f'obey({NAMAKANUI_TASK},TUNE,{g_band},{lo_freq},{voltage})')
         g_state['LOCKED'] = 'YES'
         drama.set_param('LOCK_STATUS', numpy.int32(1))
     else:
         # ask the receiver for its current status.
         # NOTE: no lo_ghz, or being unlocked, is not necessarily an error here.
-        msg = drama.get(CART_TASK, 'DYN_STATE').wait(3)
-        check_message(msg, f'get({CART_TASK},DYN_STATE)')
-        dyn_state = msg.arg['DYN_STATE']
+        msg = drama.get(NAMAKANUI_TASK, CART_STATE).wait(3)
+        check_message(msg, f'get({NAMAKANUI_TASK},{CART_STATE})')
+        dyn_state = msg.arg[CART_STATE]
         lo_freq = dyn_state['lo_ghz']
         locked = int(not dyn_state['pll_unlock'])
         g_state['LOCKED'] = ['NO', 'YES'][locked]
@@ -546,17 +543,17 @@ def setup_sequence(msg, wait_set, done_set):
         log.info('tuning receiver LO to %.9f GHz, %.3f V...', lo_freq, voltage)
         # RMB 20200714: try to hold output power steady while doppler tracking
         # by keeping the same tuning params (bias voltage, PA, etc).
-        msg = drama.obey(NAMAKANUI_TASK, 'CART_TUNE', g_band, lo_freq, voltage, LOCK_ONLY=True).wait(30)
-        check_message(msg, f'obey({NAMAKANUI_TASK},CART_TUNE,{g_band},{lo_freq},{voltage})')
+        msg = drama.obey(NAMAKANUI_TASK, 'TUNE', g_band, lo_freq, voltage, LOCK_ONLY=True).wait(30)
+        check_message(msg, f'obey({NAMAKANUI_TASK},TUNE,{g_band},{lo_freq},{voltage})')
         g_state['LO_FREQUENCY'] = lo_freq
         drama.set_param('LO_FREQ', lo_freq)
         g_state['LOCKED'] = 'YES'
         drama.set_param('LOCK_STATUS', numpy.int32(1))
     else:
         # make sure rx is tuned and locked.  better to fail here than in SEQUENCE.
-        msg = drama.get(CART_TASK, 'DYN_STATE').wait(3)
-        check_message(msg, f'get({CART_TASK},DYN_STATE)')
-        dyn_state = msg.arg['DYN_STATE']
+        msg = drama.get(NAMAKANUI_TASK, CART_STATE).wait(3)
+        check_message(msg, f'get({NAMAKANUI_TASK},{CART_STATE})')
+        dyn_state = msg.arg[CART_STATE]
         lo_freq = dyn_state['lo_ghz']
         locked = int(not dyn_state['pll_unlock'])
         g_state['LO_FREQUENCY'] = lo_freq
@@ -595,9 +592,8 @@ def sequence(msg):
         sequence.state_table_index = 0
         sequence.dwell_counter = 0
         
-        # start monitor on CART_TASK to track lock status.
-        # TODO: do we need a faster update during obs? 5s is pretty slow.
-        sequence.cart_tid = drama.monitor(CART_TASK, 'DYN_STATE')
+        # start monitor on CART_STATE to track lock status.
+        sequence.cart_tid = drama.monitor(NAMAKANUI_TASK, CART_STATE)
         
         # start monitor on NAMAKANUI.LAKESHORE to get TEMP_AMBIENT
         sequence.lakeshore_tid = drama.monitor(NAMAKANUI_TASK, 'LAKESHORE')
@@ -610,7 +606,7 @@ def sequence(msg):
             if msg.arg['pll_unlock']:
                 raise drama.BadStatus(WRAP__RXNOTLOCKED, 'lost lock during sequence')
         else:
-            raise drama.BadStatus(msg.status, f'unexpected message for {CART_TASK}.DYN_STATE monitor: {msg}')
+            raise drama.BadStatus(msg.status, f'unexpected message for {NAMAKANUI_TASK}.{CART_STATE} monitor: {msg}')
     
     elif msg.reason == drama.REA_TRIGGER and msg.transid == sequence.lakeshore_tid:
         if msg.status == drama.MON_STARTED:
@@ -695,8 +691,8 @@ def sequence_frame(frame):
         drama.set_param('LOCK_STATUS', numpy.int32(0))
         drama.set_param('LO_FREQ', lo_freq)
         log.info('tuning receiver LO to %.9f GHz, %.3f V...', lo_freq, voltage)
-        msg = drama.obey(NAMAKANUI_TASK, 'CART_TUNE', g_band, lo_freq, voltage).wait(30)
-        check_message(msg, f'obey({NAMAKANUI_TASK},CART_TUNE,{g_band},{lo_freq},{voltage})')
+        msg = drama.obey(NAMAKANUI_TASK, 'TUNE', g_band, lo_freq, voltage).wait(30)
+        check_message(msg, f'obey({NAMAKANUI_TASK},TUNE,{g_band},{lo_freq},{voltage})')
         g_state['LO_FREQUENCY'] = lo_freq
         g_state['LOCKED'] = 'YES'
         drama.set_param('LOCK_STATUS', numpy.int32(1))
