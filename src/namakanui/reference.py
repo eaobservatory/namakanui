@@ -204,7 +204,7 @@ class Reference(object):
     def set_dbm(self, dbm):
         '''Set output amplitude in dBm.  Updates state, but does not publish.'''
         dbm = float(dbm)
-        dbm = min(dbm, self.max_dbm)
+        dbm = max(self.safe_dbm, min(dbm, self.max_dbm))
         self.set_cmd(':power', dbm, '%.2f')
         self.state['dbm'] = dbm
     

@@ -36,7 +36,9 @@ pll_if_valid = namakanui.util.interval(-0.5, -3.0)
 
 def try_tune(cart, lo_ghz, voltage, msg, skip_servo_pa, lock_only):
     '''Helper function used by tune(): catch and log BadLock exceptions.'''
-    log.info('cart.tune %.3f ghz, %s', lo_ghz, msg)
+    skipstr = ['', ', skip_servo_pa'][skip_servo_pa]
+    lockstr = ['', ', lock_only'][lock_only]
+    log.info('cart.tune %.3f ghz, %.1fv, %s%s%s', lo_ghz, voltage, msg, skipstr, lockstr)
     try:
         cart.tune(lo_ghz, voltage, skip_servo_pa=skip_servo_pa, lock_only=lock_only)
     except namakanui.cart.BadLock as e:
@@ -130,6 +132,9 @@ def tune(instrument, band, lo_ghz, voltage=0.0,
         pll_if.append(pll_if[0])
     if pll_if[0] not in pll_if_valid or pll_if[1] not in pll_if_valid:
         raise ValueError(f'pll_if {pll_if} not in range {pll_if_valid}')    
+    
+    skip_servo_pa = bool(skip_servo_pa)
+    lock_only = bool(lock_only)
     
     log.info('tuning band %d to %g ghz...', band, lo_ghz)
     
