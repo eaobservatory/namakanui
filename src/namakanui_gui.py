@@ -32,7 +32,7 @@ from tkinter.scrolledtext import ScrolledText
 import sys
 import os
 import time
-taskname = 'NG_%d'%(os.getpid())
+taskname = 'NGUI_%d'%(os.getpid())
 
 # TODO add some way to change debug levels
 import drama.log
@@ -113,35 +113,6 @@ class SetLabel(SetMixin, tk.Label):
 class SetEntry(SetMixin, tk.Entry):
     pass
 
-## add a "set" method to tkinter.Label
-#class SetLabel(tk.Label):
-    #def bg(self, color):
-        #self[state_bg_key[self['state']]] = color
-    
-    #def set(self, s):
-        #self['text'] = s
-
-## add a "set" method to tkinter.Entry with internal textvariable,
-## since delete + insert doesn't seem to work without an explicit update.
-#class SetEntry(tk.Entry):
-    #def __init__(self, *args, **kwargs):
-        #super().__init__(*args, **kwargs)
-        ##print('%r.__init__(%s, %s)'%(self,args,kwargs))
-        #if self['textvariable']:
-            #print('already has textvariable')
-            #self.textvariable = kwargs['textvariable']
-        #else:
-            #self.textvariable = tk.StringVar()
-            #self['textvariable'] = self.textvariable
-    
-    #def bg(self, color):
-        #self[state_bg_key[self['state']]] = color
-    
-    #def set(self, s):
-        ##self.delete(0, tk.END)
-        ##self.insert(0, s)
-        ##print('%r.set(%s)'%(self,s))
-        #self.textvariable.set(s)
 
 
 def grid_value(parent, row, column, sticky='', label=False, width=8):
@@ -165,7 +136,6 @@ def grid_label(parent, text, row, width=8, label=False):
     '''
     Set up a [text: value] row and return the textvariable.
     Note you must still grid_columnconfigure and grid_rowconfigure yourself.
-    TODO: probably want to save these labels so we can turn them red.
     '''
     tk.Label(parent, text=text).grid(row=row, column=0, sticky='nw')
     return grid_value(parent, row=row, column=1, sticky='ne', width=width, label=label)
@@ -261,7 +231,7 @@ class LoadFrame(tk.Frame):
         self.move_button = tk.Button(move_frame, text='MOVE')
         self.move_button.pack(side='right')
         def move_callback():
-            drama.blind_obey(taskname, "LOAD_MOVE", POSITION=self.combo.get())
+            drama.blind_obey(taskname, "LOAD_MOVE", position=self.combo.get())
         self.move_button['command'] = move_callback
         home_frame = tk.Frame(cmd_frame)
         home_frame.pack(fill='x')
@@ -299,7 +269,7 @@ class LoadFrame(tk.Frame):
     # LoadFrame
 
 
-class AgilentFrame(tk.Frame):
+class ReferenceFrame(tk.Frame):
     def __init__(self, master=None):
         super().__init__(master)
         self.master = master
@@ -360,7 +330,7 @@ class AgilentFrame(tk.Frame):
             drama.blind_obey(taskname, "SET_SG_OUT", 0)
         self.on_button['command'] = on_callback
         self.off_button['command'] = off_callback
-        # AgilentFrame.setup
+        # ReferenceFrame.setup
         
     def mon_changed(self, state):
         self.connected['text'] = "YES"
@@ -371,7 +341,13 @@ class AgilentFrame(tk.Frame):
         self.v_dbm.set('%.2f'%(state['dbm']))  # TODO warning?  how?
         self.v_output.set('%d'%(state['output']), state['output'])
     
-    # AgilentFrame
+    # ReferenceFrame
+
+
+class PhotonicsFrame(tk.Frame):
+    # TODO
+    pass
+    # PhotonicsFrame
 
 
 class IFSwitchFrame(tk.Frame):
@@ -479,9 +455,9 @@ class BandFrame(tk.Frame):
         self.power_on_button.pack(side='left')
         self.power_off_button.pack(side='left')
         def power_on_callback():
-            drama.blind_obey(taskname, "POWER", BAND=self.band, ENABLE=1)
+            drama.blind_obey(taskname, "POWER", band=self.band, enable=1)
         def power_off_callback():
-            drama.blind_obey(taskname, "POWER", BAND=self.band, ENABLE=0)
+            drama.blind_obey(taskname, "POWER", band=self.band, enable=0)
         self.power_on_button['command'] = power_on_callback
         self.power_off_button['command'] = power_off_callback
         self.power_action = False  # true if POWER action is active
@@ -647,7 +623,7 @@ class BandFrame(tk.Frame):
         tune_entry.pack(side='right')
         tk.Label(tune_frame, text='LO GHz: ').pack(side='right')
         def tune_callback():
-            drama.blind_obey(taskname, "TUNE", BAND=self.band, LO_GHZ=float(tune_entry.get()), VOLTAGE=0.0)
+            drama.blind_obey(taskname, "TUNE", band=self.band, lo_ghz=float(tune_entry.get()), voltage=0.0)
         self.tune_button['command'] = tune_callback
         
         # TODO: better arrangement?
@@ -782,18 +758,16 @@ class App(tk.Frame):
                         self.SET_SG_DBM, self.SET_SG_HZ, self.SET_SG_OUT,
                         self.SET_BAND, self.MSG_TEST]
         
-        self.retry_tasknames = drama.retry.RetryMonitor(namakanui_taskname, 'TASKNAMES')
         self.retry_load = drama.retry.RetryMonitor(namakanui_taskname, 'LOAD')
         self.retry_load_table = drama.retry.RetryMonitor(namakanui_taskname, 'LOAD_TABLE')
-        self.retry_agilent = drama.retry.RetryMonitor(namakanui_taskname, 'AGILENT')
+        self.retry_reference = drama.retry.RetryMonitor(namakanui_taskname, 'REFERENCE')
+        # TODO photonics
         self.retry_ifswitch = drama.retry.RetryMonitor(namakanui_taskname, 'IFSWITCH')
         self.retry_vacuum = drama.retry.RetryMonitor(namakanui_taskname, 'VACUUM')
         self.retry_lakeshore = drama.retry.RetryMonitor(namakanui_taskname, 'LAKESHORE')
-        
-        # temporary tasknames; will be set on TASKNAMES update
-        self.retry_b3 = drama.retry.RetryMonitor('B3_DUMMY', 'DYN_STATE')
-        self.retry_b6 = drama.retry.RetryMonitor('B6_DUMMY', 'DYN_STATE')
-        self.retry_b7 = drama.retry.RetryMonitor('B7_DUMMY', 'DYN_STATE')
+        self.retry_b3 = drama.retry.RetryMonitor(namakanui_taskname, 'BAND3')
+        self.retry_b6 = drama.retry.RetryMonitor(namakanui_taskname, 'BAND6')
+        self.retry_b7 = drama.retry.RetryMonitor(namakanui_taskname, 'BAND7')
         
         # App.__init__
     
@@ -827,9 +801,9 @@ class App(tk.Frame):
         load_parent.pack(fill='x')
         self.load_frame = LoadFrame(load_parent)
         
-        agilent_parent = tk.LabelFrame(c1, text='AGILENT')
-        agilent_parent.pack(fill='x')
-        self.agilent_frame = AgilentFrame(agilent_parent)
+        reference_parent = tk.LabelFrame(c1, text='REFERENCE')
+        reference_parent.pack(fill='x')
+        self.reference_frame = ReferenceFrame(reference_parent)
         
         tk.Label(c1, text=' ').pack()  # spacer
         
@@ -875,37 +849,26 @@ class App(tk.Frame):
         
     
     def start_monitors(self):
-        # MON_MAIN will start MON_B3 etc when it gets cartridge tasknames
         drama.blind_obey(taskname, 'MON_MAIN')
+        drama.blind_obey(taskname, 'MON_B3')
+        drama.blind_obey(taskname, 'MON_B6')
+        drama.blind_obey(taskname, 'MON_B7')
     
     def MON_MAIN(self, msg):
         '''Calls handle() on all NAMAKANUI RetryMonitors.'''
         
         log.debug('MON_MAIN msg: %s', msg)
         
-        # if UPDATE isn't running, monitors will continuously timeout.
+        # if UPDATE_HW isn't running, monitors will continuously timeout.
         updating = True
         if msg.reason == drama.REA_OBEY or msg.reason == drama.REA_RESCHED:
             try:
-                updating = drama.is_active(namakanui_taskname, "UPDATE", 3.0)
+                updating = drama.is_active(namakanui_taskname, "UPDATE_HW", 3.0)
                 if not updating:
                     e = namakanui_taskname + '.UPDATE not active'
                     log.error(e)
             except drama.BadStatus:
                 pass  # for other errors, handle() as usual
-        
-        if updating and self.retry_tasknames.handle(msg):
-            # tasknames changed; cancel old monitors if connected
-            for t,b,r in [[0,3,self.retry_b3], [1,6,self.retry_b6], [2,7,self.retry_b7]]:
-                new_taskname = msg.arg['B%d'%(b)]
-                if r.task == new_taskname:
-                    continue
-                if r.connected:
-                    r.cancel()
-                r.task = new_taskname
-                drama.blind_obey(taskname, 'MON_B%d'%(b))
-                self.notebook.tab(t, text=new_taskname)
-                
         
         if updating and self.retry_vacuum.handle(msg):
             self.cryo_frame.vacuum_changed(msg.arg)
@@ -919,8 +882,8 @@ class App(tk.Frame):
         if updating and self.retry_load_table.handle(msg):
             self.load_frame.table_changed(msg.arg)
         
-        if updating and self.retry_agilent.handle(msg):
-            self.agilent_frame.mon_changed(msg.arg)
+        if updating and self.retry_reference.handle(msg):
+            self.reference_frame.mon_changed(msg.arg)
         
         if updating and self.retry_ifswitch.handle(msg):
             self.ifswitch_frame.mon_changed(msg.arg)
@@ -935,9 +898,9 @@ class App(tk.Frame):
         if not updating or not self.retry_load.connected:
             self.load_frame.connected['text'] = "NO"
             self.load_frame.connected['bg'] = 'red'
-        if not updating or not self.retry_agilent.connected:
-            self.agilent_frame.connected['text'] = "NO"
-            self.agilent_frame.connected['bg'] = 'red'
+        if not updating or not self.retry_reference.connected:
+            self.reference_frame.connected['text'] = "NO"
+            self.reference_frame.connected['bg'] = 'red'
         if not updating or not self.retry_ifswitch.connected:
             self.ifswitch_frame.connected['text'] = "NO"
             self.ifswitch_frame.connected['bg'] = 'red'
@@ -1010,11 +973,10 @@ class App(tk.Frame):
         while(self.check_msg(transid.wait(wall_timeout-time.time()), name)):
             pass
     
-    def power_args(self, BAND, ENABLE):
-        return int(BAND), int(ENABLE)
+    def power_args(self, band, enable):
+        return int(band), int(enable)
     
     def POWER(self, msg):
-        # the easy way
         args,kwargs = drama.parse_argument(msg.arg)
         band,enable = self.power_args(*args,**kwargs)
         frame = {3:self.b3_frame, 6:self.b6_frame, 7:self.b7_frame}[band]
@@ -1023,7 +985,7 @@ class App(tk.Frame):
         frame.power_off_button['state'] = 'disabled'
         try:
             drama.interested()  # in MsgOut/ErsOut
-            tid = drama.obey(namakanui_taskname, "CART_POWER", BAND=band, ENABLE=enable)
+            tid = drama.obey(namakanui_taskname, "CART_POWER", band=band, enable=enable)
             self.wait_loop(tid, 120, "CART_POWER")
         except:
             log.exception('exception in POWER')
@@ -1031,11 +993,10 @@ class App(tk.Frame):
         finally:
             frame.power_action = False
             # wait for update to reenable buttons
-        
         # App.POWER
     
-    def tune_args(self, BAND, LO_GHZ, VOLTAGE):
-        return int(BAND), float(LO_GHZ), float(VOLTAGE)
+    def tune_args(self, band, lo_ghz, voltage):
+        return int(band), float(lo_ghz), float(voltage)
     
     def TUNE(self, msg):
         args,kwargs = drama.parse_argument(msg.arg)
@@ -1044,8 +1005,8 @@ class App(tk.Frame):
         frame.tune_button['state'] = 'disabled'
         try:
             drama.interested()
-            tid = drama.obey(namakanui_taskname, "CART_TUNE", BAND=band, LO_GHZ=lo_ghz, VOLTAGE=voltage)
-            self.wait_loop(tid, 30, "CART_TUNE")
+            tid = drama.obey(namakanui_taskname, "TUNE", band=band, lo_ghz=lo_ghz, voltage=voltage)
+            self.wait_loop(tid, 30, "TUNE")
         except:
             log.exception('exception in TUNE')
             raise
@@ -1053,17 +1014,17 @@ class App(tk.Frame):
             frame.tune_button['state'] = 'normal'
         # App.TUNE
     
-    def move_args(self, POSITION):
-        return POSITION
+    def move_args(self, position):
+        return position
     
     def LOAD_MOVE(self, msg):
         args,kwargs = drama.parse_argument(msg.arg)
-        pos = self.move_args(*args,**kwargs)
+        position = self.move_args(*args,**kwargs)
         self.load_frame.move_button['state'] = 'disabled'
         self.load_frame.home_button['state'] = 'disabled'
         try:
             drama.interested()
-            tid = drama.obey(namakanui_taskname, "LOAD_MOVE", POSITION=pos)
+            tid = drama.obey(namakanui_taskname, "LOAD_MOVE", position=position)
             self.wait_loop(tid, 30, "LOAD_MOVE")
         except:
             log.exception('exception in LOAD_MOVE')
@@ -1090,72 +1051,70 @@ class App(tk.Frame):
     
     # TODO: some convenience functions to reduce this boilerplate might be handy
     
-    def dbm_args(self, DBM):
-        dbm = float(DBM)
-        if dbm < -130.0 or dbm > 0.0:
-            raise drama.BadStatus(drama.INVARG, 'dbm %g outside [-130, 0] range'%(dbm))
+    def dbm_args(self, dbm):
+        dbm = float(dbm)
         return dbm
     
     def SET_SG_DBM(self, msg):
         args,kwargs = drama.parse_argument(msg.arg)
         dbm = self.dbm_args(*args,**kwargs)
-        self.agilent_frame.dbm_button['state'] = 'disabled'
+        self.reference_frame.dbm_button['state'] = 'disabled'
         try:
             drama.interested()
-            tid = drama.obey(namakanui_taskname, "SET_SG_DBM", DBM=dbm)
+            tid = drama.obey(namakanui_taskname, "SET_SG_DBM", dbm=dbm)
             self.wait_loop(tid, 5, "SET_SG_DBM")
         except:
             log.exception('exception in SET_SG_DBM')
             raise
         finally:
-            self.agilent_frame.dbm_button['state'] = 'normal'
+            self.reference_frame.dbm_button['state'] = 'normal'
         # App.SET_SG_DBM
     
-    def hz_args(self, HZ):
-        hz = float(HZ)
+    def hz_args(self, hz):
+        hz = float(hz)
         if hz < 9e3 or hz > 32e9:
-            raise drama.BadStatus(drama.INVARG, 'hz %g outside [9 KHz, 32 GHz] range'%(hz))
+            raise ValueError(f'hz {hz} outside [9 KHz, 32 GHz] range')
         return hz
     
     def SET_SG_HZ(self, msg):
         args,kwargs = drama.parse_argument(msg.arg)
         hz = self.hz_args(*args,**kwargs)
-        self.agilent_frame.hz_button['state'] = 'disabled'
+        self.reference_frame.hz_button['state'] = 'disabled'
         try:
             drama.interested()
-            tid = drama.obey(namakanui_taskname, "SET_SG_HZ", HZ=hz)
+            tid = drama.obey(namakanui_taskname, "SET_SG_HZ", hz=hz)
             self.wait_loop(tid, 5, "SET_SG_HZ")
         except:
             log.exception('exception in SET_SG_HZ')
             raise
         finally:
-            self.agilent_frame.hz_button['state'] = 'normal'
+            self.reference_frame.hz_button['state'] = 'normal'
         # App.SET_SG_HZ
     
-    def out_args(self, OUT):
-        return int(bool(OUT))
+    def out_args(self, out):
+        return int(bool(out))
     
     def SET_SG_OUT(self, msg):
         args,kwargs = drama.parse_argument(msg.arg)
         out = self.out_args(*args,**kwargs)
-        self.agilent_frame.on_button['state'] = 'disabled'
-        self.agilent_frame.off_button['state'] = 'disabled'
+        self.reference_frame.on_button['state'] = 'disabled'
+        self.reference_frame.off_button['state'] = 'disabled'
         try:
             drama.interested()
-            tid = drama.obey(namakanui_taskname, "SET_SG_OUT", OUT=out)
+            tid = drama.obey(namakanui_taskname, "SET_SG_OUT", out=out)
             self.wait_loop(tid, 5, "SET_SG_OUT")
         except:
             log.exception('exception in SET_SG_OUT')
             raise
         finally:
-            self.agilent_frame.on_button['state'] = 'normal'
-            self.agilent_frame.off_button['state'] = 'normal'
+            self.reference_frame.on_button['state'] = 'normal'
+            self.reference_frame.off_button['state'] = 'normal'
         # App.SET_SG_OUT
     
-    def band_args(self, BAND):
-        band = int(BAND)
+    def band_args(self, band):
+        band = int(band)
         if band not in [3,6,7]:
-            raise drama.BadStatus(drama.INVARG, 'BAND %d not one of [3,6,7]' % (band))
+            raise ValueError(f'BAND {band} not one of [3,6,7]')
         return band
     
     def SET_BAND(self, msg):
@@ -1166,7 +1125,7 @@ class App(tk.Frame):
         self.ifswitch_frame.b7_button['state'] = 'disabled'
         try:
             drama.interested()
-            tid = drama.obey(namakanui_taskname, "SET_BAND", BAND=band)
+            tid = drama.obey(namakanui_taskname, "SET_BAND", band=band)
             self.wait_loop(tid, 5, "SET_BAND")
         except:
             log.exception('exception in SET_BAND')
@@ -1175,7 +1134,7 @@ class App(tk.Frame):
             self.ifswitch_frame.b3_button['state'] = 'normal'
             self.ifswitch_frame.b6_button['state'] = 'normal'
             self.ifswitch_frame.b7_button['state'] = 'normal'
-    
+        # App.SET_BAND
     
     def MSG_TEST(self, msg):
         '''
@@ -1187,6 +1146,7 @@ class App(tk.Frame):
             nlines = int(self.messages.index(tk.END).split('.')[0]) - 1
             log.info('MSG_TEST: nchars %d, nlines %d', nchars, nlines)
             drama.reschedule(0.01)
+        # App.MSG_TEST
     
     # App
 
@@ -1203,6 +1163,9 @@ try:
     
     log.info('drama.run()...')
     drama.run()
+except:
+    log.exception('fatal exception')
+    sys.exit(1)
 finally:
     log.info('drama.stop(%s)', taskname)
     drama.stop()
