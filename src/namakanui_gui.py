@@ -345,8 +345,45 @@ class ReferenceFrame(tk.Frame):
 
 
 class PhotonicsFrame(tk.Frame):
-    # TODO
-    pass
+    def __init__(self, master=None):
+        super().__init__(master)
+        self.master = master
+        self.setup()
+    
+    def setup(self):
+        # number simulate sim_text DO attenuation
+        self.pack(fill='x')
+        status_frame = tk.Frame(self)
+        status_frame.pack(fill='x')
+        tk.Label(status_frame, text='connected').grid(row=0, column=0, sticky='nw')
+        self.connected = tk.Label(status_frame, text="NO", bg='red')
+        self.connected.grid(row=0, column=1, sticky='ne')
+        self.v_number = grid_label(status_frame, 'number', 1)
+        self.v_simulate = grid_label(status_frame, 'simulate', 2)  # TODO sim_text as tooltip
+        self.v_do = grid_label(status_frame, 'DO', 3)
+        self.v_att = grid_label(status_frame, 'attenuation', 4)
+        status_frame.grid_columnconfigure(0, weight=1)
+        status_frame.grid_columnconfigure(1, weight=1)
+        status_frame.grid_rowconfigure(4, weight=1)
+        cmd_frame = tk.Frame(self)
+        cmd_frame.pack(side='right')
+        att_entry = tk.Entry(cmd_frame, width=13, bg='white')
+        att_entry.pack(side='right')
+        def att_callback():
+            drama.blind_obey(taskname, "SET_ATT", att=int(att_entry.get()))
+        self.att_button = tk.Button(cmd_frame, text='ATT')
+        self.att_button.pack(side='left')
+        self.att_button['command'] = att_callback
+    
+    def mon_changed(self, state):
+        self.connected['text'] = "YES"
+        self.connected['bg'] = 'green'
+        self.v_number.set('%d'%(state['number']))
+        self.v_simulate.set('0x%x'%(state['simulate']), state['simulate']==0)  # TODO tooltip
+        do = ''.join([str(x) for x in state['DO']])
+        self.v_do.set(do)
+        self.v_att.set('%d'%(state['attenuation']), state['attenuation']>0)
+    
     # PhotonicsFrame
 
 
@@ -756,12 +793,13 @@ class App(tk.Frame):
         self.actions = [self.MON_MAIN, self.MON_B3, self.MON_B6, self.MON_B7,
                         self.POWER, self.TUNE, self.LOAD_MOVE, self.LOAD_HOME,
                         self.SET_SG_DBM, self.SET_SG_HZ, self.SET_SG_OUT,
+                        self.SET_ATT,
                         self.SET_BAND, self.MSG_TEST]
         
         self.retry_load = drama.retry.RetryMonitor(namakanui_taskname, 'LOAD')
         self.retry_load_table = drama.retry.RetryMonitor(namakanui_taskname, 'LOAD_TABLE')
         self.retry_reference = drama.retry.RetryMonitor(namakanui_taskname, 'REFERENCE')
-        # TODO photonics
+        self.retry_photonics = drama.retry.RetryMonitor(namakanui_taskname, 'PHOTONICS')
         self.retry_ifswitch = drama.retry.RetryMonitor(namakanui_taskname, 'IFSWITCH')
         self.retry_vacuum = drama.retry.RetryMonitor(namakanui_taskname, 'VACUUM')
         self.retry_lakeshore = drama.retry.RetryMonitor(namakanui_taskname, 'LAKESHORE')
@@ -804,6 +842,12 @@ class App(tk.Frame):
         reference_parent = tk.LabelFrame(c1, text='REFERENCE')
         reference_parent.pack(fill='x')
         self.reference_frame = ReferenceFrame(reference_parent)
+        
+        tk.Label(c1, text=' ').pack()  # spacer
+        
+        photonics_parent = tk.LabelFrame(c1, text='PHOTONICS')
+        photonics_parent.pack(fill='x')
+        self.photonics_frame = PhotonicsFrame(photonics_parent)
         
         tk.Label(c1, text=' ').pack()  # spacer
         
@@ -885,6 +929,9 @@ class App(tk.Frame):
         if updating and self.retry_reference.handle(msg):
             self.reference_frame.mon_changed(msg.arg)
         
+        if updating and self.retry_photonics.handle(msg):
+            self.photonics_frame.mon_changed(msg.arg)
+        
         if updating and self.retry_ifswitch.handle(msg):
             self.ifswitch_frame.mon_changed(msg.arg)
             
@@ -901,6 +948,9 @@ class App(tk.Frame):
         if not updating or not self.retry_reference.connected:
             self.reference_frame.connected['text'] = "NO"
             self.reference_frame.connected['bg'] = 'red'
+        if not updating or not self.retry_photonics.connected:
+            self.photonics_frame.connected['text'] = "NO"
+            self.photonics_frame.connected['bg'] = 'red'
         if not updating or not self.retry_ifswitch.connected:
             self.ifswitch_frame.connected['text'] = "NO"
             self.ifswitch_frame.connected['bg'] = 'red'
@@ -1110,6 +1160,24 @@ class App(tk.Frame):
             self.reference_frame.on_button['state'] = 'normal'
             self.reference_frame.off_button['state'] = 'normal'
         # App.SET_SG_OUT
+    
+    def att_args(self, att):
+        return int(att)
+    
+    def SET_ATT(self, msg):
+        args,kwargs = drama.parse_argument(msg.arg)
+        att = self.att_args(*args, **kwargs)
+        self.photonics_frame.att_button['state'] = 'disabled'
+        try:
+            drama.interested()
+            tid = drama.obey(namakanui_taskname, "SET_ATT", att=att)
+            self.wait_loop(tid, 5, "SET_ATT")
+        except:
+            log.exception('exception in SET_ATT')
+            raise
+        finally:
+            self.photonics_frame.att_button['state'] = 'normal'
+        # App.SET_ATT
     
     def band_args(self, band):
         band = int(band)
