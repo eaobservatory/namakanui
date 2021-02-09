@@ -51,9 +51,6 @@ logging.root.addHandler(logging.StreamHandler())
 binpath, datapath = namakanui.util.get_paths()
 
 parser = argparse.ArgumentParser()
-#parser.add_argument('IP', help='prologix adapter IP address')
-#parser.add_argument('GPIB', type=int, help='power meter GPIB address')
-parser.add_argument('IP', help='N1913A power meter IP address')
 parser.add_argument('target_dbm', type=float, help='target dBm reading')
 parser.add_argument('start_dbm', type=float, help='starting dBm output')
 parser.add_argument('GHz_start', type=float)
@@ -63,10 +60,6 @@ parser.add_argument('--table', nargs='?', default='', help='input power table fi
 parser.add_argument('--deadband', nargs='?', type=float, default=0.05, help='close-enough error, default 0.05 dBm')
 parser.add_argument('--note', nargs='?', default='', help='note for file header')
 args = parser.parse_args()
-
-#if args.GPIB < 0 or args.GPIB > 30:
-    #sys.stderr.write('error: GPIB address %d outside [0, 30] range\n'%(args.GPIB))
-    #sys.exit(1)
 
 if args.target_dbm < -20.0 or args.target_dbm > 14.0:
     sys.stderr.write('error: target dBm %g outside [-20, 14] range\n'%(args.target_dbm))
@@ -105,33 +98,7 @@ agilent.log.setLevel(logging.INFO)
 agilent.set_dbm(agilent.safe_dbm)
 agilent.set_output(1)
 
-#prologix = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-#prologix.settimeout(1)
-#prologix.connect((args.IP, 1234))
-#prologix.send(b'++savecfg 0\n')  # don't save settings to prologix EPROM
-#prologix.send(b'++addr %d\n'%(args.GPIB))
-
-# TODO: is it worth making a class for the N1913A?
-pmeter = socket.socket()
-pmeter.settimeout(1)
-pmeter.connect((args.IP, 5025))
-pmeter.send(b'*idn?\n')
-idn = pmeter.recv(256)
-if b'N1913A' not in idn:
-    sys.stderr.write('error: expected power meter model N1913A, but got %s\n'%(idn))
-    sys.exit(1)
-# just assume all this succeeds
-pmeter.send(b'*cls\n')  # clear errors
-pmeter.send(b'unit:power dbm\n')  # dBm readings
-pmeter.send(b'init:cont on\n')  # free run mode
-pmeter.send(b'mrate normal\n')  # 20 reads/sec
-pmeter.send(b'calc:hold:stat off\n')  # no min/max stuff
-pmeter.send(b'aver:count:auto on\n')  # auto filter settings
-pmeter.send(b'syst:err?\n')
-err = pmeter.recv(256)
-if not err.startswith(b'+0,"No error"'):
-    sys.stderr.write('error: N1913A setup failure: %s\n'%(err))
-    sys.exit(1)
+pmeter = namakanui.pmeter.PMeter(datapath+'pmeter.ini', time.sleep, namakanui.nop)
 
 
 # output file header
@@ -140,12 +107,6 @@ sys.stdout.write('# %s\n'%(sys.argv))
 sys.stdout.write('#\n')
 sys.stdout.flush()
 
-
-def read_power():
-    '''Return power reading in dBm.'''
-    #raise RuntimeError('TODO')
-    pmeter.send(b'fetch?\n')
-    return float(pmeter.recv(256))
 
 def sign(x):
     if x > 0:
@@ -164,7 +125,7 @@ def do_ghz(ghz):
         interp_row = namakanui.ini.interp_table(dbm_table, ghz)
         dbm = interp_row.dbm
     agilent.set_hz_dbm(ghz*1e9, dbm)
-    pmeter.send(b'freq %gGHz\n'%(ghz))  # for power sensor calibration tables
+    pmeter.set_ghz(ghz)  # for power sensor calibration tables
     # assuming meter and generator are both reasonably accurate,
     # we only need to iterate a few times to get close to optimal setting.
     #
@@ -176,7 +137,7 @@ def do_ghz(ghz):
     gain_bias = 0.5  # multiplied with log(gain) to skew toward 1
     for i in range(5):
         time.sleep(delay)
-        power = read_power()
+        power = pmeter.read_power()
         err = args.target_dbm - power
         sys.stderr.write('(%.2f, %.3f, '%(dbm, power))
         #sys.stderr.flush()
@@ -200,7 +161,7 @@ def do_ghz(ghz):
             dbm = agilent.max_dbm
         agilent.set_dbm(dbm)
     time.sleep(delay)
-    power = read_power()
+    power = pmeter.read_power()
     sys.stderr.write('(%.2f, %.3f)\n'%(dbm, power))
     sys.stderr.flush()
     print('%.3f %.2f %.3f'%(ghz, dbm, power))

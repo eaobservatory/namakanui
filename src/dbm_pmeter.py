@@ -65,9 +65,6 @@ logging.root.addHandler(logging.StreamHandler())
 binpath, datapath = namakanui.util.get_paths()
 
 parser = argparse.ArgumentParser()
-#parser.add_argument('IP', help='prologix adapter IP address')
-#parser.add_argument('GPIB', type=int, help='power meter GPIB address')
-parser.add_argument('ip', help='N1913A power meter IP address')  # 128.171.92.36
 parser.add_argument('--table', nargs='?', default='', help='dbm table file, overrides ghz/dbm')
 parser.add_argument('--ghz', nargs='?', default='20', help='ghz range, first:last:step')
 parser.add_argument('--dbm', nargs='?', default='-20', help='dbm range, first:last:step')
@@ -91,36 +88,7 @@ agilent.log.setLevel(logging.INFO)
 agilent.set_dbm(agilent.safe_dbm)
 agilent.set_output(1)
 
-
-# TODO: is it worth making a class for the N1913A?
-pmeter = socket.socket()
-pmeter.settimeout(1)
-pmeter.connect((args.ip, 5025))
-pmeter.send(b'*idn?\n')
-idn = pmeter.recv(256)
-if b'N1913A' not in idn:
-    logging.error('expected power meter model N1913A, but got %s', idn)
-    sys.exit(1)
-# just assume all this succeeds
-pmeter.send(b'*cls\n')  # clear errors
-pmeter.send(b'unit:power dbm\n')  # dBm readings
-pmeter.send(b'init:cont on\n')  # free run mode
-pmeter.send(b'mrate normal\n')  # 20 reads/sec
-pmeter.send(b'calc:hold:stat off\n')  # no min/max stuff
-pmeter.send(b'aver:count:auto on\n')  # auto filter settings
-pmeter.send(b'syst:err?\n')
-err = pmeter.recv(256)
-if not err.startswith(b'+0,"No error"'):
-    logging.error('N1913A setup failure: %s', err)
-    sys.exit(1)
-
-
-
-def read_power():
-    '''Return power reading in dBm.'''
-    #raise RuntimeError('TODO')
-    pmeter.send(b'fetch?\n')
-    return float(pmeter.recv(256))
+pmeter = namakanui.pmeter.PMeter(datapath+'pmeter.ini', time.sleep, namakanui.nop)
 
 
 if args.band:
@@ -152,7 +120,7 @@ if args.band:
         else:
             # use WCA output frequency
             if_ghz = lo_ghz / cart.cold_mult
-        pmeter.send(b'freq %gGHz\n'%(if_ghz))
+        pmeter.set_ghz(if_ghz)
         if args.pa:
             for pa in pas:
                 if args.pol == 0:
@@ -170,7 +138,7 @@ if args.band:
                 cart.update_all()
                 dv = cart.state['pa_drain_v']
                 di = cart.state['pa_drain_c']
-                power = read_power()
+                power = pmeter.read_power()
                 sys.stdout.write('%.3f %.3f %.2f %.2f %.3f %.3f %.3f %.3f %.3f\n'%(lo_ghz, if_ghz, pa0, pa1, dv[0], dv[1], di[0], di[1], power))
                 sys.stdout.flush()
         else:
@@ -179,7 +147,7 @@ if args.band:
             cart.update_all()
             dv = cart.state['pa_drain_v']
             di = cart.state['pa_drain_c']
-            power = read_power()
+            power = pmeter.read_power()
             sys.stdout.write('%.3f %.3f %.2f %.2f %.3f %.3f %.3f %.3f %.3f\n'%(lo_ghz, if_ghz, pa0, pa1, dv[0], dv[1], di[0], di[1], power))
             sys.stdout.flush()
 elif args.table:
@@ -211,9 +179,9 @@ elif args.table:
         fyig = lo_ghz / (cold_mult * warm_mult)
         fsig = (fyig*warm_mult + floog) / agilent.harmonic
         agilent.set_hz_dbm(fsig*1e9, dbm)
-        pmeter.send(b'freq %gGHz\n'%(fsig))  # for power sensor calibration tables
+        pmeter.set_ghz((fsig)  # for power sensor calibration tables
         time.sleep(0.1)  # generous sleep since pmeter takes 50ms/read
-        power = read_power()
+        power = pmeter.read_power()
         sys.stdout.write('%.3f %.6f %.2f %.3f\n'%(lo_ghz, fsig, dbm, power))
         sys.stdout.flush()
 else:
@@ -226,9 +194,9 @@ else:
     for dbm in dbms:
         for ghz in ghzs:
             agilent.set_hz_dbm(ghz*1e9, dbm)
-            pmeter.send(b'freq %gGHz\n'%(ghz))  # for power sensor calibration tables
+            pmeter.set_ghz(ghz)  # for power sensor calibration tables
             time.sleep(0.1)  # generous sleep since pmeter takes 50ms/read
-            power = read_power()
+            power = pmeter.read_power()
             sys.stdout.write('%.6f %.2f %.3f\n'%(ghz, dbm, power))
             sys.stdout.flush()
 

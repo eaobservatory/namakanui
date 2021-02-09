@@ -83,6 +83,9 @@ class PMeter(object):
         self.state['simulate'] = self.simulate
         self.state['sim_text'] = sim.bits_to_str(self.simulate)
         
+        self.state['power'] = 0.0
+        self.state['ghz'] = 0.0
+        
         self.close()
         try:
             self.log.debug('connecting power meter, %s:%d', self.ip, self.port)
@@ -126,8 +129,15 @@ class PMeter(object):
         # PMeter.update
 
 
-    def read_power():
+    def read_power(self):
         '''Return power reading in dBm.  TODO use self.sleep()'''
         self.s.send(b'fetch?\n')
         return float(self.s.recv(256))
 
+
+    def set_ghz(self, ghz):
+        '''Set frequency for power sensor calibration tables'''
+        ghz = float(ghz)
+        self.s.send(b'freq %gGHz\n'%(ghz))
+        self.state['ghz'] = ghz
+        
