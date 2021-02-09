@@ -267,10 +267,9 @@ class FEMC(object):
         self.publish = publish
         self.simulate = sim.str_to_bits(cfg['simulate']) | simulate
         self.simulate &= sim.SIM_FEMC
-        self.name = cfg['pubname']
+        self.name = cfg['name']
         
-        self.logname = cfg['logname']
-        self.log = logging.getLogger(self.logname)
+        self.log = logging.getLogger(self.name)
         
         self.interface = cfg['interface']
         self.node_id = int(cfg['node'], 0)

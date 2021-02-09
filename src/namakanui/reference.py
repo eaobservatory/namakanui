@@ -51,10 +51,9 @@ class Reference(object):
         self.sleep = sleep
         self.publish = publish
         self.simulate = sim.str_to_bits(rconfig['simulate']) | simulate
-        self.name = rconfig['pubname']
+        self.name = rconfig['name']
         self.state = {'number':0}
-        self.logname = rconfig['logname']
-        self.log = logging.getLogger(self.logname)
+        self.log = logging.getLogger(self.name)
         self.ip = rconfig['ip']
         self.port = int(rconfig['port'])
         self.safe_dbm = float(rconfig['safe_dbm'])

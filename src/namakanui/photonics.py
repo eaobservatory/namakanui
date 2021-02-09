@@ -56,9 +56,8 @@ class Photonics(object):
         self.sleep = sleep
         self.publish = publish
         self.simulate = sim.str_to_bits(pconfig['simulate']) | simulate
-        self.name = pconfig['pubname']
-        self.logname = pconfig['logname']
-        self.log = logging.getLogger(self.logname)
+        self.name = pconfig['name']
+        self.log = logging.getLogger(self.name)
         self.nbits = int(pconfig['nbits'])
         self.counts_per_db = float(pconfig['counts_per_db'])
         self.max_att = (1 << self.nbits) - 1

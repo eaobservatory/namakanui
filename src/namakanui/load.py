@@ -68,10 +68,9 @@ class Load(object):
         self.sleep = sleep
         self.publish = publish
         self.simulate = sim.str_to_bits(self.config['load']['simulate']) | simulate
-        self.name = self.config['load']['pubname']
+        self.name = self.config['load']['name']
         self.state = {'number':0}
-        self.logname = self.config['load']['logname']
-        self.log = logging.getLogger(self.logname)
+        self.log = logging.getLogger(self.name)
         
         # I would query the controller for this if I could
         self.speed = float(self.config['load']['speed'])

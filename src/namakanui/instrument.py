@@ -89,17 +89,16 @@ class Instrument(object):
             inifile: Path to config file or IncludeParser instance.
             simulate: Mask, bitwise ORed with config settings.
         '''
-        self.log.debug('initialise')
-        
         if not hasattr(inifile, 'items'):
             inifile = IncludeParser(inifile)
         self.config = inifile
         cfg = self.config['instrument']
         
-        self.name = cfg['pubname']
-        self.logname = cfg['logname']
-        self.log = logging.getLogger(self.logname)
+        self.name = cfg['name']
+        self.log = logging.getLogger(self.name)
         self.state = {'number':0}
+        
+        self.log.debug('initialise')
         
         # each included bandX.ini file adds itself to the [bands] config entry
         self.bands = [int(x) for x in self.config['bands']]

@@ -79,9 +79,8 @@ class Cart(object):
         self.publish = publish
         
         b = str(self.band)
-        self.logname = self.config[b]['logname']
-        self.log = logging.getLogger(self.logname)
-        self.name = self.config[b]['pubname']
+        self.name = self.config[b]['name']
+        self.log = logging.getLogger(self.name)
         self.simulate = sim.str_to_bits(self.config[b]['simulate']) | simulate
         self.state = {'number':0}
         # this list is used by update_one() and update_all()
@@ -190,9 +189,9 @@ class Cart(object):
             #esns = self.femc.retry_esns(10, .01*self.band)
             #esns = [bytes(reversed(e)).hex().upper() for e in esns]  # ini format?
             #if not self.sim_warm and self.warm_esn not in esns:
-                #raise RuntimeError(self.logname + ' warm cartridge ESN %s not found in list: %s' % (self.warm_esn, esns))
+                #raise RuntimeError(self.name + ' warm cartridge ESN %s not found in list: %s' % (self.warm_esn, esns))
             #if not self.sim_cold and self.cold_esn not in esns:
-                #raise RuntimeError(self.logname + ' cold cartridge ESN %s not found in list: %s' % (self.cold_esn, esns))
+                #raise RuntimeError(self.name + ' cold cartridge ESN %s not found in list: %s' % (self.cold_esn, esns))
         
         self.state['ppcomm_time'] = 0.0  # put this near the top of state
         
@@ -576,7 +575,7 @@ class Cart(object):
                 ll = self.femc.get_cartridge_lo_pll_unlock_detect_latch(self.ca)
             self.state['pll_unlock'] = ll
             if ll:
-                raise BadLock(self.logname + ' lost lock after tuning at lo_ghz=%.9f' % (lo_ghz))
+                raise BadLock(self.name + ' lost lock after tuning at lo_ghz=%.9f' % (lo_ghz))
         except:
             raise
         finally:
@@ -599,7 +598,7 @@ class Cart(object):
         lo_min = self.yig_lo * total_mult
         lo_max = self.yig_hi * total_mult
         if not (lo_min <= lo_ghz <= lo_max):
-            raise ValueError('%s _lock_pll lo_ghz %g not in [%g, %g] range' % (self.logname, lo_ghz, lo_min, lo_max))
+            raise ValueError('%s _lock_pll lo_ghz %g not in [%g, %g] range' % (self.name, lo_ghz, lo_min, lo_max))
         
         yig_ghz = lo_ghz / total_mult
         yig_step = (self.yig_hi - self.yig_lo) / 4095  # GHz per count
@@ -626,7 +625,7 @@ class Cart(object):
         # TODO move this before sim check?  enforce simulated power-on.
         # currently simulate forces pd_enable=0, though.
         if not self.state['pd_enable']:
-            raise RuntimeError(self.logname + ' power disabled')
+            raise RuntimeError(self.name + ' power disabled')
         
         # for small changes we might hold the lock without adjustment.
         femc = self.femc
@@ -648,9 +647,9 @@ class Cart(object):
         # if we don't have good reference power, give up now
         self.state['pll_ref_power'] = rfp
         if rfp < -3.0:
-            raise RuntimeError(self.logname + ' FLOOG (31.5 MHz) power too strong (%.2fV), please attenuate' % (rfp))
+            raise RuntimeError(self.name + ' FLOOG (31.5 MHz) power too strong (%.2fV), please attenuate' % (rfp))
         if rfp > -0.5:
-            raise RuntimeError(self.logname + ' FLOOG (31.5 MHz) power too weak (%.2fV), check IF switch band' % (rfp))
+            raise RuntimeError(self.name + ' FLOOG (31.5 MHz) power too weak (%.2fV), check IF switch band' % (rfp))
         
         femc.set_cartridge_lo_pll_null_loop_integrator(self.ca, 1)
         femc.set_cartridge_lo_yto_coarse_tune(self.ca, coarse_counts)
@@ -698,7 +697,7 @@ class Cart(object):
             return
         
         self.state['pll_unlock'] = 1
-        raise BadLock(self.logname + ' failed to lock at lo_ghz=%.9f' % (lo_ghz))
+        raise BadLock(self.name + ' failed to lock at lo_ghz=%.9f' % (lo_ghz))
         # Cart._lock_pll
     
     
@@ -720,7 +719,7 @@ class Cart(object):
             return
         
         if not self.state['pd_enable']:
-            raise RuntimeError(self.logname + ' power disabled')
+            raise RuntimeError(self.name + ' power disabled')
         
         # deadband: skip adjustment if within +-1V of target
         if abs(self.state['pll_corr_v'] - voltage) <= 1.0:
@@ -775,7 +774,7 @@ class Cart(object):
         self.log.debug('_adjust_fm unlock %d, corr_v %.2f, final counts %d', ll, cv, coarse_counts)
         if ll:
             lo_ghz = self.state['lo_ghz']
-            raise BadLock(self.logname + ' lost lock while adjusting control voltage to %.2f at lo_ghz=%.9f' % (voltage, lo_ghz))
+            raise BadLock(self.name + ' lost lock while adjusting control voltage to %.2f at lo_ghz=%.9f' % (voltage, lo_ghz))
         # Cart._adjust_fm
 
 
@@ -794,7 +793,7 @@ class Cart(object):
         if self.sim_warm:
             return 0.0
         if not self.state['pd_enable']:
-            raise RuntimeError(self.logname + ' power disabled')
+            raise RuntimeError(self.name + ' power disabled')
         
         femc = self.femc
         
@@ -831,7 +830,7 @@ class Cart(object):
         self.state['pll_unlock'] = ll
         if ll:
             lo_ghz = self.state['lo_ghz']
-            raise BadLock(self.logname + ' lost lock in estimate_fm_slope at lo_ghz=%.9f' % (lo_ghz))
+            raise BadLock(self.name + ' lost lock in estimate_fm_slope at lo_ghz=%.9f' % (lo_ghz))
         
         # average new correction voltage
         cv = 0.0
@@ -877,7 +876,7 @@ class Cart(object):
         if self.sim_warm or self.sim_cold:
             return
         if not self.state['pd_enable']:
-            raise RuntimeError(self.logname + ' power disabled')
+            raise RuntimeError(self.name + ' power disabled')
         if not self.has_sis_mixers():
             self.log.info('no SIS mixers, skipping _servo_pa')
             return
@@ -1006,7 +1005,7 @@ class Cart(object):
         if self.sim_cold:
             return
         if not self.state['pd_enable']:
-            raise RuntimeError(self.logname + ' power disabled')
+            raise RuntimeError(self.name + ' power disabled')
         if self.high_temperature():
             self.log.info('high temperature, skipping demag/deflux')
             return
@@ -1058,7 +1057,7 @@ class Cart(object):
         if self.sim_cold:
             return
         if not self.state['pd_enable']:
-            raise RuntimeError(self.logname + ' power disabled')
+            raise RuntimeError(self.name + ' power disabled')
         if self.high_temperature():
             # high magnet currents can cause damage at room temperature
             self.log.info('high temperature, skipping demagnetize')
@@ -1125,7 +1124,7 @@ class Cart(object):
         if self.sim_cold:
             return
         if not self.state['pd_enable']:
-            raise RuntimeError(self.logname + ' power disabled')
+            raise RuntimeError(self.name + ' power disabled')
         if not self.has_sis_mixers():
             self.log.info('not SIS mixers, skipping mixer heating')
             return
@@ -1208,7 +1207,7 @@ class Cart(object):
         t1 = time.time()
         self.log.debug('_mixer_heating: took %g seconds', t1-t0)
         if mixer_temp_0 >= base_mixer_temp_0 or mixer_temp_1 >= base_mixer_temp_1:
-            raise RuntimeError(self.logname + ' _mixer_heating cooldown failed, (%.2f, %.2f) >= (%.2f, %.2f) K' % (mixer_temp_0, mixer_temp_1, base_mixer_temp_0, base_mixer_temp_1))
+            raise RuntimeError(self.name + ' _mixer_heating cooldown failed, (%.2f, %.2f) >= (%.2f, %.2f) K' % (mixer_temp_0, mixer_temp_1, base_mixer_temp_0, base_mixer_temp_1))
         # Cart._mixer_heating
     
     
@@ -1222,7 +1221,7 @@ class Cart(object):
         if self.sim_cold:
             return
         if not self.state['pd_enable']:
-            raise RuntimeError(self.logname + ' power disabled')
+            raise RuntimeError(self.name + ' power disabled')
         if not self.has_sis_mixers():
             self.log.info('not SIS mixers, skipping bias voltage offset calc')
             return
@@ -1295,7 +1294,7 @@ class Cart(object):
             self.state['sis_mag_c'] = ma
             return
         if not self.state['pd_enable']:
-            raise RuntimeError(self.logname + ' power disabled')
+            raise RuntimeError(self.name + ' power disabled')
         self._ramp_sis(ma, 'sis_mag_c', 0.1, self.femc.set_sis_magnet_current)
         # Cart._ramp_sis_magnet_currents
     
@@ -1317,7 +1316,7 @@ class Cart(object):
             self.state['sis_v'] = mv
             return
         if not self.state['pd_enable']:
-            raise RuntimeError(self.logname + ' power disabled')
+            raise RuntimeError(self.name + ' power disabled')
         set_mv = [0.0]*4
         get_mv = [0.0]*4
         for i in range(4):
@@ -1370,7 +1369,7 @@ class Cart(object):
                 self.state['pa_gate_v'] = pa[2:4]
             return
         if not self.state['pd_enable']:
-            raise RuntimeError(self.logname + ' power disabled')
+            raise RuntimeError(self.name + ' power disabled')
         for po in range(2):
             self.femc.set_cartridge_lo_pa_pol_drain_voltage_scale(self.ca, po, pa[po])
             self.state['pa_drain_s'][po] = pa[po]
@@ -1392,7 +1391,7 @@ class Cart(object):
             self.state['lna_gate_v'][lna_state_i:lna_state_i+3] = lna[6:9]
             return
         if not self.state['pd_enable']:
-            raise RuntimeError(self.logname + ' power disabled')
+            raise RuntimeError(self.name + ' power disabled')
         for st in range(3):
             self.femc.set_lna_drain_voltage(self.ca, po, sb, st, lna[st])
             self.femc.set_lna_drain_current(self.ca, po, sb, st, lna[3+st])
@@ -1411,7 +1410,7 @@ class Cart(object):
             self.state['lna_enable'] = [enable]*4
             return
         if not self.state['pd_enable']:
-            raise RuntimeError(self.logname + ' power disabled')
+            raise RuntimeError(self.name + ' power disabled')
         for po in range(2):
             for sb in range(2):
                 if force or enable != self.state['lna_enable'][po*2 + sb]:
@@ -1442,7 +1441,7 @@ class Cart(object):
             self.state['pll_sb_lock'] = lock_side
             return
         if not self.state['pd_enable']:
-            raise RuntimeError(self.logname + ' power disabled')
+            raise RuntimeError(self.name + ' power disabled')
         if force or lock_side != self.state['pll_sb_lock']:
             self.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, lock_side)
             self.state['pll_sb_lock'] = lock_side

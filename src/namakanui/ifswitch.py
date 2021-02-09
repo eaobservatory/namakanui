@@ -55,12 +55,11 @@ class IFSwitch(object):
         self.sleep = sleep
         self.publish = publish
         self.simulate = sim.str_to_bits(cfg['simulate']) | simulate
-        self.name = cfg['pubname']
+        self.name = cfg['name']
         self.state = {'number':0}
         self.state['DO'] = [0]*6
         self.state['AI'] = [0.0]*6
-        self.logname = cfg['logname']
-        self.log = logging.getLogger(self.logname)
+        self.log = logging.getLogger(self.name)
         
         # init only saves ip/port, so this is fine even if simulating
         self.adam_6260 = adam.adam6260.Adam6260(cfg['ip_6260'], int(cfg['port_6260']))
