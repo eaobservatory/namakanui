@@ -197,11 +197,19 @@ class Instrument(object):
         self.log.info('switching to band %d', band)
         # reduce reference signal power to minimum levels
         self.set_safe()
+        self.ifswitch.set_band(band)
         # zero bias/amps/magnets on all carts to reduce interference
         for cart in self.carts.values():
             cart.zero()
             cart.update_all()
-        self.ifswitch.set_band(band)
+        # check FLOOG power to make sure band is selected
+        cart = self.carts[band]
+        if cart.state['pd_enable'] and not cart.sim_warm:
+            rp = cart.state['pll_ref_power']
+            if rp < -3.0:
+                raise RuntimeError(f'PLL ref power {rp:.2f}V (FLOOG 31.5 MHz): too strong, please attenuate.')
+            if rp > -0.5:
+                raise RuntimeError(f'PLL ref power {rp:.2f}V (FLOOG 31.5 MHz): too weak, IF switch may have failed to select band {band}')
         # Instrument.set_band
     
     
