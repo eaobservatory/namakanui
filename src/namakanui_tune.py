@@ -172,9 +172,10 @@ def tune(instrument, band, lo_ghz, voltage=0.0,
     clip = namakanui.util.clip
     
     # photonics attenuation search range
+    
     att_max = photonics.max_att
     att_start = (0 if att_ini else att_max) if att_start is None else att_start
-    att_min = (-6 if att_ini else 0) if att_min is None else att_min
+    att_min = (-3*photonics.counts_per_db if att_ini else 0) if att_min is None else att_min
     if att_ini:
         att_ini = photonics.interp_attenuation(cart.band, lo_ghz)
         att_start += att_ini
