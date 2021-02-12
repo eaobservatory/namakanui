@@ -157,7 +157,7 @@ if 'drama' in sys.modules:
     import drama
 
 
-    def _check_msg(action, msg, log):
+    def iftask_check_msg(action, msg, log):
         '''Helper used by iftask_* functions to check obey replies.'''
         if msg.reason != drama.REA_COMPLETE:
             raise drama.BadStatus(drama.UNEXPMSG, f'{action} bad reply: {msg}')
@@ -198,7 +198,7 @@ if 'drama' in sys.modules:
         msg = drama.obey('IFTASK@if-micro', 'TEST_SETUP',
                         NASM_SET='R_CABIN', BAND_WIDTH=bw_mhz, QUAD_MODE=4,
                         IF_FREQ=if_ghz, LEVEL_ADJUST=adjust, BIT_MASK=bitmask).wait(90)
-        _check_msg('IFTASK.TEST_SETUP', msg, log)
+        iftask_check_msg('IFTASK.TEST_SETUP', msg, log)
         # iftask_setup
 
 
@@ -215,7 +215,7 @@ if 'drama' in sys.modules:
             raise ValueError(f'bw_mhz {bw_mhz} not in {bw_mhz_valid}')
         log.info('iftask_set_bw(%d)', bw_mhz)
         msg = drama.obey('IFTASK@if-micro', 'SET_DCM_BW', DCM=-1, MHZ=bw_mhz).wait(10)
-        _check_msg('IFTASK.SET_DCM_BW', msg, log)
+        iftask_check_msg('IFTASK.SET_DCM_BW', msg, log)
         # iftask_set_bw
 
 
@@ -233,7 +233,7 @@ if 'drama' in sys.modules:
             raise ValueError(f'lo2_mhz {lo2_mhz} not in {lo_mhz_valid}')
         log.info('iftask_set_lo2(%g)', lo2_mhz)
         msg = drama.obey('IFTASK@if-micro', 'SET_LO2_FREQ', LO2=-1, MHZ=lo2_mhz).wait(90)
-        _check_msg('IFTASK.SET_LO2_FREQ', msg, log)
+        iftask_check_msg('IFTASK.SET_LO2_FREQ', msg, log)
         # iftask_set_lo2
 
 
@@ -248,7 +248,7 @@ if 'drama' in sys.modules:
         '''
         wtime = itime + 5
         msg = drama.obey("IFTASK@if-micro", "WRITE_TP2", FILE="NONE", ITIME=itime).wait(wtime)
-        check_msg('IFTASK.WRITE_TP2', msg, log)
+        iftask_check_msg('IFTASK.WRITE_TP2', msg, log)
         tps = []
         for dcm in dcms:
             tps.append(msg.arg['POWER%d'%(dcm)])
@@ -265,7 +265,7 @@ if 'drama' in sys.modules:
             log: A logging instance
         '''
         msg = drama.obey('IFTASK@if-micro', 'GET_DCM_ATTEN', DCM=-1).wait(5)
-        check_msg('IFTASK.GET_DCM_ATTEN', msg, log)
+        iftask_check_msg('IFTASK.GET_DCM_ATTEN', msg, log)
         att = []
         for dcm in dcms:
             att.append(msg.arg['ATTEN%d'%(dcm)])
