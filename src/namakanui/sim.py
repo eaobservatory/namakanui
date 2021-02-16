@@ -33,13 +33,15 @@ SIM_B6_COLD   = 1<<5
 SIM_B7_FEMC   = 1<<6
 SIM_B7_WARM   = 1<<7
 SIM_B7_COLD   = 1<<8
-SIM_CRYO_FEMC = 1<<9
+SIM_CRYO_FEMC = 1<<9  # obsolete, but keeping as a placeholder
 SIM_LOAD      = 1<<10
 SIM_REFERENCE = 1<<11
 SIM_IFSW_6260 = 1<<12
 SIM_IFSW_6024 = 1<<13
 SIM_PHOTONICS = 1<<14
 SIM_FEMC      = 1<<15
+
+SIM_IFSW = SIM_IFSW_6260 | SIM_IFSW_6024
 
 bit_to_str_dict = {
 SIM_B3_FEMC   : "SIM_B3_FEMC",
@@ -77,6 +79,7 @@ str_to_bit_dict = {
 "SIM_IFSW_6024" : SIM_IFSW_6024,
 "SIM_PHOTONICS" : SIM_PHOTONICS,
 "SIM_FEMC"      : SIM_FEMC,
+"SIM_IFSW"      : SIM_IFSW,
 }
 
 
