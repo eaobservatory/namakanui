@@ -34,7 +34,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw
-import namakanui.agilent
+import namakanui.reference
+import namakanui.ifswitch
 import namakanui.photonics
 import namakanui.pmeter
 import namakanui.util
@@ -47,8 +48,7 @@ import time
 import math
 
 import logging
-logging.root.setLevel(logging.INFO)
-logging.root.addHandler(logging.StreamHandler())
+namakanui.util.setup_logging()
 
 binpath, datapath = namakanui.util.get_paths()
 
@@ -58,6 +58,7 @@ parser.add_argument('start_att', type=int, help='starting attenuator setting (co
 parser.add_argument('ghz_range', help='synth freq range, start:end:step')
 parser.add_argument('dbm_table', help='synth power table file path')
 parser.add_argument('--att_table', nargs='?', default='', help='attenuator table file path, overrides start_att')
+parser.add_argument('--band', nargs='?', type=int, default=0, help='set ifswitch to given band')
 parser.add_argument('--note', nargs='?', default='', help='note for file header')
 args = parser.parse_args()
 
@@ -82,15 +83,20 @@ if args.att_table:
     att_table = namakanui.ini.read_ascii(args.att_table)
 
 
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
-agilent.log.setLevel(logging.INFO)
-agilent.set_dbm(agilent.safe_dbm)
-agilent.set_output(1)
+reference = namakanui.reference.Reference(datapath+'reference.ini', time.sleep, namakanui.nop)
+reference.log.setLevel(logging.INFO)
+reference.set_dbm(reference.safe_dbm)
+reference.set_output(1)
 
 photonics = namakanui.photonics.Photonics(datapath+'photonics.ini', time.sleep, namakanui.nop)
 photonics.set_attenuation(photonics.max_att)
 
 pmeter = namakanui.pmeter.PMeter(datapath+'pmeter.ini', time.sleep, namakanui.nop)
+
+if args.band:
+    ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop)
+    ifswitch.set_band(args.band)
+    ifswitch.close()  # done with ifswitch
 
 # output file header
 sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
@@ -122,11 +128,11 @@ for ghz in ghz_range:
     # set power safely: if decreasing attenuation, set freq first.
     hz = ghz*1e9
     if att < photonics.state['attenuation']:
-        agilent.set_hz_dbm(hz, dbm)
+        reference.set_hz_dbm(hz, dbm)
         photonics.set_attenuation(att)
     else:
         photonics.set_attenuation(att)
-        agilent.set_hz_dbm(hz, dbm)
+        reference.set_hz_dbm(hz, dbm)
     pmeter.set_ghz(ghz)  # for power sensor cal tables
     # take initial reading
     time.sleep(delay)
@@ -171,7 +177,7 @@ for ghz in ghz_range:
 
 
 
-agilent.set_dbm(agilent.safe_dbm)
+reference.set_dbm(reference.safe_dbm)
 photonics.set_attenuation(photonics.max_att)
 sys.stderr.write('done.\n')
 

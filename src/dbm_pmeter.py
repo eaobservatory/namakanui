@@ -50,7 +50,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw
-import namakanui.agilent
+import namakanui.reference
 import namakanui.util
 import sys
 import os
@@ -59,8 +59,7 @@ import socket
 import time
 
 import logging
-logging.root.setLevel(logging.INFO)
-logging.root.addHandler(logging.StreamHandler())
+namakanui.util.setup_logging()
 
 binpath, datapath = namakanui.util.get_paths()
 
@@ -82,11 +81,10 @@ sys.stdout.write('# %s\n'%(sys.argv))
 sys.stdout.write('#\n')
 sys.stdout.flush()
 
-# RMB 20200911: paranoia, make sure we don't accidentally use keysight
-agilent = namakanui.agilent.Agilent(datapath+'agilent_cabin.ini', time.sleep, namakanui.nop)
-agilent.log.setLevel(logging.INFO)
-agilent.set_dbm(agilent.safe_dbm)
-agilent.set_output(1)
+reference = namakanui.reference.Reference(datapath+'reference.ini', time.sleep, namakanui.nop)
+reference.log.setLevel(logging.INFO)
+reference.set_dbm(reference.safe_dbm)
+reference.set_output(1)
 
 pmeter = namakanui.pmeter.PMeter(datapath+'pmeter.ini', time.sleep, namakanui.nop)
 
@@ -94,7 +92,7 @@ pmeter = namakanui.pmeter.PMeter(datapath+'pmeter.ini', time.sleep, namakanui.no
 if args.band:
     if args.pa and args.pol is None:
         logging.error('missing arg "pol", must be 0 or 1.')
-        agilent.set_dbm(agilent.safe_dbm)
+        reference.set_dbm(reference.safe_dbm)
         logging.info('done.')
         sys.exit(1)
     # tune rx to range of values and take power readings.
@@ -112,7 +110,7 @@ if args.band:
         sys.stdout.write('#lo_ghz wca_ghz pa0 pa1 vd0 vd1 id0 id1 pmeter_dbm\n')
     sys.stdout.flush()
     for lo_ghz in los:
-        if not namakanui.util.tune(cart, agilent, None, lo_ghz):
+        if not namakanui.util.tune(cart, reference, None, lo_ghz):
             logging.error('failed to tune to %.3f ghz', lo_ghz)
             continue
         if args.if_ghz:
@@ -163,7 +161,7 @@ elif args.table:
         cold_mult = 1
     # HACK, assume lock above reference
     lock_polarity = 1
-    floog = agilent.floog * [1.0, -1.0][lock_polarity]  # [below, above]
+    floog = reference.floog * [1.0, -1.0][lock_polarity]  # [below, above]
     sys.stdout.write('#lo_ghz sig_ghz sig_dbm pmeter_dbm\n')
     sys.stdout.flush()
     logging.info('looping over entries in %s', args.table)
@@ -177,8 +175,8 @@ elif args.table:
         lo_ghz = vals[0]
         dbm = vals[1]
         fyig = lo_ghz / (cold_mult * warm_mult)
-        fsig = (fyig*warm_mult + floog) / agilent.harmonic
-        agilent.set_hz_dbm(fsig*1e9, dbm)
+        fsig = (fyig*warm_mult + floog) / reference.harmonic
+        reference.set_hz_dbm(fsig*1e9, dbm)
         pmeter.set_ghz((fsig)  # for power sensor calibration tables
         time.sleep(0.1)  # generous sleep since pmeter takes 50ms/read
         power = pmeter.read_power()
@@ -193,14 +191,14 @@ else:
     logging.info('looping over ghz range %s for each dbm in %s', args.ghz, args.dbm)
     for dbm in dbms:
         for ghz in ghzs:
-            agilent.set_hz_dbm(ghz*1e9, dbm)
+            reference.set_hz_dbm(ghz*1e9, dbm)
             pmeter.set_ghz(ghz)  # for power sensor calibration tables
             time.sleep(0.1)  # generous sleep since pmeter takes 50ms/read
             power = pmeter.read_power()
             sys.stdout.write('%.6f %.2f %.3f\n'%(ghz, dbm, power))
             sys.stdout.flush()
 
-agilent.set_dbm(agilent.safe_dbm)
+reference.set_dbm(reference.safe_dbm)
 logging.info('done.')
 
 

@@ -52,21 +52,16 @@ import drama
 import sys
 import os
 import time
-import argparse
-import namakanui.cart
-import namakanui.agilent
-import namakanui.ifswitch
-import namakanui.load
-import namakanui.femc
-import namakanui.util
 import logging
+import argparse
+import namakanui.instrument
+import namakanui.util
+from namakanui_tune import tune
+
 
 taskname = 'YF_%d'%(os.getpid())
 
-logging.root.setLevel(logging.INFO)
-logging.root.addHandler(logging.StreamHandler())
-
-binpath, datapath = namakanui.util.get_paths()
+namakanui.util.setup_logging()
 
 # use explicit arguments to avoid confusion
 parser = argparse.ArgumentParser(description='''
@@ -86,7 +81,7 @@ parser.add_argument('band', type=int, choices=[6,7])
 parser.add_argument('lo_ghz', type=float)
 parser.add_argument('--mv')
 parser.add_argument('--pa')
-parser.add_argument('lock_polarity', nargs='?', choices=['below','above'], default='above')
+parser.add_argument('lock_side', nargs='?', choices=['below','above'], default='above')
 parser.add_argument('--level_only', action='store_true')
 parser.add_argument('--zero', action='store_true', help='zero bias voltage of unused mixer instead of leaving at nominal value')
 args = parser.parse_args()
@@ -100,28 +95,22 @@ if not lo_range[0] <= lo_ghz <= lo_range[1]:
 mvs = namakanui.util.parse_range(args.mv, maxlen=30e3, maxstep=0.05)
 pas = namakanui.util.parse_range(args.pa, maxlen=300)
 
-# set agilent output to a safe level before setting ifswitch
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
-agilent.set_dbm(agilent.safe_dbm)
-agilent.set_output(1)
-ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop)
-ifswitch.set_band(band)
-
-# init load controller and set to hot (ambient) load for this band
-load = namakanui.load.Load(datapath+'load.ini', time.sleep, namakanui.nop)
-load.move('b%d_hot'%(band))
-
-# setup cartridge and tune, adjusting power as needed
-cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop)
+instrument = namakanui.instrument.Instrument()
+instrument.set_safe()
+instrument.set_band(args.band)
+instrument.load.move('b%d_hot'%(args.band))
+cart = instrument.carts[band]
 cart.power(1)
-cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
-if not namakanui.util.tune(cart, agilent, None, lo_ghz):
+cart.set_lock_side(args.lock_side)
+
+if not tune(instrument, band, lo_ghz):
     logging.error('failed to tune to %.3f ghz', lo_ghz)
     sys.exit(1)
 
 # save the nominal sis bias voltages
 nom_v = cart.state['sis_v']
 
+load = instrument.load  # shorten name
 
 # write out a header for our output file
 sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
@@ -136,6 +125,7 @@ dcm_1U = namakanui.util.get_dcms('N%s1U'%(uw))
 dcm_1L = namakanui.util.get_dcms('N%s1L'%(uw))
 dcm_0 = dcm_0U + dcm_0L
 dcm_1 = dcm_1U + dcm_1L
+dcms = dcm_0 + dcm_1
 powers = []
 powers += ['01_dcm%d'%(x) for x in dcm_0]
 powers += ['02_dcm%d'%(x) for x in dcm_0]
@@ -164,31 +154,6 @@ yf_index = sky_p_index + len(powers)
 ua_n = 10
 
 
-# TODO: define a custom error type and raise/catch it like an adult
-
-
-def if_setup(adjust):
-    # LEVEL_ADJUST 0=setup_only, 1=setup_and_level, 2=level_only
-    # BIT_MASK is DCMs to use: bit0=DCM0, bit1=DCM1, ... bit31=DCM31.
-    setup_type = ['setup_only', 'setup_and_level', 'level_only']
-    logging.info('setup IFTASK, LEVEL_ADJUST %d: %s', adjust, setup_type[adjust])
-    bitmask = 0
-    for dcm in dcm_0 + dcm_1:
-        bitmask |= 1<<dcm
-    # TODO configurable IF_FREQ?  will 6 be default for both bands?
-    msg = drama.obey('IFTASK@if-micro', 'TEST_SETUP',
-                     NASM_SET='R_CABIN', BAND_WIDTH=1000, QUAD_MODE=4,
-                     IF_FREQ=6, LEVEL_ADJUST=adjust, BIT_MASK=bitmask).wait(90)
-    if msg.reason != drama.REA_COMPLETE or msg.status != 0:
-        if msg.status == 261456746:  # ACSISIF__ATTEN_ZERO
-            logging.warning('low attenuator setting from IFTASK.TEST_SETUP')
-        else:
-            logging.error('bad reply from IFTASK.TEST_SETUP: %s', msg)
-            return 1
-    return 0
-
-
-
 def iv(target, rows, pa):
     if target == 'hot':
         p_index = hot_p_index
@@ -215,8 +180,7 @@ def iv(target, rows, pa):
         cart._set_pa([pa,pa])
         cart.update_all()
         # dbm should already be set from namakanui.util.tune
-        if if_setup(2):  # level only
-            return 1
+        namakanui.util.iftask_setup(2, dcms=dcms)  # level only
     
     
     sys.stderr.write('%s: '%(target))
@@ -314,8 +278,7 @@ def MAIN(msg):
     # TODO obey/kick check
     try:
         if_arg = [1,2][int(args.level_only)]
-        if if_setup(if_arg):
-            return
+        namakanui.util.iftask_setup(if_arg, dcms=dcms)
         
         for k,pa in enumerate(pas):
             logging.info('========= PA: %g (%.2f%%) =========', pa, 100*k/len(pas))

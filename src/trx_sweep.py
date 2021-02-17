@@ -37,19 +37,16 @@ import drama
 import sys
 import os
 import time
-import argparse
-import namakanui.cart
-import namakanui.agilent
-import namakanui.ifswitch
-import namakanui.load
-import namakanui.femc
-import namakanui.util
 import logging
+import argparse
+import namakanui.instrument
+import namakanui.util
+from namakanui_tune import tune
+
 
 taskname = 'TRXS_%d'%(os.getpid())
 
-logging.root.setLevel(logging.INFO)
-logging.root.addHandler(logging.StreamHandler())
+namakanui.util.setup_logging()
 
 binpath, datapath = namakanui.util.get_paths()
 
@@ -60,7 +57,7 @@ Trx for a range of frequencies.
   formatter_class=argparse.RawTextHelpFormatter)
 parser.add_argument('band', type=int, choices=[6,7])
 parser.add_argument('lo_ghz', help='LO GHz range, first:last:step')
-parser.add_argument('lock_polarity', nargs='?', choices=['below','above'], default='above')
+parser.add_argument('lock_side', nargs='?', choices=['below','above'], default='above')
 parser.add_argument('--level_only', action='store_true')
 parser.add_argument('--bw_mhz', nargs='?', default='1000', help='BW MHz range, first:last:step')
 parser.add_argument('--if_ghz', nargs='?', default='6', help='IF GHz range, first:last:step')
@@ -73,26 +70,21 @@ bws = namakanui.util.parse_range(args.bw_mhz, maxlen=1e3)
 ifs = namakanui.util.parse_range(args.if_ghz, maxlen=1e3)
 
 
-# set agilent output to a safe level before setting ifswitch
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
-agilent.set_dbm(agilent.safe_dbm)
-agilent.set_output(1)
-ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop)
-ifswitch.set_band(band)
-
-# init load controller and set to hot (ambient) load for this band
-load = namakanui.load.Load(datapath+'load.ini', time.sleep, namakanui.nop)
-load.move('b%d_hot'%(band))
-
-# setup cartridge
-cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop)
+instrument = namakanui.instrument.Instrument()
+instrument.set_safe()
+instrument.set_band(args.band)
+instrument.load.move('b%d_hot'%(args.band))
+cart = instrument.carts[band]
 cart.power(1)
-cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
+cart.set_lock_side(args.lock_side)
+
 # tune to a central frequency just for the sake of the first IFTASK setup
 lo_ghz = los[len(los)//2]
-if not namakanui.util.tune(cart, agilent, None, lo_ghz):
+if not tune(instrument, band, lo_ghz):
     logging.error('failed to tune to %.3f ghz', lo_ghz)
     sys.exit(1)
+
+load = instrument.load  # shorten name
 
 # a guess for LN2 brightness temp.  TODO might be frequency-dependent.
 coldk = 80.0
@@ -138,56 +130,15 @@ trx_index = sky_p_index + len(powers)
 ua_n = 10
 
 
-def if_setup(adjust, bw_mhz, if_ghz):
-    # LEVEL_ADJUST 0=setup_only, 1=setup_and_level, 2=level_only
-    # BIT_MASK is DCMs to use: bit0=DCM0, bit1=DCM1, ... bit31=DCM31.
-    setup_type = ['setup_only', 'setup_and_level', 'level_only']
-    logging.info('setup IFTASK, LEVEL_ADJUST %d: %s', adjust, setup_type[adjust])
-    bitmask = 0
-    for dcm in dcms:
-        bitmask |= 1<<dcm
-    # TODO configurable IF_FREQ?  will 6 be default for both bands?
-    msg = drama.obey('IFTASK@if-micro', 'TEST_SETUP',
-                     NASM_SET='R_CABIN', BAND_WIDTH=bw_mhz, QUAD_MODE=4,
-                     IF_FREQ=if_ghz, LEVEL_ADJUST=adjust, BIT_MASK=bitmask).wait(90)
-    if msg.reason != drama.REA_COMPLETE or msg.status != 0:
-        if msg.status == 261456746:  # ACSISIF__ATTEN_ZERO
-            logging.warning('low attenuator setting from IFTASK.TEST_SETUP')
-        else:
-            logging.error('bad reply from IFTASK.TEST_SETUP: %s', msg)
-            return 1
-    return 0
-
-def set_bw(bw_mhz):
-    # this goes fast; probably doesn't do much.
-    logging.info('set bandwidth %g MHz', bw_mhz)
-    msg = drama.obey('IFTASK@if-micro', 'SET_DCM_BW', DCM=-1, MHZ=bw_mhz).wait(10)
-    if msg.reason != drama.REA_COMPLETE or msg.status != 0:
-        logging.error('bad reply from IFTASK.SET_DCM_BW: %s', msg)
-        return 1
-    return 0
-
-def set_lo2(lo2_mhz):
-    # this can take ~20s, or ~40s if it needs to change the coax switches.
-    # why so slow?
-    logging.info('set lo2 freq %g MHz', lo2_mhz)
-    msg = drama.obey('IFTASK@if-micro', 'SET_LO2_FREQ', LO2=-1, MHZ=lo2_mhz).wait(90)
-    if msg.reason != drama.REA_COMPLETE or msg.status != 0:
-        logging.error('bad reply from IFTASK.SET_LO2_FREQ: %s', msg)
-        return 1
-    return 0
-
 def main_loop():
     for bw_mhz in bws:
-        if set_bw(bw_mhz):
-            return
+        namakanui.util.iftask_set_bw(bw_mhz)
         
         for if_ghz in ifs:
             lo2_mhz = if_ghz*1e3 + 2500
             if bw_mhz == 250:
                 lo2_mhz += 125
-            if set_lo2(lo2_mhz):
-                return
+            namakanui.util.iftask_set_lo2(lo2_mhz)
             
             for lo_ghz in los:
                 ua_avg = [0.0]*4
@@ -197,11 +148,10 @@ def main_loop():
                 
                 # HOT
                 load.move('b%d_hot'%(band))
-                if not namakanui.util.tune(cart, agilent, None, lo_ghz):
+                if not tune(instrument, band, lo_ghz):
                     logging.error('failed to tune to %.3f ghz', lo_ghz)
                     continue
-                if if_setup(2, bw_mhz, if_ghz):  # level only (won't actually set bw/lo2)
-                    return
+                namakanui.util.iftask_setup(2, bw_mhz, if_ghz, dcms)  # level only
                 # start IFTASK action
                 transid = drama.obey("IFTASK@if-micro", "WRITE_TP2", FILE="NONE", ITIME=0.1)
                 # collect mixer current readings
@@ -277,15 +227,12 @@ def main_loop():
 def MAIN(msg):
     try:
         adjust = [1,2][int(args.level_only)]
-        if if_setup(adjust, bws[0], ifs[0]):
-            return
+        namakanui.util.iftask_setup(adjust, bws[0], ifs[0], dcms)
         main_loop()
     finally:
         # final timestamp
         sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
         sys.stdout.flush()
-        # retune the receiver to get settings back to nominal
-        cart.tune(lo_ghz, 0.0)
         drama.Exit('MAIN done')
     # MAIN
         

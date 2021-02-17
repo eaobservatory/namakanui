@@ -30,19 +30,12 @@ import os
 import time
 import random
 import argparse
-import namakanui.cart
-import namakanui.agilent
-import namakanui.load
-import namakanui.femc
+import namakanui.instrument
 import namakanui.util
+import namakanui.sim as sim
 import logging
 
-taskname = 'SVT_%d'%(os.getpid())
-
-logging.root.setLevel(logging.INFO)
-logging.root.addHandler(logging.StreamHandler())
-
-binpath, datapath = namakanui.util.get_paths()
+namakanui.util.setup_logging()
 
 # use explicit arguments to avoid confusion
 parser = argparse.ArgumentParser(description='''
@@ -53,13 +46,18 @@ args = parser.parse_args()
 
 band = args.band
 
-# no need for lock; set agilent output to a safe level
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
-agilent.set_dbm(agilent.safe_dbm)
-
-# init cartridge
-cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop)
+# no need for lock or load, and we don't care about zeroing other carts
+# TODO: add a "band" argument to Instrument.__init__ to save trouble here
+cart_sim = {3:sim.SIM_B3_FEMC, 6:sim.SIM_B6_FEMC, 7:sim.SIM_B7_FEMC}
+del cart_sim[band]
+cart_sim_bits = 0
+for s in cart_sim.values():
+    cart_sim_bits |= s
+instrument = namakanui.instrument.Instrument(simulate=SIM_LOAD|SIM_IFSW|cart_sim_bits)
+instrument.set_safe()
+cart = instrument.carts[band]
 cart.power(1)
+
 
 # make sure LO pumping power is zero
 cart._set_pa([0.0]*4)

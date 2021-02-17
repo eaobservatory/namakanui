@@ -45,25 +45,25 @@ import jac_sw
 import sys
 import os
 import time
-import argparse
-import namakanui.cart
-import namakanui.agilent
-import namakanui.ifswitch
-import namakanui.util
 import logging
+import argparse
+import namakanui.instrument
+import namakanui.util
+import namakanui.sim as sim
+from namakanui_tune import tune
 
+
+namakanui.util.setup_logging()
 logging.root.setLevel(logging.DEBUG)
-logging.root.addHandler(logging.StreamHandler())
-
-binpath, datapath = namakanui.util.get_paths()
 
 parser = argparse.ArgumentParser()
 parser.add_argument('band', type=int, choices=[3,6,7])
 parser.add_argument('LO_GHz_start', type=float)
 parser.add_argument('LO_GHz_end', type=float)
 parser.add_argument('LO_GHz_step', type=float)
-parser.add_argument('lock_polarity', choices=['below','above'])
+parser.add_argument('lock_side', choices=['below','above'])
 parser.add_argument('dbm')
+parser.add_argument('--lock_only', action='store_true', help='skip mixer adjustment')
 args = parser.parse_args()
 #print(args.band, args.LO_GHz_start, args.LO_GHz_end, args.LO_GHz_step)
 
@@ -86,49 +86,40 @@ except:
 
 #sys.exit(0)
 
-def mypub(n,s):
-    pass
+# we don't need the load for this script
+instrument = namakanui.instrument.Instrument(simulate=sim.SIM_LOAD)
 
+# this script only makes sense if we're not using the photonics attenuator
+if not instrument.photonics.simulate:
+    logging.error('this script should only be used with SIM_PHOTONICS')
+    sys.exit(1)
 
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, mypub)
-agilent.log.setLevel(logging.INFO)
-agilent.set_dbm(agilent.safe_dbm)
-agilent.set_output(1)
+# be a little less verbose
+instrument.photonics.log.setLevel(logging.INFO)
+instrument.reference.log.setLevel(logging.INFO)
 
-ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, mypub)
-ifswitch.set_band(args.band)
-ifswitch.close()  # done with ifswitch
+instrument.set_safe()  # paranoia
 
-cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, mypub)
+cart = instrument.carts[args.band]
 cart.power(1)
-cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
-floog = agilent.floog * {'below':1.0, 'above':-1.0}[args.lock_polarity]
+cart.set_lock_side(args.lock_side)
+if args.lock_only:
+    cart.zero()  # zero the mixers; we only care about PLL
 
 
-
-# check to make sure this receiver is selected.
-rp = cart.state['pll_ref_power']
-if rp < -3.0:
-    logging.error('PLL reference power (FLOOG, 31.5 MHz) is too strong (%.2f V).  Please attenuate.', rp)
-    sys.exit(1)
-if rp > -0.5:
-    logging.error('PLL reference power (FLOOG, 31.5 MHz) is too weak (%.2f V).', rp)
-    logging.error('Please make sure the IF switch has band %d selected.', args.band)
-    sys.exit(1)
-
+reference = instrument.reference  # shorten name for adjust_dbm()
 
 def adjust_dbm(lo_ghz):
-    # sanity check, avoid setting agilent for impossible freqs
+    # sanity check, avoid setting reference for impossible freqs
     lo_min = cart.yig_lo * cart.cold_mult * cart.warm_mult
     lo_max = cart.yig_hi * cart.cold_mult * cart.warm_mult
     if lo_ghz < lo_min or lo_ghz > lo_max:
         logging.error('skipping lo_ghz %g, outside range [%.3f, %.3f] for band %d', lo_ghz, lo_min, lo_max, args.band)
         return
-    # RMB 20200313: new utility function adjusts dbm as needed.
-    # TODO: early, rough tables could go faster by widening pll_range and using skip_servo_pa.  add option.
-    #if namakanui.util.tune(cart, agilent, lo_ghz, use_ini=use_ini, dbm_range=[args.dbm,100], pll_range=[-1.5,-1.5]):
-    if namakanui.util.tune(cart, agilent, None, lo_ghz, pll_range=[-1.5,-1.5], dbm_ini=use_ini, dbm_start=args.dbm, dbm_max=agilent.max_dbm):
-        sys.stdout.write('%.3f %6.2f %.3f %.3f %.3f\n' % (lo_ghz, agilent.state['dbm'], cart.state['pll_if_power'], cart.state['pa_drain_s'][0], cart.state['pa_drain_s'][1]))
+    if tune(instrument, args.band, lo_ghz, pll_if=[-1.4,-1.6],
+            dbm_ini=use_ini, dbm_start=args.dbm, dbm_max=reference.max_dbm,
+            lock_only=args.lock_only):
+        sys.stdout.write('%.3f %6.2f %.3f %.3f %.3f\n' % (lo_ghz, reference.state['dbm'], cart.state['pll_if_power'], cart.state['pa_drain_s'][0], cart.state['pa_drain_s'][1]))
         sys.stdout.flush()
 
 
@@ -136,43 +127,19 @@ def try_adjust_dbm(lo_ghz):
     try:
         adjust_dbm(lo_ghz)
     except Exception as e:
-        agilent.set_dbm(agilent.safe_dbm)
+        instrument.set_safe()
         logging.error('unhandled exception: %s', e)
         raise
 
 
 sys.stdout.write('#lo_ghz dbm pll_if_power pa_0 pa_1\n')  # topcat ascii
 lo_ghz = args.LO_GHz_start
-while lo_ghz < args.LO_GHz_end:
+while lo_ghz < args.LO_GHz_end - 1e-9:
     try_adjust_dbm(lo_ghz)
     lo_ghz += args.LO_GHz_step
 lo_ghz = args.LO_GHz_end
 try_adjust_dbm(lo_ghz)
 
-# since this script is also used to tune the receiver, retune once we've
-# found the optimal IF power to servo the PA.
-cart.update_all()
-if cart.state['lo_ghz'] == lo_ghz and not cart.state['pll_unlock']:
-    logging.info('retuning at %g to adjust PA...', lo_ghz)
-    try:
-        cart.tune(lo_ghz, 0.0)
-        time.sleep(0.1)
-        cart.update_all()
-        if cart.state['pll_unlock']:
-            agilent.set_dbm(agilent.safe_dbm)
-            logging.error('lost lock at %g', lo_ghz)
-        logging.info('band %d tuned to %g GHz, IF power: %g', args.band, lo_ghz, cart.state['pll_if_power'])
-    except Exception as e:
-        agilent.set_dbm(agilent.safe_dbm)
-        logging.error('final retune exception: %s', e)
-
-# show the last dbm setting
-agilent.update()
-logging.info('final dbm: %.2f', agilent.state['dbm'])
-
-logging.info('done.')
-
-
-
-
+logging.info('done, setting safe power levels.')
+instrument.set_safe()
 

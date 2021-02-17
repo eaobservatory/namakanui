@@ -34,7 +34,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw
-import namakanui.agilent
+import namakanui.reference
 import namakanui.util
 import namakanui.ini
 import sys
@@ -45,8 +45,7 @@ import time
 import math
 
 import logging
-logging.root.setLevel(logging.INFO)
-logging.root.addHandler(logging.StreamHandler())
+namakanui.util.setup_logging()
 
 binpath, datapath = namakanui.util.get_paths()
 
@@ -93,10 +92,10 @@ if args.table:
 # threshold to break optimization loop
 deadband = abs(args.deadband)
 
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
-agilent.log.setLevel(logging.INFO)
-agilent.set_dbm(agilent.safe_dbm)
-agilent.set_output(1)
+reference = namakanui.reference.Reference(datapath+'reference.ini', time.sleep, namakanui.nop)
+reference.log.setLevel(logging.INFO)
+reference.set_dbm(reference.safe_dbm)
+reference.set_output(1)
 
 pmeter = namakanui.pmeter.PMeter(datapath+'pmeter.ini', time.sleep, namakanui.nop)
 
@@ -124,7 +123,7 @@ def do_ghz(ghz):
     if dbm_table:
         interp_row = namakanui.ini.interp_table(dbm_table, ghz)
         dbm = interp_row.dbm
-    agilent.set_hz_dbm(ghz*1e9, dbm)
+    reference.set_hz_dbm(ghz*1e9, dbm)
     pmeter.set_ghz(ghz)  # for power sensor calibration tables
     # assuming meter and generator are both reasonably accurate,
     # we only need to iterate a few times to get close to optimal setting.
@@ -155,11 +154,11 @@ def do_ghz(ghz):
         sys.stderr.flush()
         dbm += err / gain
         # NOTE: even if we rail, don't bail out early -- might have overshot
-        if dbm < agilent.safe_dbm:
-            dbm = agilent.safe_dbm
-        if dbm > agilent.max_dbm:
-            dbm = agilent.max_dbm
-        agilent.set_dbm(dbm)
+        if dbm < reference.safe_dbm:
+            dbm = reference.safe_dbm
+        if dbm > reference.max_dbm:
+            dbm = reference.max_dbm
+        reference.set_dbm(dbm)
     time.sleep(delay)
     power = pmeter.read_power()
     sys.stderr.write('(%.2f, %.3f)\n'%(dbm, power))
@@ -175,7 +174,7 @@ while ghz < (args.GHz_end - 1e-12):
 ghz = args.GHz_end
 do_ghz(ghz)
 
-agilent.set_dbm(agilent.safe_dbm)
+reference.set_dbm(reference.safe_dbm)
 sys.stderr.write('done.\n')
 
 

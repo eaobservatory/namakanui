@@ -25,6 +25,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import jac_sw
 import namakanui.femc
+import namakanui.util
 import epics
 import time
 import datetime
@@ -33,16 +34,17 @@ import sys
 
 # if running in a terminal, be verbose
 if sys.stdout.isatty():
-    logging.root.setLevel(logging.INFO)
-    logging.root.addHandler(logging.StreamHandler())
+    namakanui.util.setup_logging()
 
-femc = namakanui.femc.FEMC()
+binpath, datapath = namakanui.util.get_paths()
+femc = namakanui.femc.FEMC(datapath+'femc.ini', time.sleep, namakanui.nop)
 filename = '/jac_logs/namakanui_temp.log'
 logfile = open(filename, 'a')
 logging.info('logging to file %s', filename)
 
 # power up the cartridges.
 # note this will skip demag/deflux by a later Cart instance.
+# TODO get bands from config
 logging.info('enabling (powering up) cartridges...')
 for ca in [2,5,6]:
     if not femc.get_pd_enable(ca):
@@ -61,7 +63,7 @@ logfile.write('b7_pll b7_4k b7_110k b7_p0 b7_15k b7_p1\n')
 logfile.flush()
 
 # NOTE 20200228: In our version of pyepics,
-# caput doesn't return a value or raise errors on failure.  Best effort...
+# caput doesn't return a value or raise errors on failure.  best effort only
 epics_timeout = 1.0
 
 while True:

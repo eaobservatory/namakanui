@@ -13,6 +13,7 @@ mixer_iv.py <band> <mv_min> <mv_max> <mv_step>
 
 TODO: tune first.
 TODO: set magnet currents.
+TODO: export a function suitable for use in task/gui.
 
 
 Copyright (C) 2020 East Asian Observatory
@@ -37,13 +38,12 @@ import os
 import time
 import argparse
 import namakanui.cart
-import namakanui.agilent
 import namakanui.femc
 import namakanui.util
 import logging
 
+namakanui.util.setup_logging()
 logging.root.setLevel(logging.DEBUG)
-logging.root.addHandler(logging.StreamHandler())
 
 binpath, datapath = namakanui.util.get_paths()
 
@@ -81,7 +81,7 @@ def mypub(n,s):
 # so we'll just talk directly to the FEMC instead.
 #cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, mypub)
 #cart.power(1)
-femc = namakanui.femc.FEMC()
+femc = namakanui.femc.FEMC(datapath+'femc.ini', time.sleep, mypub)
 ca = args.band - 1
 
 #def do_mv(mv):

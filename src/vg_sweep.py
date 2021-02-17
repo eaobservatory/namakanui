@@ -24,47 +24,35 @@ import jac_sw
 import sys
 import os
 import time
-import argparse
-import namakanui.cart
-import namakanui.agilent
-import namakanui.ifswitch
-import namakanui.load
-import namakanui.util
 import logging
+import argparse
+import namakanui.instrument
+import namakanui.util
+from namakanui_tune import tune
 
-logging.root.setLevel(logging.INFO)
-logging.root.addHandler(logging.StreamHandler())
 
-binpath,datapath = namakanui.util.get_paths()
+namakanui.util.setup_logging()
 
 parser = argparse.ArgumentParser(description='''
 Test effect of PA gate voltage setting.
 ''', formatter_class=argparse.RawTextHelpFormatter)
-
 parser.add_argument('band', type=int, choices=[6,7])
 parser.add_argument('--lo')  # range
 parser.add_argument('--vg')  # range
 parser.add_argument('--vd', type=float)  # optional, fixed vd value for both pols
-# we'll just always use 'above' reference tuning; add later if needed
+parser.add_argument('--lock_side', nargs='?', choices=['below','above'], default='above')
 args = parser.parse_args()
 
 los = namakanui.util.parse_range(args.lo, maxlen=1e3)
 vgs = namakanui.util.parse_range(args.vg, maxlen=1e2)
 
-# set agilent output to a safe level before setting ifswitch
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
-agilent.set_dbm(agilent.safe_dbm)
-ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop)
-ifswitch.set_band(args.band)
-
-# init load controller and set to hot (ambient) load for this band
-load = namakanui.load.Load(datapath+'load.ini', time.sleep, namakanui.nop)
-load.move('b%d_hot'%(args.band))
-
-# setup cartridge
-cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, namakanui.nop)
+instrument = namakanui.instrument.Instrument()
+instrument.set_safe()
+instrument.set_band(args.band)
+instrument.load.move('b%d_hot'%(args.band))
+cart = instrument.carts[band]
 cart.power(1)
-cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}['above'])#args.lock_polarity])
+cart.set_lock_side(args.lock_side)
 
 # write out a header for our output file
 print(time.strftime('# %Y%m%d %H:%M:%S HST', time.localtime()))
@@ -74,7 +62,7 @@ print('#lo_ghz vg ua01 ua02 ua11 ua12 drain_c0 drain_c1')
 
 # main loops
 for lo_ghz in los:
-    if not namakanui.util.tune(cart, agilent, None, lo_ghz, pll_range=[-1.0, -2.0]):
+    if not tune(instrument, args.band, lo_ghz, pll_if=[-1.0, -2.0]):
         continue
     
     if args.vd:
@@ -100,7 +88,7 @@ for lo_ghz in los:
         print('%.3f %.2f %.2f %.2f %.2f %.2f %.2f %.2f'%tuple(a))
 
 logging.info('tuning back to starting freq to reset pa...')
-namakanui.util.tune(cart, agilent, None, los[0], pll_range=[-1.0, -2.0])
+tune(instrument, args.band, los[0], pll_if=[-1.0, -2.0])
 logging.info('done.')
 
 

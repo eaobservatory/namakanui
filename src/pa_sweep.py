@@ -34,55 +34,36 @@ import sys
 import os
 import time
 import argparse
-import namakanui.cart
-import namakanui.agilent
-import namakanui.util
 import logging
+import namakanui.instrument
+import namakanui.util
+from namakanui_tune import tune
 
+namakanui.util.setup_logging()
 logging.root.setLevel(logging.DEBUG)
-logging.root.addHandler(logging.StreamHandler())
-
-logging.info('importing pylab...')
-from pylab import *
-
-binpath, datapath = namakanui.util.get_paths()
 
 parser = argparse.ArgumentParser()
 parser.add_argument('band', type=int, choices=[3,6,7])
 parser.add_argument('lo_ghz', type=float)
-parser.add_argument('lock_polarity', choices=['below','above'])
+parser.add_argument('lock_side', choices=['below','above'])
 # NOTE the documented value of 2.5/255 causes aliasing
 # due to float32 rounding (I think), so we use a slightly higher value.
 parser.add_argument('pa_step', type=float, nargs='?', default=0.009803923)
 args = parser.parse_args()
 
-def mypub(n,s):
-    pass
-
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, mypub)
-agilent.log.setLevel(logging.INFO)
-agilent.set_dbm(agilent.safe_dbm)
-agilent.set_output(1)
-cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, mypub)
+# we don't need the load here
+instrument = namakanui.instrument.Instrument(simulate=SIM_LOAD)
+instrument.reference.log.setLevel(logging.INFO)
+instrument.photonics.log.setLevel(logging.INFO)
+instrument.set_safe()
+instrument.set_band(args.band)
+cart = instrument.carts[band]
 cart.power(1)
-cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
-floog = agilent.floog * {'below':1.0, 'above':-1.0}[args.lock_polarity]
+cart.set_lock_side(args.lock_side)
 
-logging.info('setting agilent...')
-
-fyig = args.lo_ghz / (cart.cold_mult * cart.warm_mult)
-fsig = (fyig*cart.warm_mult + floog) / agilent.harmonic
-agilent.set_hz(fsig*1e9)
-dbm = agilent.interp_dbm(args.band, args.lo_ghz)
-agilent.set_dbm(dbm)
-
-logging.info('tuning cartridge...')
-
-try:
-    cart.tune(args.lo_ghz, 0.0)
-except Exception as e:
-    agilent.set_dbm(agilent.safe_dbm)
-    logging.error('tune error: %s, IF power: %g', e, cart.state['pll_if_power'])
+if not tune(instrument, args.band, args.lo_ghz):
+    instrument.set_safe()
+    logging.error('tune error, bailing out.')
     sys.exit(1)
 
 cart.update_all()
@@ -143,10 +124,13 @@ logging.info('sweep done, retuning...')
 try:
     cart.tune(args.lo_ghz, 0.0)
 except Exception as e:
-    agilent.set_dbm(agilent.safe_dbm)
+    instrument.set_safe()
     logging.error('tune error: %s, IF power: %g', e, cart.state['pll_if_power'])
 
+
 logging.info('done, plotting...')
+logging.info('importing pylab...')
+from pylab import *
 
 for po in range(2):
     for sb in range(2):

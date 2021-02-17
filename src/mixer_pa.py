@@ -34,32 +34,28 @@ import jac_sw
 import sys
 import os
 import time
-import argparse
-import namakanui.cart
-import namakanui.agilent
-import namakanui.femc
-import namakanui.load
-import namakanui.ifswitch
-import namakanui.util
 import logging
+import argparse
+import namakanui.instrument
+import namakanui.util
+from namakanui_tune import tune
 
-logging.root.setLevel(logging.INFO)
-logging.root.addHandler(logging.StreamHandler())
-
-binpath, datapath = namakanui.util.get_paths()
+namakanui.util.setup_logging()
     
 parser = argparse.ArgumentParser()
 parser.add_argument('band', type=int, choices=[6,7])
 parser.add_argument('--lo')  # range
 parser.add_argument('--pa')  # range
 parser.add_argument('--load', nargs='?', default='hot')
-parser.add_argument('lock_polarity', nargs='?', choices=['below','above'], default='above')
+parser.add_argument('lock_side', nargs='?', choices=['below','above'], default='above')
 parser.add_argument('--note', nargs='?', default='', help='note for file header')
 args = parser.parse_args()
 
 band = args.band
 los = namakanui.util.parse_range(args.lo, maxlen=100e3)
 pas = namakanui.util.parse_range(args.pa, maxlen=300)
+if args.load == 'hot' or args.load == 'sky':
+    args.load = 'b%d_'%(band) + args.load
 
 # create file header.
 # trying to plot this manually in topcat would be a nightmare anyway,
@@ -81,24 +77,13 @@ for pa in pas:
 sys.stdout.write('\n')
 sys.stdout.flush()
 
-# init load controller and set desired load (default hot)
-load = namakanui.load.Load(datapath+'load.ini', time.sleep, namakanui.nop)
-if args.load == 'hot' or args.load == 'sky':
-    args.load = 'b%d_'%(band) + args.load
-load.move(args.load)
-
-# set agilent output to a safe level before setting ifswitch
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
-agilent.set_dbm(agilent.safe_dbm)
-agilent.set_output(1)
-ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop)
-ifswitch.set_band(band)
-
-# power up the cartridge
-cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop)
+instrument = namakanui.instrument.Instrument()
+instrument.set_safe()
+instrument.set_band(args.band)
+instrument.load.move(args.load)
+cart = instrument.carts[band]
 cart.power(1)
-cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
-floog = agilent.floog * {'below':1.0, 'above':-1.0}[args.lock_polarity]
+cart.set_lock_side(args.lock_side)
 
 
 x = []
@@ -110,7 +95,7 @@ for i in range(4):
 
 # main loop
 for lo in los:
-    if not namakanui.util.tune(cart, agilent, None, lo, skip_servo_pa=True):
+    if not tune(instrument, band, lo, skip_servo_pa=True):
         continue
     x.append(lo)
     sys.stdout.write('%.3f '%(lo))

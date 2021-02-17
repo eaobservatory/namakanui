@@ -30,47 +30,34 @@ import sys
 import os
 import time
 import argparse
-import namakanui.cart
-import namakanui.agilent
-import namakanui.ifswitch
-import namakanui.load
+import namakanui.instrument
 import namakanui.util
+from namakanui_tune import tune
 import numpy
 import logging
 
-logging.root.setLevel(logging.INFO)
-logging.root.addHandler(logging.StreamHandler())
-
-binpath, datapath = namakanui.util.get_paths()
+namakanui.util.setup_logging()
 
 parser = argparse.ArgumentParser(description='''
 Generate LOParam (PA drain/gate voltage) table.
 ''', formatter_class=argparse.RawTextHelpFormatter)
-
 parser.add_argument('band', type=int, choices=[6,7])
 parser.add_argument('--lo')  # range
 parser.add_argument('--vg')  # range (for b6, use -.40:.14:.01)
 parser.add_argument('--vd', type=float, default=2.5)  # vd for both pols during vg sweep
-# note: always use 'above' reference tuning
+parser.add_argument('--lock_side', nargs='?', choices=['below','above'], default='above')
 args = parser.parse_args()
 
 los = namakanui.util.parse_range(args.lo, maxlen=1e3)
 vgs = namakanui.util.parse_range(args.vg, maxlen=1e2)  # TODO okay for b7?
 
-# set agilent output to a safe level before setting ifswitch
-agilent = namakanui.agilent.Agilent(datapath+'agilent.ini', time.sleep, namakanui.nop)
-agilent.set_dbm(agilent.safe_dbm)
-ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop)
-ifswitch.set_band(args.band)
-
-# init load controller and set to hot (ambient) load for this band
-load = namakanui.load.Load(datapath+'load.ini', time.sleep, namakanui.nop)
-load.move('b%d_hot'%(args.band))
-
-# setup cartridge
-cart = namakanui.cart.Cart(args.band, datapath+'band%d.ini'%(args.band), time.sleep, namakanui.nop)
+instrument = namakanui.instrument.Instrument()
+instrument.set_safe()
+instrument.set_band(args.band)
+instrument.load.move('b%d_hot'%(args.band))
+cart = instrument.carts[band]
 cart.power(1)
-cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}['above'])#args.lock_polarity])
+cart.set_lock_side(args.lock_side)
 
 # for _servo_pa output
 cart.log.setLevel(logging.DEBUG)
@@ -80,7 +67,7 @@ cart.log.setLevel(logging.DEBUG)
 print(time.strftime('# %Y%m%d %H:%M:%S HST', time.localtime()))
 print('#', sys.argv)
 print('# vdX: LO PA drain voltage for polX')
-print('# vdX: LO PA gate voltage for polX')
+print('# vgX: LO PA gate voltage for polX')
 print('#')
 print('#lo_ghz vd0   vd1   vg0  vg1')
 
@@ -104,7 +91,7 @@ def smooth(y):
 
 # main loops
 for lo_ghz in los:
-    if not namakanui.util.tune(cart, agilent, None, lo_ghz, pll_range=[-1.0, -2.0]):
+    if not tune(instrument, args.band, lo_ghz, pll_if=[-1.0, -2.0]):
         continue
     
     # get nominal pa, it's probably close to target and will save time later
