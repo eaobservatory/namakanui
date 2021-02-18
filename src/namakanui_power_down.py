@@ -45,13 +45,12 @@ parser = argparse.ArgumentParser(
 args = parser.parse_args()
 
 # we don't care about the load or ifswitch here
-simulate = sim.SIM_LOAD | sim.SIM_IFSW_6260 | sim.SIM_IFSW_6024
+simulate = sim.SIM_LOAD | sim.SIM_IFSW
 instrument = namakanui.instrument.Instrument(simulate=simulate)
 
 logging.info('\nDisabling reference signal')
 try:
     instrument.set_safe()
-    instrument.reference.set_output(0)
 except:
     logging.exception('*** WARNING reference signal may still have power ***')
 

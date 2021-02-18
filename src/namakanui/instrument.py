@@ -243,11 +243,12 @@ class Instrument(object):
     def set_safe(self):
         '''Set reference power to minimum and attenuation to maximum.'''
         self.log.debug('set_safe')
-        # ensure we try to set both, even if one fails
+        # ensure we try to set both, even if one raises an error
         try:
             self.photonics.set_attenuation(self.photonics.max_att)
         finally:
             self.reference.set_dbm(self.reference.safe_dbm)
+            self.reference.set_output(0)
             self.reference.update(publish_only=True)
         # Instrument.set_safe
     
