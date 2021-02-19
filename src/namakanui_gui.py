@@ -709,7 +709,7 @@ class BandFrame(tk.Frame):
             self.v_cart_temp[i].set('%.3f'%(v), okay)
         
         # TODO need a way to set this, and it really should default to 0 for cold system.
-        self.v_fe_mode.set('%d'%(state['fe_mode']))
+        self.v_fe_mode.set('---')#'%d'%(state['fe_mode']))  # TODO monitor FEMC state
         
         for i in range(4):  # p0s1 ... p1s2
             self.v_lna_enable[i].set('%d'%(state['lna_enable'][i]), state['lna_enable'][i])
