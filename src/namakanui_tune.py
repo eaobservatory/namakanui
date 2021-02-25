@@ -96,9 +96,8 @@ def tune(instrument, band, lo_ghz, voltage=0.0,
         config = instrument.config
         bands = instrument.bands
     else:
-        binpath, datapath = namakanui.util.get_paths()
-        config = namakanui.ini.IncludeParser(datapath+'instrument.ini')
-        bands = sorted([int(b) for b in config['bands']])
+        config = namakanui.util.get_config()
+        bands = namakanui.util.get_bands(config)
     
     band = int(band)
     if band not in bands:

@@ -42,11 +42,14 @@ taskname = 'JTP_%d'%(os.getpid())
 
 namakanui.util.setup_logging()
 
+config = namakanui.util.get_config()
+bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)
+
 # use explicit arguments to avoid confusion
 parser = argparse.ArgumentParser(description='''
 ''',
   formatter_class=argparse.RawTextHelpFormatter)
-parser.add_argument('band', type=int, choices=[6,7])
+parser.add_argument('band', type=int, choices=bands)
 parser.add_argument('lo_ghz', type=float)
 parser.add_argument('lock_side', nargs='?', choices=['below','above'], default='above')
 parser.add_argument('--level_only', action='store_true')
@@ -59,7 +62,7 @@ if not lo_range[0] <= lo_ghz <= lo_range[1]:
     logging.error('lo_ghz %g outside %s range for band %d', lo_ghz, lo_range, band)
     sys.exit(1)
 
-instrument = namakanui.instrument.Instrument()
+instrument = namakanui.instrument.Instrument(config)
 instrument.set_safe()
 instrument.set_band(args.band)
 instrument.load.move('b%d_hot'%(band))

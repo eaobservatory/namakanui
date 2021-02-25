@@ -37,11 +37,14 @@ import logging
 
 namakanui.util.setup_logging()
 
+config = namakanui.util.get_config()
+bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)
+
 # use explicit arguments to avoid confusion
 parser = argparse.ArgumentParser(description='''
 ''',
   formatter_class=argparse.RawTextHelpFormatter)
-parser.add_argument('band', type=int, choices=[6,7])
+parser.add_argument('band', type=int, choices=bands)
 args = parser.parse_args()
 
 band = args.band
@@ -53,7 +56,7 @@ del cart_sim[band]
 cart_sim_bits = 0
 for s in cart_sim.values():
     cart_sim_bits |= s
-instrument = namakanui.instrument.Instrument(simulate=SIM_LOAD|SIM_IFSW|cart_sim_bits)
+instrument = namakanui.instrument.Instrument(config, simulate=SIM_LOAD|SIM_IFSW|cart_sim_bits)
 instrument.set_safe()
 cart = instrument.carts[band]
 cart.power(1)
@@ -62,7 +65,7 @@ cart.power(1)
 # make sure LO pumping power is zero
 cart._set_pa([0.0]*4)
 
-# band-dependent mv range, +-
+# band-dependent mv range, +-  TODO ask cart
 mv_range = 10.0
 if band == 7:
     mv_range = 2.5

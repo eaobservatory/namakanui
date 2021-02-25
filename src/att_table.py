@@ -49,8 +49,11 @@ from namakanui_tune import tune
 namakanui.util.setup_logging()
 logging.root.setLevel(logging.DEBUG)
 
+config = namakanui.util.get_config()
+bands = namakanui.util.get_bands(config, simulated=False)
+
 parser = argparse.ArgumentParser()
-parser.add_argument('band', type=int, choices=[3,6,7])
+parser.add_argument('band', type=int, choices=bands)
 parser.add_argument('LO_GHz_start', type=float)
 parser.add_argument('LO_GHz_end', type=float)
 parser.add_argument('LO_GHz_step', type=float)
@@ -80,7 +83,7 @@ except:
 #sys.exit(0)
 
 # we don't need the load for this script
-instrument = namakanui.instrument.Instrument(simulate=sim.SIM_LOAD)
+instrument = namakanui.instrument.Instrument(config, simulate=sim.SIM_LOAD)
 
 # be a little less verbose
 instrument.photonics.log.setLevel(logging.INFO)

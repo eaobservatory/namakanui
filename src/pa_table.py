@@ -38,10 +38,13 @@ import logging
 
 namakanui.util.setup_logging()
 
+config = namakanui.util.get_config()
+bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)
+
 parser = argparse.ArgumentParser(description='''
 Generate LOParam (PA drain/gate voltage) table.
 ''', formatter_class=argparse.RawTextHelpFormatter)
-parser.add_argument('band', type=int, choices=[6,7])
+parser.add_argument('band', type=int, choices=bands)
 parser.add_argument('--lo')  # range
 parser.add_argument('--vg')  # range (for b6, use -.40:.14:.01)
 parser.add_argument('--vd', type=float, default=2.5)  # vd for both pols during vg sweep
@@ -51,7 +54,7 @@ args = parser.parse_args()
 los = namakanui.util.parse_range(args.lo, maxlen=1e3)
 vgs = namakanui.util.parse_range(args.vg, maxlen=1e2)  # TODO okay for b7?
 
-instrument = namakanui.instrument.Instrument()
+instrument = namakanui.instrument.Instrument(config)
 instrument.set_safe()
 instrument.set_band(args.band)
 instrument.load.move('b%d_hot'%(args.band))

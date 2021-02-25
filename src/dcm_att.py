@@ -6,6 +6,8 @@ Tune to a range of frequencies and check the DCM attenuator level at each.
 Sometimes the attenuators are left at zero, especially in 250 MHz bandwidth,
 which is an error in the most recent version of acsisIf.
 
+TODO: b3 support
+
 
 Copyright (C) 2020 East Asian Observatory
 
@@ -41,12 +43,15 @@ namakanui.util.setup_logging()
 
 binpath, datapath = namakanui.util.get_paths()
 
+config = namakanui.util.get_config()
+bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)
+
 # use explicit arguments to avoid confusion
 parser = argparse.ArgumentParser(description='''
 DCM attenuation for a range of frequencies.
 ''',
   formatter_class=argparse.RawTextHelpFormatter)
-parser.add_argument('band', type=int, choices=[6,7])
+parser.add_argument('band', type=int, choices=bands)
 parser.add_argument('lo_ghz', help='LO GHz range, first:last:step')
 parser.add_argument('--lock_side', nargs='?', choices=['below','above'], default='above')
 parser.add_argument('--level_only', action='store_true')
@@ -61,7 +66,7 @@ ifs = namakanui.util.parse_range(args.if_ghz, maxlen=1e3)
 
 # NOTE if this were a "real" drama task we'd instantiate in MAIN
 # and pass in sleep=drama.wait, publish=drama.set_param
-instrument = namakanui.instrument.Instrument()
+instrument = namakanui.instrument.Instrument(config)
 instrument.set_safe()
 instrument.set_band(args.band)
 instrument.load.move('b%d_hot'%(band))

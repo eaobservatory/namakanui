@@ -39,11 +39,14 @@ taskname = 'RTPD_%d'%(os.getpid())
 
 namakanui.util.setup_logging()
 
+config = namakanui.util.get_config()
+bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)
+
 # use explicit arguments to avoid confusion
 parser = argparse.ArgumentParser(description='''
 ''',
   formatter_class=argparse.RawTextHelpFormatter)
-parser.add_argument('band', type=int, choices=[6,7])
+parser.add_argument('band', type=int, choices=bands)
 parser.add_argument('lo_ghz', type=float)
 parser.add_argument('lock_side', nargs='?', choices=['below','above'], default='above')
 parser.add_argument('--off_ghz', nargs='?', type=float, default=0.01)
@@ -53,12 +56,12 @@ args = parser.parse_args()
 
 band = args.band
 lo_ghz = args.lo_ghz
-lo_range = {6:[219,266], 7:[281,367]}[band]
+lo_range = {6:[219,266], 7:[281,367]}[band]  # TODO get from config
 if not lo_range[0] <= lo_ghz <= lo_range[1]:
     logging.error('lo_ghz %g outside %s range for band %d', lo_ghz, lo_range, band)
     sys.exit(1)
 
-instrument = namakanui.instrument.Instrument()
+instrument = namakanui.instrument.Instrument(config)
 instrument.set_safe()
 instrument.set_band(args.band)
 instrument.load.move('b%d_hot'%(args.band))

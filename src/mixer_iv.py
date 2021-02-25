@@ -47,8 +47,11 @@ logging.root.setLevel(logging.DEBUG)
 
 binpath, datapath = namakanui.util.get_paths()
 
+config = namakanui.util.get_config()
+bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)
+
 parser = argparse.ArgumentParser()
-parser.add_argument('band', type=int, choices=[6,7])
+parser.add_argument('band', type=int, choices=bands)
 parser.add_argument('mv_min', type=float)
 parser.add_argument('mv_max', type=float)
 parser.add_argument('mv_step', type=float)

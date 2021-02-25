@@ -42,8 +42,11 @@ from namakanui_tune import tune
 namakanui.util.setup_logging()
 logging.root.setLevel(logging.DEBUG)
 
+config = namakanui.util.get_config()
+bands = namakanui.util.get_bands(config, simulated=False)
+
 parser = argparse.ArgumentParser()
-parser.add_argument('band', type=int, choices=[3,6,7])
+parser.add_argument('band', type=int, choices=bands)
 parser.add_argument('lo_ghz', type=float)
 parser.add_argument('lock_side', choices=['below','above'])
 # NOTE the documented value of 2.5/255 causes aliasing
@@ -52,7 +55,7 @@ parser.add_argument('pa_step', type=float, nargs='?', default=0.009803923)
 args = parser.parse_args()
 
 # we don't need the load here
-instrument = namakanui.instrument.Instrument(simulate=SIM_LOAD)
+instrument = namakanui.instrument.Instrument(config, simulate=SIM_LOAD)
 instrument.reference.log.setLevel(logging.INFO)
 instrument.photonics.log.setLevel(logging.INFO)
 instrument.set_safe()

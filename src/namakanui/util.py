@@ -24,6 +24,7 @@ import sys
 import os
 import logging
 import time
+import namakanui.ini
 
 
 def setup_logging():
@@ -62,6 +63,38 @@ def get_paths():
         raise RuntimeError('no data path found from bin path %s'%(binpath))
     return binpath, datapath
     # get_paths
+
+
+def get_config():
+    '''Return the complete instrument.ini ConfigParser instance.'''
+    binpath, datapath = get_paths()
+    return namakanui.ini.IncludeParser(datapath + 'instrument.ini')
+    # get_config
+
+
+def get_bands(config, simulated=None, has_sis_mixers=None):
+    '''
+    Get list of available receiver bands from given config.
+    If optional arguments are given (as True/False),
+    only return bands that match the requested condition.
+    '''
+    bands = sorted([int(x) for x in config['bands']])
+    if simulated is not None:
+        simulated = bool(simulated)
+        femc_sim = bool(config['femc']['simulate'].strip())
+        for i,b in enumerate(bands):
+            band_sim = femc_sim or bool(config[str(b)]['simulate'].strip())
+            if band_sim != simulated:
+                del bands[i]
+    if has_sis_mixers is not None:
+        has_sis_mixers = bool(has_sis_mixers)
+        for i,b in enumerate(bands):
+            cold = config[str(b)]['cold']
+            band_sis = 'MixerParam' in config[cold] or ('MixerParams' in config[cold] and int(config[cold]['MixerParams']) != 0)
+            if band sis != has_sis_mixers:
+                del bands[i]
+    return bands
+    # get_bands
     
 
 def parse_range(s, maxlen=0, maxstep=0):

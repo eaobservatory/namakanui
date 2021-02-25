@@ -41,9 +41,12 @@ import namakanui.util
 from namakanui_tune import tune
 
 namakanui.util.setup_logging()
+
+config = namakanui.util.get_config()
+bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)
     
 parser = argparse.ArgumentParser()
-parser.add_argument('band', type=int, choices=[6,7])
+parser.add_argument('band', type=int, choices=bands)
 parser.add_argument('--lo')  # range
 parser.add_argument('--pa')  # range
 parser.add_argument('--load', nargs='?', default='hot')
@@ -77,7 +80,7 @@ for pa in pas:
 sys.stdout.write('\n')
 sys.stdout.flush()
 
-instrument = namakanui.instrument.Instrument()
+instrument = namakanui.instrument.Instrument(config)
 instrument.set_safe()
 instrument.set_band(args.band)
 instrument.load.move(args.load)

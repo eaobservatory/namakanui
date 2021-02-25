@@ -63,6 +63,9 @@ taskname = 'YF_%d'%(os.getpid())
 
 namakanui.util.setup_logging()
 
+config = namakanui.util.get_config()
+bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)
+
 # use explicit arguments to avoid confusion
 parser = argparse.ArgumentParser(description='''
 Y-factor across PA/mV sweep.
@@ -77,7 +80,7 @@ automatically negated; you will need to manually invert their values
 when creating config file tables from this program's output.
 ''',
   formatter_class=argparse.RawTextHelpFormatter)
-parser.add_argument('band', type=int, choices=[6,7])
+parser.add_argument('band', type=int, choices=bands)
 parser.add_argument('lo_ghz', type=float)
 parser.add_argument('--mv')
 parser.add_argument('--pa')
@@ -88,14 +91,14 @@ args = parser.parse_args()
 
 band = args.band
 lo_ghz = args.lo_ghz
-lo_range = {6:[219,266], 7:[281,367]}[band]
+lo_range = {6:[219,266], 7:[281,367]}[band]  # TODO get from config
 if not lo_range[0] <= lo_ghz <= lo_range[1]:
     logging.error('lo_ghz %g outside %s range for band %d', lo_ghz, lo_range, band)
     sys.exit(1)
 mvs = namakanui.util.parse_range(args.mv, maxlen=30e3, maxstep=0.05)
 pas = namakanui.util.parse_range(args.pa, maxlen=300)
 
-instrument = namakanui.instrument.Instrument()
+instrument = namakanui.instrument.Instrument(config)
 instrument.set_safe()
 instrument.set_band(args.band)
 instrument.load.move('b%d_hot'%(args.band))
