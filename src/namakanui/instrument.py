@@ -54,6 +54,7 @@ class Instrument(object):
             binpath, datapath = namakanui.util.get_paths()
             inifile = datapath + 'instrument.ini'
         self.initialise(inifile, simulate)
+        self.log.setLevel(logging.INFO)  # once created, be quiet even if root is DEBUG
         # Instrument.__init__
 
 

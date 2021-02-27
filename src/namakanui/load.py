@@ -84,6 +84,8 @@ class Load(object):
         
         self.log.debug('__init__ %s, sim=%d', self.config.inifilename, self.simulate)
         self.initialise()
+        
+        self.log.setLevel(logging.INFO)  # once created, be quiet even if root is DEBUG
         # Load.__init__
 
 

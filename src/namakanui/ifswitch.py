@@ -71,6 +71,8 @@ class IFSwitch(object):
                        self.adam_6024.ip, self.adam_6024.port)
         
         self.initialise()
+        
+        self.log.setLevel(logging.INFO)  # once created, be quiet even if root is DEBUG
         # IFSwitch.__init__
 
 

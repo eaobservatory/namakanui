@@ -132,6 +132,8 @@ class Cart(object):
         self.hot_lna_table = read_table_or_ascii(cc, 'HotPreamp', float, fnames, datapath)
         
         self.initialise()
+        
+        self.log.setLevel(logging.INFO)  # once created, be quiet even if root is DEBUG
         # Cart.__init__
     
     

@@ -79,6 +79,8 @@ class Photonics(object):
                        self.config.inifilename, self.simulate, self.ip, self.port)
         
         self.initialise()
+        
+        self.log.setLevel(logging.INFO)  # once created, be quiet even if root is DEBUG
         # Photonics.__init__
     
     

@@ -26,6 +26,9 @@ import logging
 import time
 import namakanui.ini
 
+log = logging.getLogger('util')
+log.setLevel(logging.INFO)  # be quiet even if root is DEBUG
+
 
 def setup_logging():
     '''Perform basic logging setup for scripts.'''
@@ -190,7 +193,7 @@ if 'drama' in sys.modules:
     import drama
 
 
-    def iftask_check_msg(action, msg, log):
+    def iftask_check_msg(action, msg):
         '''Helper used by iftask_* functions to check obey replies.'''
         if msg.reason != drama.REA_COMPLETE:
             raise drama.BadStatus(drama.UNEXPMSG, f'{action} bad reply: {msg}')
@@ -200,7 +203,7 @@ if 'drama' in sys.modules:
             raise drama.BadStatus(msg.status, f'{action} bad status')
 
 
-    def iftask_setup(adjust, bw_mhz=1000, if_ghz=6, dcms=None, log=logging):
+    def iftask_setup(adjust, bw_mhz=1000, if_ghz=6, dcms=None):
         '''
         DRAMA function, must be called from an action.
         Calls IFTASK.TEST_SETUP to configure ACSIS for the Namakanui receivers.
@@ -209,7 +212,6 @@ if 'drama' in sys.modules:
             bw_mhz: BAND_WIDTH one of [250, 1000]
             if_ghz: IF_FREQ one of [4, 5, 6, 7]
             dcms: List of DCMs for BIT_MASK.  If None (default), use all 32 DCMs.
-            log: A logging instance
         '''
         adjust_valid = [0,1,2]
         bw_mhz_valid = [250,1000]
@@ -235,13 +237,12 @@ if 'drama' in sys.modules:
         # iftask_setup
 
 
-    def iftask_set_bw(bw_mhz, log=logging):
+    def iftask_set_bw(bw_mhz):
         '''
         DRAMA function, must be called from an action.
         Calls IFTASK.SET_DCM_BW.
         Arguments:
             bw_mhz: MHZ one of [250, 1000]
-            log: A logging instance
         '''
         bw_mhz_valid = [250,1000]
         if bw_mhz not in bw_mhz_valid:
@@ -252,14 +253,13 @@ if 'drama' in sys.modules:
         # iftask_set_bw
 
 
-    def iftask_set_lo2(lo2_mhz, log=logging):
+    def iftask_set_lo2(lo2_mhz):
         '''
         DRAMA function, must be called from an action.
         Calls IFTASK.SET_LO2_FREQ.
         Can be quite slow, ~20s to set freqs + ~20s to set coax switches.
         Arguments:
             lo2_mhz: MHZ in range [6000, 10000]
-            log: A logging instance
         '''
         lo2_mhz_valid = interval(6000, 10000)
         if lo2_mhz not in lo2_mhz_valid:
@@ -270,14 +270,13 @@ if 'drama' in sys.modules:
         # iftask_set_lo2
 
 
-    def iftask_get_tp2(dcms, itime=0.1, log=logging):
+    def iftask_get_tp2(dcms, itime=0.1):
         '''
         DRAMA function, must be called from an action.
         Calls IFTASK.WRITE_TP2 and returns list of power readings.
         Arguments:
             dcms: List of DCMs to return power readings for
             itime: Integration time, seconds
-            log: A logging instance
         '''
         wtime = itime + 5
         msg = drama.obey("IFTASK@if-micro", "WRITE_TP2", FILE="NONE", ITIME=itime).wait(wtime)
@@ -289,13 +288,12 @@ if 'drama' in sys.modules:
         # iftask_get_tp2
 
 
-    def iftask_get_att(dcms, log=logging):
+    def iftask_get_att(dcms):
         '''
         DRAMA function, must be called from an action.
         Calls IFTASK.GET_DCM_ATTEN and returns list of attenuator counts.
         Arguments:
             dcms: List of DCMs to return attenuator counts for
-            log: A logging instance
         '''
         msg = drama.obey('IFTASK@if-micro', 'GET_DCM_ATTEN', DCM=-1).wait(5)
         iftask_check_msg('IFTASK.GET_DCM_ATTEN', msg, log)

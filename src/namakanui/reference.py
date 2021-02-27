@@ -72,10 +72,15 @@ class Reference(object):
                        self.config.inifilename, self.simulate, self.ip, self.port,
                        self.safe_dbm, self.harmonic, self.floog)
         self.initialise()
+        
+        self.log.setLevel(logging.INFO)  # once created, be quiet even if root is DEBUG
+        # Reference.__init__
+    
     
     def __del__(self):
         self.log.debug('__del__')
         self.close()
+    
     
     def close(self):
         '''Close the socket connection to the signal generator.'''
@@ -83,6 +88,7 @@ class Reference(object):
             self.log.debug('closing socket')
             self.s.close()
             del self.s
+    
     
     def initialise(self):
         '''Open the socket connection to the hardware and get/publish state.'''
@@ -110,6 +116,7 @@ class Reference(object):
             self.state['output'] = 0
         self.update(publish_only=True)
     
+    
     def update(self, publish_only=False):
         '''
         Update parameters.  If publish_only, do not query params first.
@@ -123,6 +130,7 @@ class Reference(object):
             self.get_output()
         self.state['number'] += 1
         self.publish(self.name, self.state)
+    
     
     def cmd(self, cmd, reconnect=True):
         '''Send SCPI cmd.  If cmd ends in ?, return reply.
@@ -166,6 +174,7 @@ class Reference(object):
                 raise
         # cmd
     
+    
     def get_errors(self):
         '''Clear the error message queue and return as list of strings.'''
         self.log.debug('get_errors')
@@ -177,6 +186,7 @@ class Reference(object):
             if e[-1].startswith('+0,'):
                 break
         return e
+    
     
     def set_cmd(self, param, value, fmt):
         '''Set param to value, first stringifying using fmt (e.g. "%.3f").

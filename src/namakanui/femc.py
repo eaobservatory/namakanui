@@ -310,6 +310,8 @@ class FEMC(object):
         # TODO: other setup/init
         
         self.update()
+        
+        self.log.setLevel(logging.INFO)  # once created, be quiet even if root is DEBUG
         # FEMC.__init__
         
     def __del__(self):

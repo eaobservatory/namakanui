@@ -60,6 +60,8 @@ class PMeter(object):
                        self.config.inifilename, self.simulate, self.ip, self.port)
         
         self.initialise()
+        
+        self.log.setLevel(logging.INFO)  # once created, be quiet even if root is DEBUG
         # PMeter.__init__
     
     
