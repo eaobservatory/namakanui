@@ -37,8 +37,8 @@ which the receptor is sensitive.
 <INSTRUMENT NAME="FE_AWEOWEO" SERIAL="AWEOWEO" FOC_STATION="DIRECT" X="0.0" Y="0.0" WAVELENGTH="926">
    <IF_CENTER_FREQ>6.0</IF_CENTER_FREQ>
    <bw units="Hz" value="4.0E9"/>
-   <smu_offset X="-0.02" Y="1.72" Z="0.46"/>
-   <pointing_offset IA="7.04" IE="-63.0" NPAE="9.66" CA="127.0" AN="-0.13" AW="-0.5" TF="-1.24"/>
+   <smu_offset X="-0.38" Y="-0.44" Z="0.93"/>
+   <pointing_offset IA="7.04" IE="-57.96" NPAE="9.66" CA="-33.23" AN="-0.13" AW="-0.5" TF="-1.24"/>
    <waveBand  band="B" label="B" units="Hz" centre="324E9" width="96E9">
        <etal>0.9</etal>
    </waveBand>
