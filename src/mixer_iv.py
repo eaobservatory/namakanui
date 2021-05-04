@@ -42,8 +42,7 @@ import namakanui.femc
 import namakanui.util
 import logging
 
-namakanui.util.setup_logging()
-logging.root.setLevel(logging.DEBUG)
+namakanui.util.setup_logging(logging.DEBUG)
 
 binpath, datapath = namakanui.util.get_paths()
 

@@ -36,7 +36,7 @@ from namakanui_tune import tune
 import numpy
 import logging
 
-namakanui.util.setup_logging()
+namakanui.util.setup_logging(logging.DEBUG)
 
 config = namakanui.util.get_config()
 bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)

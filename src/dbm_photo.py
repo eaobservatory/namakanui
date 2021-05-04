@@ -93,7 +93,6 @@ if args.table:
 deadband = abs(args.deadband)
 
 reference = namakanui.reference.Reference(datapath+'reference.ini', time.sleep, namakanui.nop)
-reference.log.setLevel(logging.INFO)
 reference.set_dbm(reference.safe_dbm)
 reference.set_output(1)
 

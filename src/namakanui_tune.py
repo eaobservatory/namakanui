@@ -282,7 +282,7 @@ def tune(instrument, band, lo_ghz, voltage=0.0,
 
 if __name__ == '__main__':
     
-    namakanui.util.setup_logging()
+    namakanui.util.setup_logging(logging.DEBUG)
     
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawTextHelpFormatter,

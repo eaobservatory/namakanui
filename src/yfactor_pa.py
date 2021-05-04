@@ -49,8 +49,7 @@ from namakanui_tune import tune
 
 taskname = 'YFPA_%d'%(os.getpid())
 
-logging.root.setLevel(logging.INFO)
-logging.root.addHandler(logging.StreamHandler())
+namakanui.util.setup_logging()
 
 config = namakanui.util.get_config()
 bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)

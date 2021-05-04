@@ -46,8 +46,7 @@ import namakanui.sim as sim
 from namakanui_tune import tune
 
 
-namakanui.util.setup_logging()
-logging.root.setLevel(logging.DEBUG)
+namakanui.util.setup_logging(logging.DEBUG)
 
 config = namakanui.util.get_config()
 bands = namakanui.util.get_bands(config, simulated=False)
@@ -85,13 +84,10 @@ except:
 # we don't need the load for this script
 instrument = namakanui.instrument.Instrument(config, simulate=sim.SIM_LOAD)
 
-# be a little less verbose
-instrument.photonics.log.setLevel(logging.INFO)
-instrument.reference.log.setLevel(logging.INFO)
-
 instrument.set_safe()  # paranoia
 
 cart = instrument.carts[args.band]
+cart.log.setLevel(logging.DEBUG)
 cart.power(1)
 cart.set_lock_side(args.lock_side)
 if args.lock_only:

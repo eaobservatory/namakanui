@@ -32,9 +32,7 @@ import namakanui.util
 import time
 import os
 import sys
-
 import logging
-namakanui.util.setup_logging()
 
 import argparse
 parser = argparse.ArgumentParser(
@@ -45,12 +43,16 @@ parser.add_argument('-v', '--verbose', action='store_true', help='print addition
 parser.add_argument('position', help='"home", counts, or a named position from load.ini')
 args = parser.parse_args()
 
+level = logging.INFO
 if args.verbose:
-    logging.root.setLevel(logging.DEBUG)
+    level = logging.DEBUG
     logging.debug('verbose: log level set to DEBUG')
+
+namakanui.util.setup_logging(level)
 
 binpath, datapath = namakanui.util.get_paths()
 load = namakanui.load.Load(datapath+'load.ini', time.sleep, namakanui.nop)
+load.log.setLevel(level)
 
 pos = args.position.strip()
 if position.lower() == 'home':

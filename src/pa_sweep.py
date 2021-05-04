@@ -39,8 +39,7 @@ import namakanui.instrument
 import namakanui.util
 from namakanui_tune import tune
 
-namakanui.util.setup_logging()
-logging.root.setLevel(logging.DEBUG)
+namakanui.util.setup_logging(logging.DEBUG)
 
 config = namakanui.util.get_config()
 bands = namakanui.util.get_bands(config, simulated=False)
@@ -56,11 +55,10 @@ args = parser.parse_args()
 
 # we don't need the load here
 instrument = namakanui.instrument.Instrument(config, simulate=SIM_LOAD)
-instrument.reference.log.setLevel(logging.INFO)
-instrument.photonics.log.setLevel(logging.INFO)
 instrument.set_safe()
 instrument.set_band(args.band)
 cart = instrument.carts[band]
+cart.log.setLevel(logging.DEBUG)
 cart.power(1)
 cart.set_lock_side(args.lock_side)
 
