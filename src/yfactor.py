@@ -26,9 +26,11 @@ for the upper sideband mixers.  Therefore this program will only accept
 positive ranges as input parameters, and you will need to manually
 negate the output data's voltage/current for mixers 01 and 11.
 
+Examples:
+  yfactor.py 6 237 --mv=8.0:9.9:0.05 --pa=1.0:2.5:0.1 > b6_yf_237.ascii
+  yfactor.py 7 303 --mv=1.5:3.0:0.05 --pa=0.3:0.9:0.1 > b7_yf_303.ascii
 
-TODO: Do we need separate mixer current readings for each load?
-      Or is it okay to average hot/sky readings together?
+The range specification for mv and pa is <first>[:last[:step]].
 
 
 Copyright (C) 2020 East Asian Observatory
@@ -66,20 +68,10 @@ namakanui.util.setup_logging()
 config = namakanui.util.get_config()
 bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)
 
-# use explicit arguments to avoid confusion
-parser = argparse.ArgumentParser(description='''
-Y-factor across PA/mV sweep.
-Examples:
-  yfactor.py 6 237 --mv=8.0:9.9:0.05 --pa=1.0:2.5:0.1 > b6_yf_237.ascii
-  yfactor.py 7 303 --mv=1.5:3.0:0.05 --pa=0.3:0.9:0.1 > b7_yf_303.ascii
-
-The range specification for mv and pa is <first>[:last[:step]].
-
-Note for band 6 the upper sideband bias voltage and mixer current is
-automatically negated; you will need to manually invert their values
-when creating config file tables from this program's output.
-''',
-  formatter_class=argparse.RawTextHelpFormatter)
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawTextHelpFormatter,
+    description=namakanui.util.get_description(__doc__)
+    )
 parser.add_argument('band', type=int, choices=bands)
 parser.add_argument('lo_ghz', type=float)
 parser.add_argument('--mv')

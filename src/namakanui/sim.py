@@ -114,5 +114,16 @@ def str_to_bits(s):
     return b
 
 
+def other_bands(band):
+    '''Return SIM_FEMC mask for other bands.'''
+    sim_femc_bits = {3:SIM_B3_FEMC, 6:SIM_B6_FEMC, 7:SIM_B7_FEMC}
+    if band in cart_sim:
+        del sim_femc_bits[band]
+    else:
+        sim_femc_bits[0] = SIM_FEMC  # invalid band given, so sim FEMC too
+    mask = 0
+    for b in sim_femc_bits.values():
+        mask |= b
+    return mask
 
 

@@ -5,10 +5,9 @@ dbm_pmeter.py   RMB 20200715
 Set synthesizer to a range of values and check power via an N1913A power meter.
 Writes table to stdout; use 'tee' to monitor output progress.
 
-NOTE: This script does not set the Namakanui IF Switch, since it's assumed
+NOTE: This script does not normally set the IF Switch, since it's assumed
 that we're running in a nonstandard configuration.  If needed,
-use tune.sh or other script to set the IF switch to the desired position
-before running this script.
+use the optional [--ifswitch] argument.
 
 This script runs in three different modes:
 
@@ -50,8 +49,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw
-import namakanui.reference
+import namakanui.instrument
 import namakanui.util
+import namakanui.sim as sim
 import sys
 import os
 import argparse
@@ -61,18 +61,23 @@ import time
 import logging
 namakanui.util.setup_logging()
 
-binpath, datapath = namakanui.util.get_paths()
+config = namakanui.util.get_config()
+bands = namakanui.util.get_bands(config)
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawTextHelpFormatter,
+    description=namakanui.util.get_description(__doc__)
+    )
 parser.add_argument('--table', nargs='?', default='', help='dbm table file, overrides ghz/dbm')
 parser.add_argument('--ghz', nargs='?', default='20', help='ghz range, first:last:step')
 parser.add_argument('--dbm', nargs='?', default='-20', help='dbm range, first:last:step')
-parser.add_argument('--band', nargs='?', type=int, default=0, help='rx band for tuning')
+parser.add_argument('--band', nargs='?', type=int, default=0, choices=bands, help='rx band for tuning')
 parser.add_argument('--lo_ghz', nargs='?', default='0', help='LO range for tuning')
 parser.add_argument('--pa', nargs='?', default='', help='PA range for tuning')
 parser.add_argument('--pol', nargs='?', type=int, choices=[0,1], help='which polarization (other is set to zero)')
 parser.add_argument('--if_ghz', nargs='?', type=float, default=0.0, help='pmeter frequency')
-parser.add_argument('--lock_polarity', nargs='?', choices=['below','above'], default='above')
+parser.add_argument('--lock_side', nargs='?', choices=['below','above'], default='above')
+parser.add_argument('--ifswitch', nargs='?', type=int, default=0, choices=bands, help='set ifswitch to given band')
 parser.add_argument('--note', nargs='?', default='', help='note for file header')
 args = parser.parse_args()
 
@@ -81,25 +86,34 @@ sys.stdout.write('# %s\n'%(sys.argv))
 sys.stdout.write('#\n')
 sys.stdout.flush()
 
-reference = namakanui.reference.Reference(datapath+'reference.ini', time.sleep, namakanui.nop)
-reference.set_dbm(reference.safe_dbm)
+pmeter = namakanui.pmeter.PMeter(config, time.sleep, namakanui.nop)
+
+sim_ifsw = sim.SIM_IFSW
+if args.band or args.ifswitch:
+    sim_ifswitch = 0
+
+sim_mask = sim.SIM_LOAD | sim_ifsw | sim.other_bands(args.band)
+instrument = namakanui.instrument.Instrument(config, simulate=sim_mask)
+instrument.set_safe()
+reference = instrument.reference
 reference.set_output(1)
 
-pmeter = namakanui.pmeter.PMeter(datapath+'pmeter.ini', time.sleep, namakanui.nop)
+if args.ifswitch:
+    instrument.set_band(args.ifswitch)
 
 
 if args.band:
     if args.pa and args.pol is None:
         logging.error('missing arg "pol", must be 0 or 1.')
-        reference.set_dbm(reference.safe_dbm)
+        instrument.set_safe()
         logging.info('done.')
         sys.exit(1)
     # tune rx to range of values and take power readings.
+    from namakanui_tune import tune
     band = args.band
-    import namakanui.cart
-    cart = namakanui.cart.Cart(band, datapath+'band%d.ini'%(band), time.sleep, namakanui.nop)
+    cart = instrument.carts[band]
     cart.power(1)
-    cart.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, {'below':0, 'above':1}[args.lock_polarity])
+    cart.set_lock_side(args.lock_side)
     los = namakanui.util.parse_range(args.lo_ghz)
     if args.pa:
         pas = namakanui.util.parse_range(args.pa)
@@ -109,7 +123,7 @@ if args.band:
         sys.stdout.write('#lo_ghz wca_ghz pa0 pa1 vd0 vd1 id0 id1 pmeter_dbm\n')
     sys.stdout.flush()
     for lo_ghz in los:
-        if not namakanui.util.tune(cart, reference, None, lo_ghz):
+        if not tune(instrument, band, lo_ghz, lock_side=args.lock_side):
             logging.error('failed to tune to %.3f ghz', lo_ghz)
             continue
         if args.if_ghz:
@@ -153,14 +167,9 @@ elif args.table:
     fname = args.table.rpartition('/')[-1]
     assert len(fname)>1 and fname[0]=='b' and fname[1] in ['3','6','7'], 'bad filename format, expecting "b[3,6,7]_dbm*"'
     band = int(fname[1])
-    # HACK, i'm not going to bother with full bandX.ini read here
-    cold_mult = 3
-    warm_mult = 6
-    if band == 3:
-        cold_mult = 1
-    # HACK, assume lock above reference
-    lock_polarity = 1
-    floog = reference.floog * [1.0, -1.0][lock_polarity]  # [below, above]
+    cold_mult = int(config[config[str(band)]['cold']]['Mult'])
+    warm_mult = int(config[config[str(band)]['warm']]['Mult'])
+    floog = reference.floog * {'below':1.0, 'above':-1.0}[args.lock_side]
     sys.stdout.write('#lo_ghz sig_ghz sig_dbm pmeter_dbm\n')
     sys.stdout.flush()
     logging.info('looping over entries in %s', args.table)

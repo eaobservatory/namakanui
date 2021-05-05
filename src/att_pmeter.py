@@ -43,28 +43,32 @@ import math
 import logging
 namakanui.util.setup_logging()
 
-binpath, datapath = namakanui.util.get_paths()
+config = namakanui.util.get_config()
+bands = namakanui.util.get_bands(config)
 
-parser = argparse.ArgumentParser()
-parser.add_argument('band', type=int)
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawTextHelpFormatter,
+    description=namakanui.util.get_description(__doc__)
+    )
+parser.add_argument('band', type=int, choices=bands)
 parser.add_argument('ghz', type=float, help='synth freq ghz')
 parser.add_argument('dbm', type=float, help='synth power')
 parser.add_argument('--note', nargs='?', default='', help='note for file header')
 args = parser.parse_args()
 
 
-reference = namakanui.reference.Reference(datapath+'reference.ini', time.sleep, namakanui.nop)
+reference = namakanui.reference.Reference(config, time.sleep, namakanui.nop)
 reference.set_dbm(reference.safe_dbm)
 reference.set_output(1)
 
-ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop)
+ifswitch = namakanui.ifswitch.IFSwitch(config, time.sleep, namakanui.nop)
 ifswitch.set_band(args.band)
 ifswitch.close()  # done with ifswitch
 
-photonics = namakanui.photonics.Photonics(datapath+'photonics.ini', time.sleep, namakanui.nop)
+photonics = namakanui.photonics.Photonics(config, time.sleep, namakanui.nop)
 photonics.set_attenuation(photonics.max_att)
 
-pmeter = namakanui.pmeter.PMeter(datapath+'pmeter.ini', time.sleep, namakanui.nop)
+pmeter = namakanui.pmeter.PMeter(config, time.sleep, namakanui.nop)
 
 
 # output file header

@@ -2,6 +2,8 @@
 '''
 trx.py      RMB 20200218
 
+NOTE: Use trx_sweep.py instead.
+
 Calculate an array of Trx values from the IFTASK YFACTOR values.
 Assumes Jhot is Namakanui ambient load temperature and that Jcold is 80K.
 The receiver must already be tuned to the desired frequency,
@@ -19,9 +21,6 @@ Y*(Trx+Jcold) = Trx+Jhot
 Y*Trx - Trx = Jhot - Y*Jcold
 Trx*(Y-1) = Jhot - Y*Jcold
 Trx = (Jhot - Y*Jcold) / (Y-1)
-
-This method is slow and tedious and should not be used by anyone.
-
 
 
 Copyright (C) 2020 East Asian Observatory

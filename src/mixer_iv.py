@@ -2,17 +2,14 @@
 '''
 mixer_iv.py     RMB 20190806
 
-Build an IV curve for a mixer and print to stdout as topcat ascii.
+Build IV curves for the SIS mixers and print to stdout as topcat ascii.
+Two curves are built, one as-is and one after setting PA to zero.
+Run the namakanui_tune.py script first to get pumped/unpumped LO curves.
 
-This script instantiates a Cart instance directly, rather than
+This script instantiates an FEMC instance directly, rather than
 communicating with a running engineering task via DRAMA.  The two
 probably shouldn't run at the same time.
 
-Usage:
-mixer_iv.py <band> <mv_min> <mv_max> <mv_step>
-
-TODO: tune first.
-TODO: set magnet currents.
 TODO: export a function suitable for use in task/gui.
 
 
@@ -49,7 +46,10 @@ binpath, datapath = namakanui.util.get_paths()
 config = namakanui.util.get_config()
 bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawTextHelpFormatter,
+    description=namakanui.util.get_description(__doc__)
+    )
 parser.add_argument('band', type=int, choices=bands)
 parser.add_argument('mv_min', type=float)
 parser.add_argument('mv_max', type=float)

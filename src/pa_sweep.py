@@ -9,9 +9,6 @@ This script instantiates a Cart instance directly, rather than
 communicating with a running engineering task via DRAMA.  The two
 probably shouldn't run at the same time.
 
-Usage:
-pa_sweep.py <band> <lo_ghz> <lock_polarity> [pa_step=0.01]
-
 
 Copyright (C) 2020 East Asian Observatory
 
@@ -44,10 +41,13 @@ namakanui.util.setup_logging(logging.DEBUG)
 config = namakanui.util.get_config()
 bands = namakanui.util.get_bands(config, simulated=False)
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawTextHelpFormatter,
+    description=namakanui.util.get_description(__doc__)
+    )
 parser.add_argument('band', type=int, choices=bands)
 parser.add_argument('lo_ghz', type=float)
-parser.add_argument('lock_side', choices=['below','above'])
+parser.add_argument('lock_side', nargs='?', choices=['below','above'], default='above')
 # NOTE the documented value of 2.5/255 causes aliasing
 # due to float32 rounding (I think), so we use a slightly higher value.
 parser.add_argument('pa_step', type=float, nargs='?', default=0.009803923)

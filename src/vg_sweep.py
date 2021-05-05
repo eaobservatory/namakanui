@@ -1,6 +1,7 @@
 #!/local/python3/bin/python3
 '''
 vg_sweep.py     RMB 20200330
+
 Sweep PA gate voltage to test effect on SIS mixer current.
 
 
@@ -36,13 +37,14 @@ namakanui.util.setup_logging()
 config = namakanui.util.get_config()
 bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)
 
-parser = argparse.ArgumentParser(description='''
-Test effect of PA gate voltage setting.
-''', formatter_class=argparse.RawTextHelpFormatter)
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawTextHelpFormatter,
+    description=namakanui.util.get_description(__doc__)
+    )
 parser.add_argument('band', type=int, choices=bands)
-parser.add_argument('--lo')  # range
-parser.add_argument('--vg')  # range
-parser.add_argument('--vd', type=float)  # optional, fixed vd value for both pols
+parser.add_argument('--lo', help='range ghz')
+parser.add_argument('--vg', help='range (for b6, use -.40:.14:.01)')
+parser.add_argument('--vd', type=float, help='optional vd to use during vg sweep')
 parser.add_argument('--lock_side', nargs='?', choices=['below','above'], default='above')
 args = parser.parse_args()
 
@@ -68,7 +70,7 @@ for lo_ghz in los:
     if not tune(instrument, args.band, lo_ghz, pll_if=[-1.0, -2.0]):
         continue
     
-    if args.vd:
+    if args.vd is not None:
         logging.info('set pa %.2f', args.vd)
         cart._set_pa([args.vd, args.vd])
     

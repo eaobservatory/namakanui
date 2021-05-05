@@ -4,8 +4,8 @@ dbm_photo.py    RMB 20191227
 
 Create a table for the Agilent/Keysight signal generator
 with the necessary output power setting to produce the desired
-input power level for the photonics transmission system
-at each frequency.
+input power level (normally +10 dBm)
+for the photonics transmission system at each frequency.
 
 The signal generator output must be connected to a power meter, N1913A,
 which is connected directly to LAN and uses SCPI commands.
@@ -49,39 +49,23 @@ namakanui.util.setup_logging()
 
 binpath, datapath = namakanui.util.get_paths()
 
-parser = argparse.ArgumentParser()
-parser.add_argument('target_dbm', type=float, help='target dBm reading')
-parser.add_argument('start_dbm', type=float, help='starting dBm output')
-parser.add_argument('GHz_start', type=float)
-parser.add_argument('GHz_end', type=float)
-parser.add_argument('GHz_step', type=float)
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawTextHelpFormatter,
+    description=namakanui.util.get_description(__doc__)
+    )
+parser.add_argument('target_dbm', type=float, choices=namakanui.util.interval(-20, 14), help='target dBm reading')
+parser.add_argument('start_dbm', type=float, choices=namakanui.util.interval(-20, 14), help='starting dBm output')
+parser.add_argument('ghz_range', help='synth freq range, start:end:step')
 parser.add_argument('--table', nargs='?', default='', help='input power table file path, overrides start_dbm')
-parser.add_argument('--deadband', nargs='?', type=float, default=0.05, help='close-enough error, default 0.05 dBm')
+parser.add_argument('--deadband', nargs='?', type=float, default=0.05, help='close-enough error, default %(default)s dBm')
 parser.add_argument('--note', nargs='?', default='', help='note for file header')
 args = parser.parse_args()
 
-if args.target_dbm < -20.0 or args.target_dbm > 14.0:
-    sys.stderr.write('error: target dBm %g outside [-20, 14] range\n'%(args.target_dbm))
-    sys.exit(1)
-
-if args.start_dbm < -20.0 or args.start_dbm > 14.0:
-    sys.stderr.write('error: starting dBm %g outside [-20, 14] range\n'%(args.start_dbm))
-    sys.exit(1)
-
-# TODO might want to relax this for more generalized testing
-if args.GHz_start > args.GHz_end \
-    or args.GHz_start < 16.0 or args.GHz_start > 32.0 \
-    or args.GHz_end < 16.0 or args.GHz_end > 32.0:
-    sys.stderr.write('error: frequency out of range\n')
-    sys.exit(1)
-
-if args.GHz_step <= 0.0:
-    args.GHz_step = (args.GHz_end - args.GHz_start) + 1.0
-
-# sanity check
-steps = (args.GHz_end - args.GHz_start) / args.GHz_step
-if steps > 10e3:
-    sys.stderr.write('error: step size too small for this range\n')
+ghz_range = namakanui.util.parse_range(args.ghz_range, maxlen=100e3)
+ghz_min = min(ghz_range)
+ghz_max = max(ghz_range)
+if ghz_min < 16 or ghz_max > 32:
+    sys.stderr.write('error: ghz_range %s outside [16, 32] range\n'%(args.ghz_range))
     sys.exit(1)
 
 # if we have an input table, read it in
@@ -166,12 +150,8 @@ def do_ghz(ghz):
     sys.stdout.flush()
 
 print('#ghz dbm pow')
-ghz = args.GHz_start
-while ghz < (args.GHz_end - 1e-12):
+for ghz in ghz_range:
     do_ghz(ghz)
-    ghz += args.GHz_step
-ghz = args.GHz_end
-do_ghz(ghz)
 
 reference.set_dbm(reference.safe_dbm)
 sys.stderr.write('done.\n')

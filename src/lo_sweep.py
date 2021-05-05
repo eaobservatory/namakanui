@@ -36,17 +36,20 @@ namakanui.util.setup_logging()
 
 config = namakanui.util.get_config()
 bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)
-    
-parser = argparse.ArgumentParser()
+
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawTextHelpFormatter,
+    description=namakanui.util.get_description(__doc__)
+    )
 parser.add_argument('band', type=int, choices=bands)
-parser.add_argument('--lo')  # range
-parser.add_argument('--load', nargs='?', default='hot')
+parser.add_argument('lo_ghz', help='LO GHz range, first:last:step')
 parser.add_argument('lock_side', nargs='?', choices=['below','above'], default='above')
+parser.add_argument('--load', nargs='?', default='hot')
 parser.add_argument('--note', nargs='?', default='', help='note for file header')
 args = parser.parse_args()
 
 band = args.band
-los = namakanui.util.parse_range(args.lo, maxlen=100e3)
+los = namakanui.util.parse_range(args.lo_ghz, maxlen=100e3)
 if args.load == 'hot' or args.load == 'sky':
     args.load = 'b%d_'%(band) + args.load
 

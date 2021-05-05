@@ -4,9 +4,6 @@ dcm_synth.py   20200909 RMB
 
 TP2 test with the signal generator connected directly to the DCM quad input.
 
-TODO: Is there some way to guarantee that we're not accidentally
-      talking to the wrong signal generator?
-
 
 Copyright (C) 2020 East Asian Observatory
 
@@ -42,11 +39,10 @@ namakanui.util.setup_logging()
 
 binpath, datapath = namakanui.util.get_paths()
 
-# use explicit arguments to avoid confusion
-parser = argparse.ArgumentParser(description='''
-TP2 readings for direct synthesizer-to-DCM connection.
-''',
-  formatter_class=argparse.RawTextHelpFormatter)
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawTextHelpFormatter,
+    description=namakanui.util.get_description(__doc__)
+    )
 parser.add_argument('--level_only', action='store_true')
 parser.add_argument('--bw_mhz', nargs='?', default='1000', help='BW MHz range, first:last:step')
 parser.add_argument('--if_ghz', nargs='?', default='6', help='IF GHz range, first:last:step')

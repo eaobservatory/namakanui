@@ -40,23 +40,18 @@ namakanui.util.setup_logging()
 config = namakanui.util.get_config()
 bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)
 
-# use explicit arguments to avoid confusion
-parser = argparse.ArgumentParser(description='''
-''',
-  formatter_class=argparse.RawTextHelpFormatter)
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawTextHelpFormatter,
+    description=namakanui.util.get_description(__doc__)
+    )
 parser.add_argument('band', type=int, choices=bands)
 args = parser.parse_args()
 
 band = args.band
 
 # no need for lock or load, and we don't care about zeroing other carts
-# TODO: add a "band" argument to Instrument.__init__ to save trouble here
-cart_sim = {3:sim.SIM_B3_FEMC, 6:sim.SIM_B6_FEMC, 7:sim.SIM_B7_FEMC}
-del cart_sim[band]
-cart_sim_bits = 0
-for s in cart_sim.values():
-    cart_sim_bits |= s
-instrument = namakanui.instrument.Instrument(config, simulate=SIM_LOAD|SIM_IFSW|cart_sim_bits)
+sim_mask = SIM_LOAD | SIM_IFSW | sim.other_bands(band)
+instrument = namakanui.instrument.Instrument(config, simulate=sim_mask)
 instrument.set_safe()
 cart = instrument.carts[band]
 cart.power(1)

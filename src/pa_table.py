@@ -1,6 +1,7 @@
 #!/local/python3/bin/python3
 '''
 pa_table.py     RMB 20200406
+
 Create PA drain/gate voltage table (LOParams).
 
 Perform a Vg sweep at each frequency with Vd set to 2.5
@@ -41,13 +42,14 @@ namakanui.util.setup_logging(logging.DEBUG)
 config = namakanui.util.get_config()
 bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)
 
-parser = argparse.ArgumentParser(description='''
-Generate LOParam (PA drain/gate voltage) table.
-''', formatter_class=argparse.RawTextHelpFormatter)
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawTextHelpFormatter,
+    description=namakanui.util.get_description(__doc__)
+    )
 parser.add_argument('band', type=int, choices=bands)
-parser.add_argument('--lo')  # range
-parser.add_argument('--vg')  # range (for b6, use -.40:.14:.01)
-parser.add_argument('--vd', type=float, default=2.5)  # vd for both pols during vg sweep
+parser.add_argument('--lo', help='range ghz')
+parser.add_argument('--vg', help='range (for b6, use -.40:.14:.01)')
+parser.add_argument('--vd', type=float, default=2.5, help='vd to use during vg sweep')
 parser.add_argument('--lock_side', nargs='?', choices=['below','above'], default='above')
 args = parser.parse_args()
 

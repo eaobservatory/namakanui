@@ -12,7 +12,7 @@ communicating with a running engineering task via DRAMA.  The two
 probably shouldn't run at the same time.
 
 The <dbm> parameter gives the starting dBm setting at each frequency;
-I've used -12 dBm for the ASIAA IF switch and -16 dBm for Bill's IF switch.
+For a new table on an unknown setup it's safest to start at -20.
 You can also give "ini-X" for this parameter to start with the value
 interpolated from the table in the agilent.ini file, minus X dBm.
 
@@ -21,8 +21,6 @@ but if you prefer you can do that as follows:
 
 grep -v '^#' <file> | sort -n | awk '{ printf "dbm%02d=%s, %6s\n", NR, $1, $2 }'
 
-Usage:
-dbm_table.py <band> <LO_GHz_start> <LO_GHz_end> <LO_GHz_step> <lock_polarity> <dbm>
 
 
 Copyright (C) 2020 East Asian Observatory
@@ -58,23 +56,18 @@ namakanui.util.setup_logging(logging.DEBUG)
 config = namakanui.util.get_config()
 bands = namakanui.util.get_bands(config, simulated=False)
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawTextHelpFormatter,
+    description=namakanui.util.get_description(__doc__)
+    )
 parser.add_argument('band', type=int, choices=bands)
-parser.add_argument('LO_GHz_start', type=float)
-parser.add_argument('LO_GHz_end', type=float)
-parser.add_argument('LO_GHz_step', type=float)
+parser.add_argument('lo_ghz', help='LO GHz range, first:last:step')
 parser.add_argument('lock_side', choices=['below','above'])
-parser.add_argument('dbm')
+parser.add_argument('dbm', help='starting output power, dbm or ini[-offset]'))
 parser.add_argument('--lock_only', action='store_true', help='skip mixer adjustment')
 args = parser.parse_args()
-#print(args.band, args.LO_GHz_start, args.LO_GHz_end, args.LO_GHz_step)
 
-if args.LO_GHz_step < 0.01:
-    logging.error('invalid step, must be >= 0.01 GHz')
-    sys.exit(1)
-if args.LO_GHz_start > args.LO_GHz_end:
-    logging.error('start/end out of order')
-    sys.exit(1)
+los = namakanui.util.parse_range(args.lo_ghz, maxlen=100e3)
 
 use_ini = False
 try:
@@ -132,12 +125,8 @@ def try_adjust_dbm(lo_ghz):
 
 
 sys.stdout.write('#lo_ghz dbm pll_if_power pa_0 pa_1\n')  # topcat ascii
-lo_ghz = args.LO_GHz_start
-while lo_ghz < args.LO_GHz_end - 1e-9:
+for lo_ghz in los:
     try_adjust_dbm(lo_ghz)
-    lo_ghz += args.LO_GHz_step
-lo_ghz = args.LO_GHz_end
-try_adjust_dbm(lo_ghz)
 
 logging.info('done, setting safe power levels.')
 instrument.set_safe()

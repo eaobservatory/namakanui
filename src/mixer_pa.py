@@ -44,8 +44,11 @@ namakanui.util.setup_logging()
 
 config = namakanui.util.get_config()
 bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)
-    
-parser = argparse.ArgumentParser()
+
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawTextHelpFormatter,
+    description=namakanui.util.get_description(__doc__)
+    )
 parser.add_argument('band', type=int, choices=bands)
 parser.add_argument('--lo')  # range
 parser.add_argument('--pa')  # range

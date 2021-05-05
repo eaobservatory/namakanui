@@ -50,25 +50,22 @@ import math
 import logging
 namakanui.util.setup_logging()
 
-binpath, datapath = namakanui.util.get_paths()
+config = namakanui.util.get_config()
+bands = namakanui.util.get_bands(config)
 
-parser = argparse.ArgumentParser()
-parser.add_argument('target_dbm', type=float, help='target dBm reading')
-parser.add_argument('start_att', type=int, help='starting attenuator setting (counts)')
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawTextHelpFormatter,
+    description=namakanui.util.get_description(__doc__)
+    )
+parser.add_argument('target_dbm', type=float, choices=namakanui.util.interval(-20, 14), help='target dBm reading')
+parser.add_argument('start_att', type=int, choices=namakanui.util.interval(0, 255), help='starting attenuator setting (counts)')  # TODO check nbits first
 parser.add_argument('ghz_range', help='synth freq range, start:end:step')
 parser.add_argument('dbm_table', help='synth power table file path')
 parser.add_argument('--att_table', nargs='?', default='', help='attenuator table file path, overrides start_att')
-parser.add_argument('--band', nargs='?', type=int, default=0, help='set ifswitch to given band')
+parser.add_argument('--band', nargs='?', type=int, default=0, choices=bands, help='set ifswitch to given band')
 parser.add_argument('--note', nargs='?', default='', help='note for file header')
 args = parser.parse_args()
 
-if args.target_dbm < -20.0 or args.target_dbm > 14.0:
-    sys.stderr.write('error: target dBm %g outside [-20, 14] range\n'%(args.target_dbm))
-    sys.exit(1)
-
-if args.start_att < 0 or args.start_att > 63:
-    sys.stderr.write('error: starting att %d outside [0, 63] range\n'%(args.start_att))
-    sys.exit(1)
 
 ghz_range = namakanui.util.parse_range(args.ghz_range, maxlen=100e3)
 ghz_min = min(ghz_range)
@@ -83,17 +80,17 @@ if args.att_table:
     att_table = namakanui.ini.read_ascii(args.att_table)
 
 
-reference = namakanui.reference.Reference(datapath+'reference.ini', time.sleep, namakanui.nop)
+reference = namakanui.reference.Reference(config, time.sleep, namakanui.nop)
 reference.set_dbm(reference.safe_dbm)
 reference.set_output(1)
 
-photonics = namakanui.photonics.Photonics(datapath+'photonics.ini', time.sleep, namakanui.nop)
+photonics = namakanui.photonics.Photonics(config, time.sleep, namakanui.nop)
 photonics.set_attenuation(photonics.max_att)
 
-pmeter = namakanui.pmeter.PMeter(datapath+'pmeter.ini', time.sleep, namakanui.nop)
+pmeter = namakanui.pmeter.PMeter(config, time.sleep, namakanui.nop)
 
 if args.band:
-    ifswitch = namakanui.ifswitch.IFSwitch(datapath+'ifswitch.ini', time.sleep, namakanui.nop)
+    ifswitch = namakanui.ifswitch.IFSwitch(config, time.sleep, namakanui.nop)
     ifswitch.set_band(args.band)
     ifswitch.close()  # done with ifswitch
 

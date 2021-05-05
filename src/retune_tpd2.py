@@ -42,10 +42,10 @@ namakanui.util.setup_logging()
 config = namakanui.util.get_config()
 bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)
 
-# use explicit arguments to avoid confusion
-parser = argparse.ArgumentParser(description='''
-''',
-  formatter_class=argparse.RawTextHelpFormatter)
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawTextHelpFormatter,
+    description=namakanui.util.get_description(__doc__)
+    )
 parser.add_argument('band', type=int, choices=bands)
 parser.add_argument('lo_ghz', type=float)
 parser.add_argument('lock_side', nargs='?', choices=['below','above'], default='above')

@@ -2,6 +2,8 @@
 '''
 trx_mon.py      RMB 20200218
 
+NOTE: Use trx_sweep.py instead.
+
 This version continuously monitors IFTASK:YFACTOR and prints updates
 as they come in.
 
@@ -22,9 +24,6 @@ Y*(Trx+Jcold) = Trx+Jhot
 Y*Trx - Trx = Jhot - Y*Jcold
 Trx*(Y-1) = Jhot - Y*Jcold
 Trx = (Jhot - Y*Jcold) / (Y-1)
-
-This method is slow and tedious and should not be used by anyone.
-
 
 
 Copyright (C) 2020 East Asian Observatory
