@@ -37,8 +37,8 @@ which the receptor is sensitive.
 <INSTRUMENT NAME="FE_UU" SERIAL="UU" FOC_STATION="DIRECT" X="0.0" Y="0.0" WAVELENGTH="1235">
    <IF_CENTER_FREQ>6.0</IF_CENTER_FREQ>
    <bw units="Hz" value="4.0E9"/>
-   <smu_offset X="-0.02" Y="1.72" Z="0.46"/>
-   <pointing_offset IA="7.04" IE="45.94" NPAE="9.66" CA="35.33" AN="-0.13" AW="-0.5" TF="-1.24"/>
+   <smu_offset X="-0.02" Y="1.72" Z="1.46"/>
+   <pointing_offset IA="6.02" IE="49.35" NPAE="12.81" CA="35.49" AN="0.53" AW="-0.26" TF="0.15"/>
    <waveBand  band="A" label="A" units="Hz" centre="243E9" width="62E9">
        <etal>0.9</etal>
    </waveBand>

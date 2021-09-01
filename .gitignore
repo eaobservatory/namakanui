@@ -28,6 +28,9 @@ version.py
 # Plots
 *.png
 
+# Other backup files
+*bkup*
+
 # Dummy jac_sw module
 jac_sw.py
 

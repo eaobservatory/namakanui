@@ -56,6 +56,7 @@ parser.add_argument('--lock_side', nargs='?', choices=['below','above'], default
 parser.add_argument('--level_only', action='store_true')
 parser.add_argument('--bw_mhz', nargs='?', default='1000', help='BW MHz range, first:last:step')
 parser.add_argument('--if_ghz', nargs='?', default='6', help='IF GHz range, first:last:step')
+parser.add_argument('--load', nargs='?', default='hot')
 args = parser.parse_args()
 
 band = args.band
@@ -68,7 +69,9 @@ ifs = namakanui.util.parse_range(args.if_ghz, maxlen=1e3)
 instrument = namakanui.instrument.Instrument(config)
 instrument.set_safe()
 instrument.set_band(args.band)
-instrument.load.move('b%d_hot'%(band))
+if args.load == 'hot' or args.load == 'sky':
+    args.load = 'b%d_'%(band) + args.load
+instrument.load.move(args.load)
 cart = instrument.carts[band]
 cart.power(1)
 cart.set_lock_side(args.lock_side)
