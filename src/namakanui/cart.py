@@ -59,7 +59,7 @@ class Cart(object):
     NOTE: There are three update functions, so call update_one() at 0.6 Hz.
     '''
     
-    def __init__(self, band, femc, inifile, sleep, publish, simulate=0):
+    def __init__(self, band, femc, inifile, sleep, publish, simulate=0, level=logging.INFO):
         '''
         Create a Cart instance from given config file.  Arguments:
             band: Cartridge band number, e.g. 6 for 230 GHz, 'U'u.
@@ -133,7 +133,7 @@ class Cart(object):
         
         self.initialise()
         
-        self.log.setLevel(logging.INFO)  # once created, be quiet even if root is DEBUG
+        self.log.setLevel(level)  # set log level last to allow DEBUG output during creation
         # Cart.__init__
     
     
@@ -221,19 +221,20 @@ class Cart(object):
         self.hot = False
         
         # this needs to be set before update_all() since high temps
-        # will call _ramp_sis_bias_voltages to zero
+        # will call _ramp_sis_bias_voltages to zero.
         self.bias_error = [0.0]*4
 
         # fill out rest of state dict, but don't publish yet
         for f in self.update_functions:
             f(do_publish=False)
         
-        # if the cart is already powered, measure SIS bias error.
-        # sets PA gate/drain voltages to 0 as a side effect.
-        # this may take a few seconds.
-        self.bias_error = [0.0]*4
-        if self.state['pd_enable']:
-            self._calc_sis_bias_error()
+        # RMB 20211123: now defer bias error calculation until first tune().
+        ## if the cart is already powered, measure SIS bias error.
+        ## sets PA gate/drain voltages to 0 as a side effect.
+        ## this may take a few seconds.
+        #self.bias_error = [0.0]*4
+        #if self.state['pd_enable']:
+        #    self._calc_sis_bias_error()
         
         # if config has a lock_side parameter, set it now
         if 'lock_side' in self.config[str(self.band)]:
@@ -543,6 +544,12 @@ class Cart(object):
                         self._set_lna(i//2, i%2, lna[1:])
                 if not self.high_temperature():  # RMB 20200214: warm testing paranoia
                     self._set_lna_enable(1)
+
+                # RMB 20211123: calculate SIS bias voltage setting error
+                # if we haven't already done it -- 
+                # this used to be done in initialise().
+                if self.bias_error == [0.0]*4:
+                    self._calc_sis_bias_error()
                 
                 if nom_magnet:
                     self._ramp_sis_magnet_currents(nom_magnet[1:])
@@ -1445,6 +1452,6 @@ class Cart(object):
         if not self.state['pd_enable']:
             raise RuntimeError(self.name + ' power disabled')
         if force or lock_side != self.state['pll_sb_lock']:
-            self.femc.set_cartridge_lo_pll_sb_lock_polarity_select(cart.ca, lock_side)
+            self.femc.set_cartridge_lo_pll_sb_lock_polarity_select(self.ca, lock_side)
             self.state['pll_sb_lock'] = lock_side
         # Cart.set_lock_side

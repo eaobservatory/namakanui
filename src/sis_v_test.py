@@ -60,6 +60,9 @@ cart.power(1)
 # make sure LO pumping power is zero
 cart._set_pa([0.0]*4)
 
+# manually calculate bias error since we're not bothering to tune
+cart._calc_sis_bias_error()
+
 # band-dependent mv range, +-  TODO ask cart
 mv_range = 10.0
 if band == 7:
