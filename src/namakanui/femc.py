@@ -252,7 +252,7 @@ _lpr_edfa_driver_state = 0xd03c  # temperature alarm
 
 class FEMC(object):
     
-    def __init__(self, inifile, sleep, publish, simulate=0):
+    def __init__(self, inifile, sleep, publish, simulate=0, level=logging.INFO):
         '''Arguments:
             inifile: Path to config file or IncludeParser instance.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
@@ -311,7 +311,7 @@ class FEMC(object):
         
         self.update()
         
-        self.log.setLevel(logging.INFO)  # once created, be quiet even if root is DEBUG
+        self.log.setLevel(level)  # set log level last to allow DEBUG output during creation
         # FEMC.__init__
         
     def __del__(self):

@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/local/python3/bin/python3
 '''
 namakanui_tune.py   RMB 20210118
 
@@ -27,6 +27,7 @@ import argparse
 import namakanui.cart
 import namakanui.util
 import namakanui.ini
+import namakanui.sim
 
 
 log = logging.getLogger(__name__)
@@ -139,8 +140,7 @@ def tune(instrument, band, lo_ghz, voltage=0.0,
     
     if not instrument:
         from namakanui.instrument import Instrument
-        instrument = Instrument(config)
-        instrument.carts[band].log.setLevel(logging.DEBUG)
+        instrument = Instrument(config, simulate=namakanui.sim.SIM_LOAD, level={'instrument':logging.DEBUG, f'band{band}':logging.DEBUG})
     
     # TODO: band 7 may require a longer delay
     delay_secs = 0.05

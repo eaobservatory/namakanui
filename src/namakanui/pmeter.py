@@ -31,7 +31,7 @@ class PMeter(object):
     Class to control an N1913A power meter.
     '''
     
-    def __init__(self, inifile, sleep, publish, simulate=0):
+    def __init__(self, inifile, sleep, publish, simulate=0, level=logging.INFO):
         '''Arguments:
             inifile: Path to config file or IncludeParser instance.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
@@ -61,7 +61,7 @@ class PMeter(object):
         
         self.initialise()
         
-        self.log.setLevel(logging.INFO)  # once created, be quiet even if root is DEBUG
+        self.log.setLevel(level)  # set log level last to allow DEBUG output during creation
         # PMeter.__init__
     
     

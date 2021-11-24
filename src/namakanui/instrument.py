@@ -39,12 +39,15 @@ class Instrument(object):
     Class to contain instances for the whole receiver system.
     '''
     
-    def __init__(self, inifile=None, sleep=time.sleep, publish=namakanui.nop, simulate=0):
+    def __init__(self, inifile=None, sleep=time.sleep, publish=namakanui.nop, simulate=0, level=logging.INFO):
         '''Arguments:
             inifile: Path to config file (instrument.ini if None) or IncludeParser instance.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
             simulate: Mask, bitwise ORed with config settings.
+            level: Logging level, passed on to component instances.
+                   Can also be a dict with the following keys:
+                        default, instrument, reference, photonics, ifswitch, load, femc, bandX
         '''
         self.sleep = sleep
         self.publish = publish
@@ -53,8 +56,7 @@ class Instrument(object):
         if inifile is None:
             binpath, datapath = namakanui.util.get_paths()
             inifile = datapath + 'instrument.ini'
-        self.initialise(inifile, simulate)
-        self.log.setLevel(logging.INFO)  # once created, be quiet even if root is DEBUG
+        self.initialise(inifile, simulate, level)
         # Instrument.__init__
 
 
@@ -84,7 +86,7 @@ class Instrument(object):
         # Instrument.close
     
     
-    def initialise(self, inifile, simulate=0):
+    def initialise(self, inifile, simulate=0, level=logging.INFO):
         '''Create all instances.
            Arguments:
             inifile: Path to config file or IncludeParser instance.
@@ -113,12 +115,18 @@ class Instrument(object):
         publish = self.publish
         
         self.close()
+
+        if not hasattr(level, 'keys'):
+            level = {'default': level}
+        if not 'default' in level:
+            level['default'] = logging.INFO
+        default = level['default']
         
-        self.reference = namakanui.reference.Reference(inifile, sleep, publish, simulate)
-        self.ifswitch = namakanui.ifswitch.IFSwitch(inifile, sleep, publish, simulate)
-        self.load = namakanui.load.Load(inifile, sleep, publish, simulate)
-        self.photonics = namakanui.photonics.Photonics(inifile, sleep, publish, simulate)
-        self.femc = namakanui.femc.FEMC(inifile, sleep, publish, simulate)
+        self.reference = namakanui.reference.Reference(inifile, sleep, publish, simulate, level.get('reference', default))
+        self.ifswitch = namakanui.ifswitch.IFSwitch(inifile, sleep, publish, simulate, level.get('ifswitch', default))
+        self.load = namakanui.load.Load(inifile, sleep, publish, simulate, level.get('load', default))
+        self.photonics = namakanui.photonics.Photonics(inifile, sleep, publish, simulate, level.get('photonics', default))
+        self.femc = namakanui.femc.FEMC(inifile, sleep, publish, simulate, level.get('femc', default))
         
         self.hardware = [self.reference, self.ifswitch, self.load, self.photonics, self.femc]
         
@@ -128,7 +136,7 @@ class Instrument(object):
             self.simulate |= thing.simulate
         
         for band in self.bands:
-            cart = namakanui.cart.Cart(band, self.femc, inifile, sleep, publish, simulate)
+            cart = namakanui.cart.Cart(band, self.femc, inifile, sleep, publish, simulate, level.get(f'band{band}', default))
             self.carts[band] = cart
             self.simulate |= cart.simulate
         
@@ -138,6 +146,8 @@ class Instrument(object):
         
         # NOTE each component already does an update() in its initialise().
         self.update()
+
+        self.log.setLevel(level.get('instrument', default))  # set log level last to allow DEBUG output during creation
         # Instrument.initialise
 
 

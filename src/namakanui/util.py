@@ -94,7 +94,7 @@ def get_bands(config, simulated=None, has_sis_mixers=None):
         for i,b in enumerate(bands):
             cold = config[str(b)]['cold']
             band_sis = 'MixerParam' in config[cold] or ('MixerParams' in config[cold] and int(config[cold]['MixerParams']) != 0)
-            if band sis != has_sis_mixers:
+            if band_sis != has_sis_mixers:
                 del bands[i]
     return bands
     # get_bands

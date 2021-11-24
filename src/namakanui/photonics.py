@@ -42,7 +42,7 @@ class Photonics(object):
     Class to monitor and control the photonics system.
     '''
     
-    def __init__(self, inifile, sleep, publish, simulate=0):
+    def __init__(self, inifile, sleep, publish, simulate=0, level=logging.INFO):
         '''Arguments:
             inifile: Path to config file or IncludeParser instance.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
@@ -80,7 +80,7 @@ class Photonics(object):
         
         self.initialise()
         
-        self.log.setLevel(logging.INFO)  # once created, be quiet even if root is DEBUG
+        self.log.setLevel(level)  # set log level last to allow DEBUG output during creation
         # Photonics.__init__
     
     
