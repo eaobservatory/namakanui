@@ -40,7 +40,10 @@ parser = argparse.ArgumentParser(
     description=namakanui.util.get_description(__doc__)
     )
 parser.add_argument('-v', '--verbose', action='store_true', help='print additional debug output')
-parser.add_argument('position', help='"home", counts, or a named position from load.ini')
+parser.add_argument('-l', '--list', action='store_true', help='list named positions and exit')
+pos_required = '-l' not in sys.argv and '--list' not in sys.argv
+pos_nargs = {True:None, False:'?'}[pos_required]
+parser.add_argument('position', nargs=pos_nargs, help='"home", counts, or a named position from load.ini')
 args = parser.parse_args()
 
 level = logging.INFO
@@ -53,6 +56,12 @@ namakanui.util.setup_logging(level)
 binpath, datapath = namakanui.util.get_paths()
 load = namakanui.load.Load(datapath+'load.ini', time.sleep, namakanui.nop)
 load.log.setLevel(level)
+
+if args.list:
+    import pprint
+    print('named positions:')
+    pprint.pprint(load.positions)
+    sys.exit(0)
 
 position = args.position.strip()
 if position.lower() == 'home':
