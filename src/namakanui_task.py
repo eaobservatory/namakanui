@@ -256,11 +256,11 @@ def LOAD_HOME(msg):
     check_init()
     if msg.reason == drama.REA_OBEY:
         log.info('homing load...')
-        load.home()
+        instrument.load.home()
         log.info('load homed.')
     else:
         log.error('LOAD_HOME stopping load due to unexpected msg %s', msg)
-        load.stop()
+        instrument.load.stop()
     # LOAD_HOME
 
 
@@ -273,6 +273,7 @@ def LOAD_MOVE(msg):
     '''
     log.debug('LOAD_MOVE(%s)', msg.arg)
     check_init()
+    load = instrument.load
     if msg.reason == drama.REA_OBEY:
         args,kwargs = drama.parse_argument(msg.arg)
         pos = load_move_args(*args,**kwargs)

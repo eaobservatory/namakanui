@@ -931,7 +931,7 @@ class App(tk.Frame):
                 if not updating:
                     e = 'MON_MAIN: ' + namakanui_taskname + '.UPDATE_HW not active'
                     log.error(e)
-            except drama.BadStatus:
+            except drama.BadStatus as e:
                 log.error('MON_MAIN: %s not active, status: %r', namakanui_taskname+'.UPDATE_HW', e)
                 pass  # for other errors, handle() as usual
         
