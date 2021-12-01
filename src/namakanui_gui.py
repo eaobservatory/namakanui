@@ -44,6 +44,23 @@ log.setLevel(logging.INFO)
 #drama.retry.log.setLevel(logging.DEBUG)
 #drama.__drama__._log.setLevel(logging.DEBUG)
 
+#namakanui_taskname = 'NAMAKANUI'
+import argparse
+import namakanui.util
+parser = argparse.ArgumentParser(
+         formatter_class=argparse.RawTextHelpFormatter,
+         description=namakanui.util.get_description(__doc__)
+         )
+parser.add_argument('target', nargs='?', default='NAMAKANUI', help='taskname of namakanui_task.py')
+parser.add_argument('--debug', action='store_true', help='set logging levels to DEBUG')
+cmdline_args = parser.parse_args()
+namakanui_taskname = cmdline_args.target
+
+if cmdline_args.debug:
+    log.setLevel(logging.DEBUG)
+    logging.getLogger('drama').setLevel(logging.DEBUG)
+
+
 
 # add a new log handler to log to the messages text area.
 # instantiated by the App.
@@ -76,7 +93,6 @@ class TextboxHandler(logging.Handler):
             self.handleError(record)
 
 
-namakanui_taskname = 'NAMAKANUI'
 
 state_bg_key = {'normal':'bg', 'disabled':'disabledbackground', 'readonly':'readonlybackground'}
 bg_values = ['red', '']
@@ -443,8 +459,9 @@ class BandFrame(tk.Frame):
         super().__init__(master)
         self.band = int(band)
         self.master = master
+        # RMB 20211123: b6 p0 is always just above 5; raise p tokay a little
         self.tnames = ['4k', '110k', 'p0', 'spare', '15k', 'p1']
-        self.tokay = [(0,5), (70,115), (0,5), (-2,2), (5,30), (0,5)]
+        self.tokay = [(0,5), (70,115), (0,5.5), (-2,2), (5,30), (0,5.5)]
         if self.band == 3:
             self.tnames = ['spare', '110k', 'p01', 'spare', '15k', 'wca']
             self.tokay = [(-2,2), (70,115), (0,30), (-2,2), (0,30), (253,323)]
@@ -907,11 +924,15 @@ class App(tk.Frame):
         updating = True
         if msg.reason == drama.REA_OBEY or msg.reason == drama.REA_RESCHED:
             try:
-                updating = drama.is_active(namakanui_taskname, "UPDATE_HW", 3.0)
+                log.info('MON_MAIN checking if %s is active', namakanui_taskname+'.UPDATE_HW')
+                updating = False
+                #updating = drama.is_active(namakanui_taskname, "UPDATE_HW", 3.0)
+                updating = drama.obey(namakanui_taskname, "IS_ACTIVE", "UPDATE_HW").wait(3.0)
                 if not updating:
-                    e = namakanui_taskname + '.UPDATE not active'
+                    e = 'MON_MAIN: ' + namakanui_taskname + '.UPDATE_HW not active'
                     log.error(e)
             except drama.BadStatus:
+                log.error('MON_MAIN: %s not active, status: %r', namakanui_taskname+'.UPDATE_HW', e)
                 pass  # for other errors, handle() as usual
         
         if updating and self.retry_vacuum.handle(msg):
@@ -955,35 +976,39 @@ class App(tk.Frame):
             self.ifswitch_frame.connected['text'] = "NO"
             self.ifswitch_frame.connected['bg'] = 'red'
         
-        drama.reschedule(15.0)  # NAMAKANUI.UPDATE is pretty slow
+        drama.reschedule(10.0)
         
         # App.MON_MAIN
     
-    def mon_cart(self, msg, retry, frame):
+    def mon_cart(self, msg, retry, frame, caller):
         updating = True
         if msg.reason == drama.REA_OBEY or msg.reason == drama.REA_RESCHED:
             try:
-                updating = drama.is_active(retry.task, "UPDATE", 3.0)
+                log.info('%s checking if %s is active', caller, retry.task+'.UPDATE_CARTS')
+                updating = False
+                #updating = drama.is_active(retry.task, "UPDATE_CARTS", 3.0)
+                updating = drama.obey(retry.task, "IS_ACTIVE", "UPDATE_CARTS").wait(3.0)
                 if not updating:
-                    e = retry.task + '.UPDATE not active'
+                    e = caller + ': ' + retry.task + '.UPDATE_CARTS not active'
                     log.error(e)
-            except drama.BadStatus:
+            except drama.BadStatus as e:
+                log.error('%s: %s not active, status: %r', caller, retry.task+'.UPDATE_CARTS', e)
                 pass  # for other errors, handle() as usual
         if updating and retry.handle(msg):
             frame.mon_changed(msg.arg)
         if not updating or not retry.connected:
             frame.connected['text'] = "NO"
             frame.connected['bg'] = 'red'
-        drama.reschedule(5.0)
+        drama.reschedule(10.0)
     
     def MON_B3(self, msg):
-        self.mon_cart(msg, self.retry_b3, self.b3_frame)
+        self.mon_cart(msg, self.retry_b3, self.b3_frame, 'MON_B3')
     
     def MON_B6(self, msg):
-        self.mon_cart(msg, self.retry_b6, self.b6_frame)
+        self.mon_cart(msg, self.retry_b6, self.b6_frame, 'MON_B6')
     
     def MON_B7(self, msg):
-        self.mon_cart(msg, self.retry_b7, self.b7_frame)
+        self.mon_cart(msg, self.retry_b7, self.b7_frame, 'MON_B7')
         
     
     def check_msg(self, msg, name):

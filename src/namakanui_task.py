@@ -336,6 +336,19 @@ def DEFLUX(msg):
     # DEFLUX
 
 
+def IS_ACTIVE(msg):
+    '''Check if given action is active.
+       For external tasks, this should be quicker than using HELP.
+    '''
+    log.debug('IS_ACTIVE(%s)', msg.arg)
+    args,kwargs = drama.parse_argument(msg.arg)
+    def IS_ACTIVE_ARGS(action):
+        return action
+    action = IS_ACTIVE_ARGS(*args,**kwargs)
+    return drama.is_active(taskname, action)
+
+
+
 try:
     log.info('%s starting drama.', taskname)
     drama.init(taskname,
@@ -349,7 +362,8 @@ try:
                         LOAD_HOME, LOAD_MOVE,
                         CART_POWER,
                         TUNE,
-                        DEFLUX])
+                        DEFLUX,
+                        IS_ACTIVE])
     log.info('%s entering main loop.', taskname)
     drama.run()
 except:
