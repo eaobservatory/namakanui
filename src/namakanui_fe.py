@@ -246,6 +246,11 @@ def initialise(msg):
         check_message(msg, f'obey({NAMAKANUI_TASK},LOAD_MOVE,{pos})')
         g_state['LOAD'] = 'AMBIENT'
         
+        # get actual ambient load temperature
+        msg = drama.get(NAMAKANUI_TASK, 'LAKESHORE').wait(5)
+        check_message(msg, f'get({NAMAKANUI_TASK},LAKESHORE)')
+        g_state['TEMP_AMBIENT'] = msg.arg['LAKESHORE']['temp5']
+        
         # power up the cartridge if necessary. this might take a little while.
         log.info('powering up band %d cartridge...', g_band)
         msg = drama.obey(NAMAKANUI_TASK, 'CART_POWER', g_band, 1).wait(30)
@@ -263,6 +268,7 @@ def initialise(msg):
         drama.set_param('REST_FREQUENCY', 0.0)
         drama.set_param('SIDEBAND', 'USB')
         drama.set_param('TEMP_TSPILL', t_spill)
+        drama.set_param('TEMP_AMBIENT', g_state['TEMP_AMBIENT'])
         #drama.set_param('SB_MODE', {3:'SSB',6:'2SB',7:'2SB'}[g_band])
         drama.set_param('SB_MODE', 'SSB')  # debug
         
@@ -422,6 +428,12 @@ def configure(msg, wait_set, done_set):
     t_cold = interpolate_t_cold(lo_freq) or g_state['TEMP_LOAD2']
     g_state['TEMP_LOAD2'] = t_cold
     
+    # TODO: get TEMP_TSPILL from NAMAKANUI and/or ENVIRO
+    msg = drama.get(NAMAKANUI_TASK, 'LAKESHORE').wait(5)
+    check_message(msg, f'get({NAMAKANUI_TASK},LAKESHORE)')
+    g_state['TEMP_AMBIENT'] = msg.arg['LAKESHORE']['temp5']
+    drama.set_param('TEMP_AMBIENT', g_state['TEMP_AMBIENT'])   
+    
     # TODO: do something with g_group?
     # it seems silly to potentially retune immediately in SETUP_SEQUENCE.
     
@@ -543,7 +555,7 @@ def setup_sequence(msg, wait_set, done_set):
         log.info('tuning receiver LO to %.9f GHz, %.3f V...', lo_freq, voltage)
         # RMB 20200714: try to hold output power steady while doppler tracking
         # by keeping the same tuning params (bias voltage, PA, etc).
-        msg = drama.obey(NAMAKANUI_TASK, 'TUNE', g_band, lo_freq, voltage, LOCK_ONLY=True).wait(30)
+        msg = drama.obey(NAMAKANUI_TASK, 'TUNE', g_band, lo_freq, voltage, lock_only=True).wait(30)
         check_message(msg, f'obey({NAMAKANUI_TASK},TUNE,{g_band},{lo_freq},{voltage})')
         g_state['LO_FREQUENCY'] = lo_freq
         drama.set_param('LO_FREQ', lo_freq)
@@ -571,6 +583,7 @@ def setup_sequence(msg, wait_set, done_set):
     msg = drama.get(NAMAKANUI_TASK, 'LAKESHORE').wait(5)
     check_message(msg, f'get({NAMAKANUI_TASK},LAKESHORE)')
     g_state['TEMP_AMBIENT'] = msg.arg['LAKESHORE']['temp5']
+    drama.set_param('TEMP_AMBIENT', g_state['TEMP_AMBIENT'])
     
     log.info('setup_sequence done.')
     # setup_sequence
@@ -613,6 +626,7 @@ def sequence(msg):
             pass  # lazy, just let the drama dispatcher clean up after us
         elif msg.status == drama.MON_CHANGED:
             g_state['TEMP_AMBIENT'] = msg.arg['temp5']
+            drama.set_param('TEMP_AMBIENT', g_state['TEMP_AMBIENT'])
         else:
             raise drama.BadStatus(msg.status, f'unexpected message for {NAMAKANUI_TASK}.LAKESHORE monitor: {msg}')
     
