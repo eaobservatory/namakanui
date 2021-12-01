@@ -177,7 +177,7 @@ class Instrument(object):
         if not self.hardware:  # called after close()
             return
         self.update_index_hw = (self.update_index_hw + 1) % len(self.hardware)
-        self.hardware[update_index_hw].update()
+        self.hardware[self.update_index_hw].update()
         # Instrument.update_one_hw
     
     def update_one_cart(self):

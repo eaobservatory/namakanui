@@ -54,7 +54,7 @@ binpath, datapath = namakanui.util.get_paths()
 load = namakanui.load.Load(datapath+'load.ini', time.sleep, namakanui.nop)
 load.log.setLevel(level)
 
-pos = args.position.strip()
+position = args.position.strip()
 if position.lower() == 'home':
     logging.info('homing load controller...')
     load.home()

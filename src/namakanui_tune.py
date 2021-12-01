@@ -105,7 +105,7 @@ def tune(instrument, band, lo_ghz, voltage=0.0,
         raise ValueError(f'band {band} not in {bands}')
     
     lo_ghz = float(lo_ghz)
-    b = str(args.band)
+    b = str(band)
     cc = config[config[b]['cold']]
     wc = config[config[b]['warm']]
     mult = int(cc['Mult']) * int(wc['Mult'])
