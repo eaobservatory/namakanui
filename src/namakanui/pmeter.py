@@ -93,7 +93,7 @@ class PMeter(object):
             self.log.debug('connecting power meter, %s:%d', self.ip, self.port)
             self.s = socket.socket()
             self.s.settimeout(self.timeout)
-            self.s.connect((self..ip, self.port))
+            self.s.connect((self.ip, self.port))
             self.s.send(b'*idn?\n')
             idn = self.s.recv(256)
             if b'N1913A' not in idn:
