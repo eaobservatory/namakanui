@@ -34,7 +34,7 @@ import select
 import logging
 import os
 
-import adam.adam6052
+import adam.adam6050
 
 
 class Photonics(object):
@@ -62,13 +62,14 @@ class Photonics(object):
         self.counts_per_db = float(pconfig['counts_per_db'])
         self.max_att = (1 << self.nbits) - 1
         self.state = {'number':0}
-        self.state['DO'] = [0]*8  # needs to match ADAM type, not nbits
+        self.adam_bits = 6
+        self.state['DO'] = [0]*self.adam_bits  # needs to match ADAM type, not nbits
         # ADAM address
         self.ip = pconfig['ip']
         self.port = int(pconfig['port'])
         
         # init only saves ip/port, so this is fine even if simulating
-        self.adam = adam.adam6052.Adam6052(self.ip, self.port)
+        self.adam = adam.adam6050.Adam6050(self.ip, self.port)
         
         datapath = os.path.dirname(self.config.inifilename) + '/'
         self.att_tables = {}  # indexed by band
@@ -151,7 +152,7 @@ class Photonics(object):
             att = self.max_att
         
         # TODO sense, order of bits
-        DO = [0]*8  # 6052 is 8-bit, even if we only use 6
+        DO = [0]*self.adam_bits
         for i in range(len(DO)):
             DO[i] = (att >> i) & 1
         
