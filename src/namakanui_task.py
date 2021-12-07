@@ -53,21 +53,44 @@ import logging
 log = logging.getLogger(taskname)
 #logging.getLogger('drama').setLevel(logging.DEBUG)
 
-# combined publish to both DRAMA and Redis
 import redis
 import json
 from datetime import datetime as dt
 
 redis_client = None
+redis_pubsub = None
 redis_prefix = ''
 
 def publish(name, value):
+    '''Combined publish to both DRAMA and Redis.'''
     drama.set_param(name, value)
     score = float(dt.utcnow().timestamp())
     redis_client.zadd(redis_prefix + name, {json.dumps(value): score})
 
-
-# TODO: redis subscriptions for LAKESHORE/VACUUM updates from temp_mon.py
+def redis_callback(fd):
+    '''
+    Process Redis pubsub messages.
+    When the temp_mon.py service updates the Redis database,
+    it will also publish on a channel of the same name.
+    So when we see a message here, we must still query the associated key.
+    '''
+    # just in case we get called when connection closes
+    if not redis_client or not redis_pubsub:
+        return
+    # read all immediately-available messages;
+    # for each message, get the highest-score (most recent) data from zset.
+    # this will trigger for type=subscribe too, which is fine.
+    msg = redis_pubsub.get_message()
+    while msg:
+        for name in ['LAKESHORE', 'VACUUM']:
+            if name in msg['channel']:
+                s = redis_client.zrange(redis_prefix + name, -1, -1)[0]
+                value = json.loads(s)
+                drama.set_param(name, value)
+        msg = redis_pubsub.get_message()
+    return
+    # redis_callback
+    
 
 
 binpath, datapath = namakanui.util.get_paths()
@@ -93,7 +116,7 @@ def INITIALISE(msg):
         SIMULATE: Mask, bitwise ORed with config settings.
     '''
     global initialised, inifile, instrument
-    global redis_client, redis_prefix
+    global redis_client, redis_pubsub, redis_prefix
     
     log.debug('INITIALISE(%s)', msg.arg)
     
@@ -117,7 +140,14 @@ def INITIALISE(msg):
     if not hasattr(inifile, 'items'):
         inifile = IncludeParser(inifile)
     
-    # (re)connect redis client
+    # (re)connect redis client and subscribe to temp_mon.py channels
+    if redis_pubsub:
+        if redis_pubsub.connection and hasattr(redis_pubsub.connection, '_sock'):
+            # with callback=None, unregisters this file descriptor
+            drama.register_callback(redis_pubsub.connection._sock, None)
+        redis_pubsub.unsubscribe()
+        redis_pubsub.close()
+        redis_pubsub = None
     if redis_client:
         redis_client.close()
         redis_client = None
@@ -125,6 +155,9 @@ def INITIALISE(msg):
     redis_prefix = rconfig['prefix']
     redis_client = redis.Redis(host=rconfig['host'], port=int(rconfig['port']),
                                db=int(rconfig['db']), decode_responses=True)
+    redis_pubsub = redis_client.pubsub()
+    redis_pubsub.subscribe(redis_prefix + 'LAKESHORE', redis_prefix + 'VACUUM')
+    drama.register_callback(redis_pubsub.connection._sock, redis_callback)
     
     # (re)initialise the instrument instance
     if instrument:
@@ -162,7 +195,7 @@ def update_action(delay):
     '''
     def decorator(f):
         @wraps(f)
-        def wrapper(*args)
+        def wrapper(*args):
             msg = args[-1]  # allow for 'self' if f is a method
             act = f.__name__  # could ask drama instead
             if msg.reason == drama.REA_KICK:
