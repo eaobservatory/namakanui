@@ -30,6 +30,10 @@ import drama
 import sys
 import os
 import time
+import json
+import redis
+from datetime import datetime as dt
+from functools import wraps
 import namakanui.instrument
 import namakanui.util
 
@@ -49,10 +53,27 @@ import logging
 log = logging.getLogger(taskname)
 #logging.getLogger('drama').setLevel(logging.DEBUG)
 
+# combined publish to both DRAMA and Redis
+import redis
+import json
+from datetime import datetime as dt
+
+redis_client = None
+redis_prefix = ''
+
+def publish(name, value):
+    drama.set_param(name, value)
+    score = float(dt.utcnow().timestamp())
+    redis_client.zadd(redis_prefix + name, {json.dumps(value): score})
+
+
+# TODO: redis subscriptions for LAKESHORE/VACUUM updates from temp_mon.py
+
+
 binpath, datapath = namakanui.util.get_paths()
 
 initialised = False
-inifile = datapath + 'instrument.ini'
+inifile = datapath + 'task.ini'
 instrument = None
 
 
@@ -72,6 +93,7 @@ def INITIALISE(msg):
         SIMULATE: Mask, bitwise ORed with config settings.
     '''
     global initialised, inifile, instrument
+    global redis_client, redis_prefix
     
     log.debug('INITIALISE(%s)', msg.arg)
     
@@ -91,11 +113,24 @@ def INITIALISE(msg):
     try_kick(taskname, "UPDATE_CARTS")
     try_kick(taskname, "UPDATE_BAND")
     
+    # inifile is probably not a preparsed config, but check anyway
+    if not hasattr(inifile, 'items'):
+        inifile = IncludeParser(inifile)
+    
+    # (re)connect redis client
+    if redis_client:
+        redis_client.close()
+        redis_client = None
+    rconfig = inifile['redis']
+    redis_prefix = rconfig['prefix']
+    redis_client = redis.Redis(host=rconfig['host'], port=int(rconfig['port']),
+                               db=int(rconfig['db']), decode_responses=True)
+    
     # (re)initialise the instrument instance
     if instrument:
         instrument.initialise(inifile, simulate)
     else:
-        instrument = namakanui.instrument.Instrument(inifile, drama.wait, drama.set_param, simulate)
+        instrument = namakanui.instrument.Instrument(inifile, drama.wait, publish, simulate)
     
     # publish the load.positions table for the GUI
     drama.set_param('LOAD_TABLE', instrument.load.positions)
@@ -119,23 +154,40 @@ def check_init():
         raise drama.BadStatus(drama.APP_ERROR, 'task needs INITIALISE')
 
 
-def update_helper(msg, action, delay):
-    '''Perform common UPDATE_* checks and reschedule. TODO decorator?'''
-    if msg.reason == drama.REA_KICK:
-        log.debug('%s kicked.', action)
-        return
-    check_init()
-    if msg.reason == drama.REA_OBEY:
-        log.debug('%s started.', action)
-        drama.reschedule(delay)
-        return
-    log.debug('%s reschedule.', action)
-    # update_helper
+def update_action(delay):
+    '''
+    Decorator for UPDATE_* actions to handle common overhead.
+    Parameters:
+      delay: Initial reschedule delay after first OBEY
+    '''
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args)
+            msg = args[-1]  # allow for 'self' if f is a method
+            act = f.__name__  # could ask drama instead
+            if msg.reason == drama.REA_KICK:
+                log.debug('%s kicked', act)
+                return
+            check_init()
+            if msg.reason == drama.REA_OBEY:
+                log.debug('%s started', act)
+                drama.reschedule(delay)
+                return
+            elif msg.reason == drama.REA_RESCHED:
+                log.debug('%s resched', act)
+                f(*args)
+            else:
+                # unexpected msg will kill the action
+                log.error('%s unexpected msg: %s', act, msg)
+            return
+        return wrapper
+    return decorator
+    # update_action
 
 
+@update_action(3.0)
 def UPDATE_HW(msg):
     '''Update non-receiver hardware with 10s period.'''
-    update_helper(msg, "UPDATE_HW", 3.0)
     delay = 10.0 / (len(instrument.hardware) or 1.0)
     try:
         instrument.update_one_hw()
@@ -145,9 +197,9 @@ def UPDATE_HW(msg):
     # UPDATE_HW
 
 
+@update_action(2.0)
 def UPDATE_CARTS(msg):
     '''Update all carts with 20s period.'''
-    update_helper(msg, "UPDATE_CARTS", 2.0)
     carts = list(instrument.carts.values())
     nfuncs = len(carts[0].update_functions) if carts else 0
     delay = 20.0 / (len(carts)*nfuncs or 1.0)
@@ -159,9 +211,9 @@ def UPDATE_CARTS(msg):
     # UPDATE_CARTS
 
 
+@update_action(1.0)
 def UPDATE_BAND(msg):
     '''Update currently-selected band with 5s period.'''
-    update_helper(msg, "UPDATE_BAND", 1.0)
     delay = 1.5
     try:
         band = instrument.ifswitch.get_band()
