@@ -650,8 +650,9 @@ class FEMC(object):
         t0 = time.time()
         payload = self.get_special(0x07)
         t1 = time.time()
-        if payload != b'\xff\xff\xff\xff\xff\xff\xff\xff':
-            raise FEMC_RuntimeError('bad payload, expected 8x 0xff, received 0x%s' % (payload.hex()))
+        # RMB 20211207: Skip payload check for GLT, reply does not match spec
+        #if payload != b'\xff\xff\xff\xff\xff\xff\xff\xff':
+        #    raise FEMC_RuntimeError('bad payload, expected 8x 0xff, received 0x%s' % (payload.hex()))
         return t1-t0
     
     def get_fpga_version_info(self):
