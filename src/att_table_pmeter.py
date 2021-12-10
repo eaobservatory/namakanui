@@ -10,11 +10,16 @@ which is made to feed a constant power level (+10 dBm)
 to the photonic transmitter.  It controls the attenuator
 in the photonic receiver to produce approximately +12 dBm
 at the input to the harmonic mixer, after passing through
-the amplifier in the IF switch.
+the amplifier in the signal test source reference unit.
 
 The output here could be modified and used as a starting point
 for the full att_table.py script, but really it's just intended
 as a bench test to show that we're hitting the desired power levels.
+
+RMB 20211209: Update for GLT testing.  Remove band argument
+and IFSwitch; the power meter will be connected to unused output #4
+on the signal test source reference unit, which will be manually
+set to use that output.  Use photonics_dbm table from config by default.
 
 
 Copyright (C) 2020 East Asian Observatory
@@ -35,7 +40,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import jac_sw
 import namakanui.reference
-import namakanui.ifswitch
 import namakanui.photonics
 import namakanui.pmeter
 import namakanui.util
@@ -51,18 +55,16 @@ import logging
 namakanui.util.setup_logging()
 
 config = namakanui.util.get_config()
-bands = namakanui.util.get_bands(config)
 
 parser = argparse.ArgumentParser(
     formatter_class=argparse.RawTextHelpFormatter,
     description=namakanui.util.get_description(__doc__)
     )
-parser.add_argument('target_dbm', type=float, choices=namakanui.util.interval(-20, 14), help='target dBm reading')
-parser.add_argument('start_att', type=int, choices=namakanui.util.interval(0, 255), help='starting attenuator setting (counts)')  # TODO check nbits first
-parser.add_argument('ghz_range', help='synth freq range, start:end:step')
-parser.add_argument('dbm_table', help='synth power table file path')
+parser.add_argument('--target_dbm', nargs='?', default=12.0, type=float, choices=namakanui.util.interval(-20, 14), help='target dBm reading, default 12')
+parser.add_argument('--start_att', nargs='?', default=63, type=int, choices=namakanui.util.interval(0, 63), help='starting attenuator setting (counts), default 63')  # TODO check nbits first
+parser.add_argument('--ghz_range', nargs='?', default='18:31:1', help='synth freq range, start:end:step, default 18:31:1')
+parser.add_argument('--dbm_table', nargs='?', default='', help='synth power table file path, default use photonics_dbm table from config')
 parser.add_argument('--att_table', nargs='?', default='', help='attenuator table file path, overrides start_att')
-parser.add_argument('--band', nargs='?', type=int, default=0, choices=bands, help='set ifswitch to given band')
 parser.add_argument('--note', nargs='?', default='', help='note for file header')
 args = parser.parse_args()
 
@@ -73,12 +75,6 @@ ghz_max = max(ghz_range)
 if ghz_min < 16 or ghz_max > 32:
     sys.stderr.write('error: ghz_range %s outside [16, 32] range\n'%(args.ghz_range))
     sys.exit(1)
-    
-dbm_table = namakanui.ini.read_ascii(args.dbm_table)
-att_table = []
-if args.att_table:
-    att_table = namakanui.ini.read_ascii(args.att_table)
-
 
 reference = namakanui.reference.Reference(config, time.sleep, namakanui.nop)
 reference.set_dbm(reference.safe_dbm)
@@ -89,13 +85,16 @@ photonics.set_attenuation(photonics.max_att)
 
 pmeter = namakanui.pmeter.PMeter(config, time.sleep, namakanui.nop)
 
-if args.band:
-    ifswitch = namakanui.ifswitch.IFSwitch(config, time.sleep, namakanui.nop)
-    ifswitch.set_band(args.band)
-    ifswitch.close()  # done with ifswitch
+dbm_table = reference.dbm_tables[0]  # photonics_dbm
+if args.dbm_table:
+    dbm_table = namakanui.ini.read_ascii(args.dbm_table)
+att_table = []
+if args.att_table:
+    att_table = namakanui.ini.read_ascii(args.att_table)
+
 
 # output file header
-sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
+sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S UTC\n', time.gmtime()))
 sys.stdout.write('# %s\n'%(sys.argv))
 sys.stdout.write('#\n')
 sys.stdout.write('#ghz dbm att pow\n')
@@ -137,7 +136,7 @@ for ghz in ghz_range:
     sys.stderr.flush()
     # quickly decrease attenuation until above target power
     while att > 0 and power < args.target_dbm:
-        dcounts = (args.target_dbm - power) * 2 + 1
+        dcounts = (args.target_dbm - power) * photonics.counts_per_db/2 + 1
         att -= dcounts
         if att < 0:
             att = 0
@@ -148,7 +147,7 @@ for ghz in ghz_range:
         sys.stderr.flush()
     # quickly increase attenuation until below target power
     while att < photonics.max_att and power >= args.target_dbm:
-        dcounts = (power - args.target_dbm) * 2 + 1
+        dcounts = (power - args.target_dbm) * photonics.counts_per_db/2 + 1
         att += dcounts
         if att > photonics.max_att:
             att = photonics.max_att

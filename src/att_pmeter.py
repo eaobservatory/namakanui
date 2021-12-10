@@ -10,6 +10,11 @@ then sweep the attenuator across its full range.  The point of
 this script is to make sure the attenuator is working and that
 I haven't swapped any bits.
 
+RMB 20211209: Update for GLT testing.  Remove band argument
+and IFSwitch; the power meter will be connected to unused output #4
+on the signal test source reference unit, which will be manually
+set to use that output.
+
 
 Copyright (C) 2021 East Asian Observatory
 
@@ -30,7 +35,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import jac_sw
 import namakanui.reference
 import namakanui.photonics
-import namakanui.ifswitch
 import namakanui.pmeter
 import namakanui.util
 import sys
@@ -44,15 +48,13 @@ import logging
 namakanui.util.setup_logging()
 
 config = namakanui.util.get_config()
-bands = namakanui.util.get_bands(config)
 
 parser = argparse.ArgumentParser(
     formatter_class=argparse.RawTextHelpFormatter,
     description=namakanui.util.get_description(__doc__)
     )
-parser.add_argument('band', type=int, choices=bands)
-parser.add_argument('ghz', type=float, help='synth freq ghz')
-parser.add_argument('dbm', type=float, help='synth power')
+parser.add_argument('ghz', nargs='?', default=20.0, type=float, help='synth freq ghz, default 20')
+parser.add_argument('dbm', nargs='?', type=float, help='synth power, default use photonics_dbm table')
 parser.add_argument('--note', nargs='?', default='', help='note for file header')
 args = parser.parse_args()
 
@@ -61,19 +63,20 @@ reference = namakanui.reference.Reference(config, time.sleep, namakanui.nop)
 reference.set_dbm(reference.safe_dbm)
 reference.set_output(1)
 
-ifswitch = namakanui.ifswitch.IFSwitch(config, time.sleep, namakanui.nop)
-ifswitch.set_band(args.band)
-ifswitch.close()  # done with ifswitch
-
 photonics = namakanui.photonics.Photonics(config, time.sleep, namakanui.nop)
 photonics.set_attenuation(photonics.max_att)
 
 pmeter = namakanui.pmeter.PMeter(config, time.sleep, namakanui.nop)
 
+# if dbm not given, interpolate from photonics_dbm table (band 0)
+if args.dbm is None:
+    args.dbm = reference.interp_dbm(0, args.ghz)
+
 
 # output file header
-sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
+sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S UTC\n', time.gmtime()))
 sys.stdout.write('# %s\n'%(sys.argv))
+sys.stdout.write('# ref setting: %.3f ghz, %.3f dbm\n'%(args.ghz, args.dbm))
 sys.stdout.write('#\n')
 sys.stdout.write('#att pow\n')
 sys.stdout.flush()

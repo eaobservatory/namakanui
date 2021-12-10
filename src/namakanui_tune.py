@@ -217,7 +217,7 @@ def tune(instrument, band, lo_ghz, voltage=0.0,
         ### PHOTONICS ATTENUATOR ADJUSTMENT
         if not photonics.simulate:
             # quickly decrease attenuation (raise power) if needed
-            datt = max(4, int(round(photonics.counts_per_db)))
+            datt = max(3, int(round(photonics.counts_per_db)))
             while (cart.state['pll_unlock'] or cart.state['pll_if_power'] > pll_range[0]) and att > att_min:
                 att -= datt
                 if att < att_min:
