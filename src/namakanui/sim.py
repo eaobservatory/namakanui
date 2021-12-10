@@ -24,22 +24,23 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
-SIM_B3_FEMC   = 1<<0
-SIM_B3_WARM   = 1<<1
-SIM_B3_COLD   = 1<<2
-SIM_B6_FEMC   = 1<<3
-SIM_B6_WARM   = 1<<4
-SIM_B6_COLD   = 1<<5
-SIM_B7_FEMC   = 1<<6
-SIM_B7_WARM   = 1<<7
-SIM_B7_COLD   = 1<<8
-SIM_CRYO_FEMC = 1<<9  # obsolete, but keeping as a placeholder
-SIM_LOAD      = 1<<10
-SIM_REFERENCE = 1<<11
-SIM_IFSW_6260 = 1<<12
-SIM_IFSW_6024 = 1<<13
-SIM_PHOTONICS = 1<<14
-SIM_FEMC      = 1<<15
+SIM_B3_FEMC    = 1<<0
+SIM_B3_WARM    = 1<<1
+SIM_B3_COLD    = 1<<2
+SIM_B6_FEMC    = 1<<3
+SIM_B6_WARM    = 1<<4
+SIM_B6_COLD    = 1<<5
+SIM_B7_FEMC    = 1<<6
+SIM_B7_WARM    = 1<<7
+SIM_B7_COLD    = 1<<8
+SIM_CRYO_FEMC  = 1<<9  # obsolete, but keeping as a placeholder
+SIM_LOAD       = 1<<10
+SIM_REFERENCE  = 1<<11
+SIM_IFSW_6260  = 1<<12
+SIM_IFSW_6024  = 1<<13
+SIM_PHOTONICS  = 1<<14
+SIM_FEMC       = 1<<15
+SIM_COMPRESSOR = 1<<16
 
 SIM_IFSW = SIM_IFSW_6260 | SIM_IFSW_6024
 
@@ -60,6 +61,7 @@ SIM_IFSW_6260 : "SIM_IFSW_6260",
 SIM_IFSW_6024 : "SIM_IFSW_6024",
 SIM_PHOTONICS : "SIM_PHOTONICS",
 SIM_FEMC      : "SIM_FEMC",
+SIM_COMPRESSOR: "SIM_COMPRESSOR",
 }
 
 str_to_bit_dict = {
@@ -80,6 +82,7 @@ str_to_bit_dict = {
 "SIM_PHOTONICS" : SIM_PHOTONICS,
 "SIM_FEMC"      : SIM_FEMC,
 "SIM_IFSW"      : SIM_IFSW,
+"SIM_COMPRESSOR": SIM_COMPRESSOR,
 }
 
 
