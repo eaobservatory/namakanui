@@ -54,8 +54,8 @@ parser = argparse.ArgumentParser(
     )
 parser.add_argument('band', type=int, choices=bands)
 parser.add_argument('lo_ghz', help='LO GHz range, first:last:step')
-parser.add_argument('lock_side', choices=['below','above'])
 parser.add_argument('att', help='starting attenuation, counts or ini[+offset]')
+parser.add_argument('--lock_side', nargs='?', default='above', choices=['below','above'], help='lock LO above or below reference, default above')
 parser.add_argument('--lock_only', action='store_true', help='skip mixer adjustment')
 args = parser.parse_args()
 
