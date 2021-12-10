@@ -94,7 +94,7 @@ class Lakeshore(object):
             self.s = socket.socket()
             self.s.settimeout(self.timeout)
             self.s.connect((self.ip, self.port))
-            idn = self.send_recv('*IDN?')
+            idn = self.cmd('*IDN?')
             self.log.debug('Lakeshore IDN: %s', idn)
         
         self.update()
@@ -108,7 +108,7 @@ class Lakeshore(object):
         if self.simulate:
             self.state['temp'] = [4.0, 4.0, 15.0, 90.0, 273.0]
         else:
-            krdg = self.send_recv('KRDG? 0')
+            krdg = self.cmd('KRDG? 0')
             self.state['temp'] = [float(x.strip()) for x in krdg.split(',')]
         
         self.state['number'] += 1
@@ -116,38 +116,22 @@ class Lakeshore(object):
         # Lakeshore.update
     
     
-    def clear(self):
-        '''
-        Clear socket buffer, used before sending cmd.
-        This implementation is a bit overwrought, but I don't want to risk
-        similar timeouts as were seen with FEMC.clear().
-        '''
-        self.log.debug('clear')
-        tries = 0
-        r,w,x = select.select([self.s], [], [], 0)
-        while r:
-            try:
-                self.s.recv(1024)
-            except socket.timeout:
-                self.log.debug('clear: recv socket.timeout')
-                tries += 1
-                if tries > 3:
-                    raise
-                time.sleep(.04)  # allow context switch
-            r,w,x = select.select([self.s], [], [], 0)
-        # Lakeshore.clear
-        
-        
-    def send_recv(self, cmd, buffersize=128):
-        '''Clear socket, send cmd and recv reply up to buffersize len.'''
-        self.log.debug('send_recv(%s, %d)', cmd, buffersize)
-        cmd = cmd.strip()
-        if hasattr(cmd, 'encode'):
-            cmd = cmd.encode()  # convert to bytes
-        self.clear()
-        self.s.send(cmd + b'\r\n')
-        reply = self.s.recv(buffersize)
-        return reply.strip().decode()  # convert to str
-        # Lakeshore.send_recv
+    def cmd(self, c):
+        '''Clear socket, send cmd c, and recv reply if "?" in c.'''
+        self.log.debug('cmd(%s)', c)
+        c = c.strip()
+        if hasattr(c, 'encode'):
+            c = c.encode()  # convert to bytes
+        # clear socket buffer
+        while select.select([self.s],[],[],0.0)[0]:
+            self.s.recv(64)
+        self.s.sendall(c + b'\r\n')
+        if b'?' not in c:
+            return
+        r = b''
+        while b'\r\n' not in r:
+            r += self.s.recv(64)
+        return r.strip().decode()  # convert to str
+        # Lakeshore.cmd
         
 
