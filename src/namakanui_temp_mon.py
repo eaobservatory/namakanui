@@ -66,6 +66,8 @@ def publish(name, value):
     and publish on channel with the same name to alert any subscribers.
     '''
     score = float(dt.utcnow().timestamp())
+    # insert score into value to ensure uniqueness
+    value['utc_stamp'] = score
     redis_client.zadd(redis_prefix + name, {json.dumps(value): score})
     redis_client.publish(redis_prefix + name, score)
     

@@ -63,8 +63,10 @@ redis_prefix = ''
 
 def publish(name, value):
     '''Combined publish to both DRAMA and Redis.'''
-    drama.set_param(name, value)
     score = float(dt.utcnow().timestamp())
+    # insert score into value to ensure uniqueness
+    value['utc_stamp'] = score
+    drama.set_param(name, value)
     redis_client.zadd(redis_prefix + name, {json.dumps(value): score})
 
 def redis_callback(fd):
