@@ -82,8 +82,10 @@ def redis_callback(fd):
     # this will trigger for type=subscribe too, which is fine.
     msg = redis_pubsub.get_message()
     while msg:
-        for name in ['LAKESHORE', 'VACUUM']:
+        for name in ['LAKESHORE', 'VACUUM', 'COMPRESSOR']:
             if name in msg['channel']:
+                # NOTE: we publish score as msg['data'], so could use it
+                #       to index the zset instead of just taking highest
                 s = redis_client.zrange(redis_prefix + name, -1, -1)[0]
                 value = json.loads(s)
                 drama.set_param(name, value)
@@ -156,7 +158,9 @@ def INITIALISE(msg):
     redis_client = redis.Redis(host=rconfig['host'], port=int(rconfig['port']),
                                db=int(rconfig['db']), decode_responses=True)
     redis_pubsub = redis_client.pubsub()
-    redis_pubsub.subscribe(redis_prefix + 'LAKESHORE', redis_prefix + 'VACUUM')
+    redis_pubsub.subscribe(redis_prefix + 'LAKESHORE',
+                           redis_prefix + 'VACUUM',
+                           redis_prefix + 'COMPRESSOR')
     drama.register_callback(redis_pubsub.connection._sock, redis_callback)
     
     # (re)initialise the instrument instance

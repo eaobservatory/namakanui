@@ -1,10 +1,16 @@
 #!/local/python3/bin/python3
 '''
-temp_mon.py     RMB 20190827
+namakanui_temp_mon.py     RMB 20190827
 
 Simple temperature monitor for Namakanui cartridges.
 Uses direct FEMC communication instead of Cart class.
 Logs to /jac_logs/namakanui_temp.log.
+
+RMB 20211213: Updates for the GLT.  Since we're not using
+EPICS/engarchive anymore, this script also directly monitors the
+Sumitomo coldhead compressor status, Lakeshore cryostat temperatures,
+and Pfeiffer vacuum gauge.  This is still not a DRAMA task;
+instead, all data is published to the Redis database.
 
 
 Copyright (C) 2020 East Asian Observatory
@@ -25,10 +31,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import jac_sw
 import namakanui.femc
+import namakanui.compressor
+import namakanui.lakeshore
+import namakanui.pfeiffer
 import namakanui.util
-import epics
+import redis
+import json
 import time
-import datetime
+from datetime import datetime as dt
 import logging
 import sys
 
@@ -36,14 +46,37 @@ import sys
 if sys.stdout.isatty():
     namakanui.util.setup_logging()
 
-binpath, datapath = namakanui.util.get_paths()
-femc = namakanui.femc.FEMC(datapath+'femc.ini', time.sleep, namakanui.nop)
+config = namakanui.util.get_config('temp_mon.ini')
+
+# TODO: do we still even want this file output?
+#       should it also include other hw status?
 filename = '/jac_logs/namakanui_temp.log'
 logfile = open(filename, 'a')
 logging.info('logging to file %s', filename)
 
+# connect to redis database
+rconfig = config['redis']
+redis_client = redis.Redis(host=rconfig['host'], port=int(rconfig['port']),
+                           db=int(rconfig['db']), decode_responses=True)
+redis_prefix = rconfig['prefix']
+
+def publish(name, value):
+    '''
+    Update Redis database.  Add value to zset with score=utcnow,
+    and publish on channel with the same name to alert any subscribers.
+    '''
+    score = float(dt.utcnow().timestamp())
+    redis_client.zadd(redis_prefix + name, {json.dumps(value): score})
+    redis_client.publish(redis_prefix + name, score)
+    
+# create hardware instances
+compressor = namakanui.compressor.Compressor(config, time.sleep, publish)
+lakeshore = namakanui.lakeshore.Lakeshore(config, time.sleep, publish)
+vacuum = namakanui.pfeiffer.Pfeiffer(config, time.sleep, publish)
+
+femc = namakanui.femc.FEMC(config, time.sleep, namakanui.nop)
+
 # power up the cartridges.
-# note this will skip demag/deflux by a later Cart instance.
 # TODO get bands from config
 logging.info('enabling (powering up) cartridges...')
 for ca in [2,5,6]:
@@ -56,29 +89,28 @@ for ca in [2,5,6]:
 logging.info('sleeping 2s...')
 time.sleep(2)
 
-logfile.write('#hst ')
+logfile.write('#utc ')
 logfile.write('b3_pll b3_110k b3_p01 b3_15k b3_wca ')
 logfile.write('b6_pll b6_4k b6_110k b6_p0 b6_15k b6_p1 ')
 logfile.write('b7_pll b7_4k b7_110k b7_p0 b7_15k b7_p1\n')
 logfile.flush()
 
-# NOTE 20200228: In our version of pyepics,
-# caput doesn't return a value or raise errors on failure.  best effort only
-epics_timeout = 1.0
+
 
 while True:
-    d = datetime.datetime.now()
+    d = dt.utcnow()
     logstr = '%s '%(d.isoformat(timespec='seconds'))
     logging.info('')
     logging.info(d)
+    tdict = {}
     for ca in [2,5,6]:
         pll = femc.get_cartridge_lo_pll_assembly_temp(ca)
         pll += 273.15
         logstr += '%.3f '%(pll)
         recname = 'b%d_pll'%(ca+1)
+        tdict[recname] = pll
         logging.info('')
         logging.info('%-7s: %7.3f K' % (recname, pll))
-        epics.caput('nmnCryo:'+recname+'.VAL', pll, timeout=epics_timeout)
         tnames = ['4k', '110k', 'p0', 'spare', '15k', 'p1']
         if ca == 2:
             tnames = ['spare', '110k', 'p01', 'spare', '15k', 'wca']
@@ -88,12 +120,18 @@ while True:
             t = femc.get_cartridge_lo_cartridge_temp(ca, i)
             logstr += '%.3f '%(t)
             recname = 'b%d_%s'%(ca+1,tname)
+            tdict[recname] = t
             logging.info('%-7s: %7.3f K' % (recname, t))
-            epics.caput('nmnCryo:'+recname+'.VAL', t, timeout=epics_timeout)
     logstr += '\n'
     logfile.write(logstr)
     logfile.flush()
     logging.info('')
+    publish('BANDTEMPS', tdict)
+    
+    compressor.update()
+    lakeshore.update()
+    vacuum.update()
+    
     time.sleep(60.0)
 
 

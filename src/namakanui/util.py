@@ -68,10 +68,10 @@ def get_paths():
     # get_paths
 
 
-def get_config():
-    '''Return the complete instrument.ini ConfigParser instance.'''
+def get_config(filename='instrument.ini'):
+    '''Return an IncludeParser instance for given filename.'''
     binpath, datapath = get_paths()
-    return namakanui.ini.IncludeParser(datapath + 'instrument.ini')
+    return namakanui.ini.IncludeParser(datapath + filename)
     # get_config
 
 
