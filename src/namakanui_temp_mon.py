@@ -80,12 +80,15 @@ femc = namakanui.femc.FEMC(config, time.sleep, namakanui.nop)
 
 # power up the cartridges.
 # TODO get bands from config
-logging.info('enabling (powering up) cartridges...')
-for ca in [2,5,6]:
-    if not femc.get_pd_enable(ca):
-        print('enabling band %d...'%(ca+1))
-        femc.set_pd_enable(ca, 1)
-        time.sleep(1)  # still not sure exactly how long we need to sleep here
+if femc.simulate:
+    logging.info('femc simulated, skipping cartridge power-up.')
+else:
+    logging.info('enabling (powering up) cartridges...')
+    for ca in [2,5,6]:
+        if not femc.get_pd_enable(ca):
+            logging.info('enabling band %d...'%(ca+1))
+            femc.set_pd_enable(ca, 1)
+            time.sleep(1)  # still not sure exactly how long we need to sleep here
 
 # 20200103: added this sleep to avoid -5 errors from b7 CC.
 logging.info('sleeping 2s...')
@@ -97,8 +100,6 @@ logfile.write('b6_pll b6_4k b6_110k b6_p0 b6_15k b6_p1 ')
 logfile.write('b7_pll b7_4k b7_110k b7_p0 b7_15k b7_p1\n')
 logfile.flush()
 
-
-
 while True:
     d = dt.utcnow()
     logstr = '%s '%(d.isoformat(timespec='seconds'))
@@ -106,7 +107,10 @@ while True:
     logging.info(d)
     tdict = {}
     for ca in [2,5,6]:
-        pll = femc.get_cartridge_lo_pll_assembly_temp(ca)
+        if femc.simulate:
+            pll = 0.0
+        else:
+            pll = femc.get_cartridge_lo_pll_assembly_temp(ca)
         pll += 273.15
         logstr += '%.3f '%(pll)
         recname = 'b%d_pll'%(ca+1)
@@ -119,7 +123,10 @@ while True:
         for i,tname in enumerate(tnames):
             if tname == 'spare':
                 continue
-            t = femc.get_cartridge_lo_cartridge_temp(ca, i)
+            if femc.simulate:
+                t = 0.0
+            else:
+                t = femc.get_cartridge_lo_cartridge_temp(ca, i)
             logstr += '%.3f '%(t)
             recname = 'b%d_%s'%(ca+1,tname)
             tdict[recname] = t
