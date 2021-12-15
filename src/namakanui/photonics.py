@@ -132,7 +132,8 @@ class Photonics(object):
         att = 0
         for i,b in enumerate(self.state['DO']):
             # TODO account for if len(DO) > self.nbits?
-            att |= (b << i)
+            # invert sense of output bits for GLT
+            att |= ((1-b) << i)
         self.state['attenuation'] = att
         
         if do_publish:
@@ -151,10 +152,10 @@ class Photonics(object):
         if att > self.max_att:
             att = self.max_att
         
-        # TODO sense, order of bits
+        # invert sense of output bits for GLT
         DO = [0]*self.adam_bits
         for i in range(len(DO)):
-            DO[i] = (att >> i) & 1
+            DO[i] = 1 - ((att >> i) & 1)
         
         if self.simulate & sim.SIM_PHOTONICS:
             self.state['DO'] = DO
