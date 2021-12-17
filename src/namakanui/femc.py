@@ -53,6 +53,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from namakanui.ini import *
 from namakanui import sim
+import namakanui.util
 
 import sys
 import socket
@@ -252,13 +253,17 @@ _lpr_edfa_driver_state = 0xd03c  # temperature alarm
 
 class FEMC(object):
     
-    def __init__(self, inifile, sleep, publish, simulate=0, level=logging.INFO):
+    def __init__(self, inifile=None, sleep=time.sleep, publish=namakanui.nop, simulate=0, level=logging.INFO):
         '''Arguments:
             inifile: Path to config file or IncludeParser instance.
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
             simulate: Mask, bitwise ORed with config settings.
+            level: Logging level, default INFO.
         '''
+        if inifile is None:
+            binpath, datapath = namakanui.util.get_paths()
+            inifile = datapath + 'femc.ini'
         self.config = inifile
         if not hasattr(inifile, 'items'):
             self.config = IncludeParser(inifile)
