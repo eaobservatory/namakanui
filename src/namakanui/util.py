@@ -56,14 +56,16 @@ def get_paths():
     else:
         binpath = os.path.realpath('') + '/'
     # crawl up parent directories looking for data dir
-    crawl = binpath[:-1]
+    #crawl = binpath[:-1]
+    modpath = os.path.dirname(__file__)
+    crawl = modpath
     while crawl:
         datapath = crawl + '/data/'
         if os.path.exists(datapath):
             break
         crawl = crawl.rpartition('/')[0]
     if not crawl:  # we don't accept /data at root
-        raise RuntimeError('no data path found from bin path %s'%(binpath))
+        raise RuntimeError('no data path found from module path %s'%(modpath))
     return binpath, datapath
     # get_paths
 
