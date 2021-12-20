@@ -236,10 +236,11 @@ class Cart(object):
         #if self.state['pd_enable']:
         #    self._calc_sis_bias_error()
         
-        # if config has a lock_side parameter, set it now
+        # if config has a lock_side parameter, save it now.
+        # it will be used as a default on first call to set_lock_side().
+        self.default_lock_side = None
         if 'lock_side' in self.config[str(self.band)]:
-            lock_side = self.config[str(self.band)]['lock_side']
-            self.set_lock_side(lock_side)
+            self.default_lock_side = self.config[str(self.band)]['lock_side']
         
         # publish state
         self.state['number'] += 1
@@ -1434,11 +1435,14 @@ class Cart(object):
         Argument lock_side:
             0 or "below": lock below reference
             1 or "above": lock above reference
-            None: no change
+            None: use value from config on first call,
+                  no change on subsequent calls
         Updates state but does not publish.
         Does nothing if lock_side already matches state[pll_sb_lock],
         which is kept updated by the update_b function.
         '''
+        lock_side = lock_side or self.default_lock_side
+        self.default_lock_side = None  # use for first call only
         if lock_side is None:
             lock_side = self.state['pll_sb_lock']
         else:
