@@ -213,8 +213,10 @@ class Instrument(object):
         for cart in self.carts.values():
             cart.zero()
             cart.update_all()
-        # check FLOOG power to make sure band is selected
+        # enable cart power for the FLOOG check below
         cart = self.carts[band]
+        cart.power(1)
+        # check FLOOG power to make sure band is really selected
         if cart.state['pd_enable'] and not cart.sim_warm:
             rp = cart.state['pll_ref_power']
             if rp < -3.0:
