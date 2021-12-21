@@ -468,11 +468,13 @@ class Cart(object):
         NOTE: Normal order is  [4K, 110K, P0,  -1, 15K, P1]
               but for band3 is [-1, 110K, P01, -1, 15K, WCA]
               where the P01 mixers are in the 15K stage.
+        
+        GLT:  Band6 order is   [4K, 110K, -1,  P0, 15K, P1]
         '''
         cart_temp = self.state['cart_temp']
         if self.band == 3:
             return any(not 0.0 < cart_temp[te] < 30.0 for te in [2,4])
-        return any(not 0.0 < cart_temp[te] < 30.0 for te in [0,2,4,5])
+        return any(not 0.0 < cart_temp[te] < 30.0 for te in [0,3,4,5])
     
     
     def has_sis_mixers(self):

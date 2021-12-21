@@ -117,7 +117,8 @@ while True:
         tdict[recname] = pll
         logging.info('')
         logging.info('%-7s: %7.3f K' % (recname, pll))
-        tnames = ['4k', '110k', 'p0', 'spare', '15k', 'p1']
+        # RMB 20211220: B6 readout order is different at GLT
+        tnames = ['4k', '110k', 'spare', 'p0', '15k', 'p1']
         if ca == 2:
             tnames = ['spare', '110k', 'p01', 'spare', '15k', 'wca']
         for i,tname in enumerate(tnames):

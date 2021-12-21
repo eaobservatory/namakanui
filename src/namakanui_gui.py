@@ -460,8 +460,9 @@ class BandFrame(tk.Frame):
         self.band = int(band)
         self.master = master
         # RMB 20211123: b6 p0 is always just above 5; raise p tokay a little
-        self.tnames = ['4k', '110k', 'p0', 'spare', '15k', 'p1']
-        self.tokay = [(0,5), (70,115), (0,5.5), (-2,2), (5,30), (0,5.5)]
+        # RMB 20211220: b6 temperature order is different at the GLT
+        self.tnames = ['4k', '110k', 'spare', 'p0', '15k', 'p1']
+        self.tokay = [(0,5), (70,115), (-2,2), (0,5.5), (5,30), (0,5.5)]
         if self.band == 3:
             self.tnames = ['spare', '110k', 'p01', 'spare', '15k', 'wca']
             self.tokay = [(-2,2), (70,115), (0,30), (-2,2), (0,30), (253,323)]
