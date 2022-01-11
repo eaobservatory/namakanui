@@ -55,6 +55,13 @@ class Lakeshore(object):
         self.port = int(myconfig['port'])
         self.timeout = float(myconfig['timeout'])  # seconds
         
+        self.gpib = False
+        if 'gpib_addr' in myconfig:
+            # using Prologix GPIB-LAN converter
+            self.gpib = True
+            self.gpib_addr = int(myconfig['gpib_addr'])
+            self.gpib_tmo_ms = int(myconfig['gpib_tmo_ms'])
+        
         # create socket here so close() always works
         self.s = socket.socket()
         
@@ -94,6 +101,22 @@ class Lakeshore(object):
             self.s = socket.socket()
             self.s.settimeout(self.timeout)
             self.s.connect((self.ip, self.port))
+            
+            if self.gpib:
+                # Set mode as CONTROLLER
+                self.s.sendall(b'++mode 1\n')
+                # Set Lakeshore GPIB address
+                self.s.sendall(b'++addr %d\n'%(self.gpib_addr))
+                # Turn off read-after-write
+                self.s.sendall(b'++auto 0\n')
+                # Set read timeout in milliseconds
+                self.s.sendall(b'++read_tmo_ms %d\n'%(self.gpib_tmo_ms))
+                # Do not append CR or LF to GPIB data
+                self.s.sendall(b'++eos 3\n')
+                # Assert EOI with last byte to indicate end of data
+                self.s.sendall(b'++eoi 1\n')
+            
+            self.cmd('*CLS')
             idn = self.cmd('*IDN?')
             self.log.debug('Lakeshore IDN: %s', idn)
         
@@ -124,13 +147,16 @@ class Lakeshore(object):
             c = c.encode()  # convert to bytes
         # clear socket buffer
         while select.select([self.s],[],[],0.0)[0]:
-            self.s.recv(64)
+            self.s.recv(4096)
         self.s.sendall(c + b'\r\n')
         if b'?' not in c:
             return
+        if self.gpib:
+            self.s.sendall(b'++read eoi\n')  # read GPIB reply
         r = b''
         while b'\r\n' not in r:
-            r += self.s.recv(64)
+            r += self.s.recv(4096)
+        self.log.debug('cmd: %s; reply: %s', c, r)
         return r.strip().decode()  # convert to str
         # Lakeshore.cmd
         
