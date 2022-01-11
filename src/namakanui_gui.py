@@ -235,6 +235,39 @@ class VacuumFrame(tk.Frame):
     # VacuumFrame
 
 
+class CompressorFrame(tk.Frame):
+    def __init__(self, master=None):
+        super().__init__(master)
+        self.master = master
+        self.setup()
+    
+    def setup(self):
+        self.pack(fill='x')
+        self.connected = grid_label(self, 'connected', 0, label=True)
+        self.connected.set('NO', False)
+        self.v_number = grid_label(self, 'number', 1)
+        self.v_simulate = grid_label(self, 'simulate', 2)  # TODO sim_text as tooltip
+        self.v_pressure_alarm = grid_label(self, 'pressure_alarm', 3)
+        self.v_temp_alarm = grid_label(self, 'temp_alarm', 4)
+        self.v_drive_operating = grid_label(self, 'drive_operating', 5)
+        self.v_main_power_sw = grid_label(self, 'main_power_sw', 6)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(6, weight=1)
+    
+    def mon_changed(self, state):
+        self.connected.set("YES")
+        self.connected.bg('green')
+        self.v_number.set('%d'%(state['number']))
+        self.v_simulate.set('0x%x'%(state['simulate']), state['simulate']==0)  # TODO tooltip
+        self.v_pressure_alarm.set(state['pressure_alarm'], state['pressure_alarm']==0)
+        self.v_temp_alarm.set(state['temp_alarm'], state['temp_alarm']==0)
+        self.v_drive_operating.set(state['drive_operating'], state['drive_operating'])
+        self.v_main_power_sw.set(state['main_power_sw'], state['main_power_sw'])
+    
+    # CompressorFrame
+
+
 class LoadFrame(tk.Frame):
     def __init__(self, master=None):
         super().__init__(master)
@@ -840,6 +873,7 @@ class App(tk.Frame):
         self.retry_photonics = drama.retry.RetryMonitor(namakanui_taskname, 'PHOTONICS')
         self.retry_ifswitch = drama.retry.RetryMonitor(namakanui_taskname, 'IFSWITCH')
         self.retry_vacuum = drama.retry.RetryMonitor(namakanui_taskname, 'VACUUM')
+        self.retry_compressor = drama.retry.RetryMonitor(namakanui_taskname, 'COMPRESSOR')
         self.retry_lakeshore = drama.retry.RetryMonitor(namakanui_taskname, 'LAKESHORE')
         self.retry_b3 = drama.retry.RetryMonitor(namakanui_taskname, 'BAND3')
         self.retry_b6 = drama.retry.RetryMonitor(namakanui_taskname, 'BAND6')
@@ -870,6 +904,12 @@ class App(tk.Frame):
         vacuum_parent = tk.LabelFrame(c0, text='VACUUM')
         vacuum_parent.pack(fill='x')
         self.vacuum_frame = VacuumFrame(vacuum_parent)
+        
+        tk.Label(c0, text=' ').pack()  # spacer
+        
+        compressor_parent = tk.LabelFrame(c0, text='COMPRESSOR')
+        compressor_parent.pack(fill='x')
+        self.compressor_frame = CompressorFrame(compressor_parent)
         
         tk.Label(c0, text=' ').pack()  # spacer
         
@@ -965,6 +1005,9 @@ class App(tk.Frame):
         if updating and self.retry_vacuum.handle(msg):
             self.vacuum_frame.mon_changed(msg.arg)
         
+        if updating and self.retry_compressor.handle(msg):
+            self.compressor_frame.mon_changed(msg.arg)
+        
         if updating and self.retry_lakeshore.handle(msg):
             self.lakeshore_frame.mon_changed(msg.arg)
         
@@ -987,6 +1030,9 @@ class App(tk.Frame):
         if not updating or not self.retry_vacuum.connected:
             self.vacuum_frame.connected['text'] = "NO"
             self.vacuum_frame.connected['bg'] = 'red'
+        if not updating or not self.retry_compressor.connected:
+            self.compressor_frame.connected['text'] = "NO"
+            self.compressor_frame.connected['bg'] = 'red'
         if not updating or not self.retry_lakeshore.connected:
             self.lakeshore_frame.connected['text'] = "NO"
             self.lakeshore_frame.connected['bg'] = 'red'
