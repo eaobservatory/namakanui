@@ -43,6 +43,7 @@ SIM_FEMC       = 1<<15
 SIM_COMPRESSOR = 1<<16
 SIM_LAKESHORE  = 1<<17
 SIM_VACUUM     = 1<<18
+SIM_STSR       = 1<<19
 
 SIM_IFSW = SIM_IFSW_6260 | SIM_IFSW_6024
 
@@ -66,6 +67,7 @@ SIM_FEMC      : "SIM_FEMC",
 SIM_COMPRESSOR: "SIM_COMPRESSOR",
 SIM_LAKESHORE : "SIM_LAKESHORE",
 SIM_VACUUM    : "SIM_VACUUM",
+SIM_STSR      : "SIM_STSR",
 }
 
 str_to_bit_dict = {
@@ -89,6 +91,7 @@ str_to_bit_dict = {
 "SIM_COMPRESSOR": SIM_COMPRESSOR,
 "SIM_LAKESHORE" : SIM_LAKESHORE,
 "SIM_VACUUM"    : SIM_VACUUM,
+"SIM_STSR"      : SIM_STSR,
 }
 
 
@@ -126,7 +129,7 @@ def str_to_bits(s):
 def other_bands(band):
     '''Return SIM_FEMC mask for other bands.'''
     sim_femc_bits = {3:SIM_B3_FEMC, 6:SIM_B6_FEMC, 7:SIM_B7_FEMC}
-    if band in cart_sim:
+    if band in sim_femc_bits:
         del sim_femc_bits[band]
     else:
         sim_femc_bits[0] = SIM_FEMC  # invalid band given, so sim FEMC too
