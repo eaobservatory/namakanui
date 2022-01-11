@@ -165,37 +165,33 @@ class CryoFrame(tk.Frame):
     
     def setup(self):
         self.pack(fill='x')
-        self.edwards = grid_label(self, 'edwards', 0, label=True)
-        self.edwards.set('NO', False)
-        #self.edwards.bg('red')
-        #tk.Label(self, text='edwards').grid(row=0, column=0, sticky='nw')
-        #self.edwards = tk.Label(self, text="NO", bg='red')
-        #self.edwards.grid(row=0, column=1, sticky='ne')
-        tk.Label(self, text='lakeshore').grid(row=1, column=0, sticky='nw')
-        self.lakeshore = tk.Label(self, text="NO", bg='red')
-        self.lakeshore.grid(row=1, column=1, sticky='ne')
+        self.vacuum = grid_label(self, 'pfeiffer', 0, label=True)
+        self.vacuum.set('NO', False)
+        self.lakeshore = grid_label(self, 'lakeshore', 1, label=True)
+        self.lakeshore.set('NO', False)
         self.v_vacuum_unit = grid_value(self, 2, 0, 'nw', label=True)
         self.v_vacuum_s1 = grid_value(self, 2, 1, 'ne')
-        self.v_temp1 = grid_label(self, 'coldhead', 3)
-        self.v_temp2 = grid_label(self, '4K', 4)
-        self.v_temp3 = grid_label(self, '15K', 5)
-        self.v_temp4 = grid_label(self, '90K', 6)
+        self.v_vacuum_status = grid_label(self, 'vsensor', 3)
+        self.v_temp1 = grid_label(self, 'coldhead', 4)
+        self.v_temp2 = grid_label(self, '4K', 5)
+        self.v_temp3 = grid_label(self, '15K', 6)
+        self.v_temp4 = grid_label(self, '90K', 7)
+        self.v_temp5 = grid_label(self, 'load', 8)
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(6, weight=1)
+        self.grid_rowconfigure(8, weight=1)
     
     def vacuum_changed(self, state):
         #print(state)
         #print(type(self.v_vacuum_unit))
-        #self.edwards['text'] = "YES"
-        #self.edwards['bg'] = 'green'
-        self.edwards.set("YES")
-        self.edwards.bg('green')
+        self.vacuum.set("YES")
+        self.vacuum.bg('green')
         pressure_unit = state['unit']
         if not pressure_unit or pressure_unit == 'none':
             pressure_unit = 'pressure'
         self.v_vacuum_unit.set(pressure_unit)
         self.v_vacuum_s1.set(state['s1'])
+        self.v_vacuum_status.set(state['status'], state['status'] == 'okay')
         try:
             s1 = float(state['s1'])
             if not 0.0 < s1 < 1e-6:
@@ -207,12 +203,15 @@ class CryoFrame(tk.Frame):
     def lakeshore_changed(self, state):
         #print(state)
         #print(type(self.v_temp1))
-        self.lakeshore['text'] = "YES"
-        self.lakeshore['bg'] = 'green'
-        self.v_temp1.set('%.3f'%(state['temp1']), 0.0 < state['temp1'] < 4.0)
-        self.v_temp2.set('%.3f'%(state['temp2']), 0.0 < state['temp2'] < 5.0)
-        self.v_temp3.set('%.3f'%(state['temp3']), 0.0 < state['temp3'] < 25.0)
-        self.v_temp4.set('%.3f'%(state['temp4']), 0.0 < state['temp4'] < 115.0)
+        self.lakeshore.set("YES")
+        self.lakeshore.bg('green')
+        temp = state['temp']  # list
+        self.v_temp1.set('%.3f'%(temp[0]), 0.0 < temp[0] < 5.0)
+        self.v_temp2.set('%.3f'%(temp[1]), 0.0 < temp[1] < 5.0)
+        self.v_temp3.set('%.3f'%(temp[2]), 0.0 < temp[2] < 25.0)
+        self.v_temp4.set('%.3f'%(temp[3]), 0.0 < temp[3] < 115.0)
+        if len(temp) > 4:
+            self.v_temp5.set('%.3f'%(temp[4]), 0.0 < temp[4] < 374.0)
 
 
 class LoadFrame(tk.Frame):
@@ -959,8 +958,8 @@ class App(tk.Frame):
             
         # set disconnected indicators on all frames
         if not updating or not self.retry_vacuum.connected:
-            self.cryo_frame.edwards['text'] = "NO"
-            self.cryo_frame.edwards['bg'] = 'red'
+            self.cryo_frame.vacuum['text'] = "NO"
+            self.cryo_frame.vacuum['bg'] = 'red'
         if not updating or not self.retry_lakeshore.connected:
             self.cryo_frame.lakeshore['text'] = "NO"
             self.cryo_frame.lakeshore['bg'] = 'red'
