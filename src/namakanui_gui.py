@@ -155,9 +155,9 @@ def grid_label(parent, text, row, width=8, label=False):
     '''
     tk.Label(parent, text=text).grid(row=row, column=0, sticky='nw')
     return grid_value(parent, row=row, column=1, sticky='ne', width=width, label=label)
-    
 
-class CryoFrame(tk.Frame):
+
+class LakeshoreFrame(tk.Frame):
     def __init__(self, master=None):
         super().__init__(master)
         self.master = master
@@ -165,27 +165,59 @@ class CryoFrame(tk.Frame):
     
     def setup(self):
         self.pack(fill='x')
-        self.vacuum = grid_label(self, 'pfeiffer', 0, label=True)
-        self.vacuum.set('NO', False)
-        self.lakeshore = grid_label(self, 'lakeshore', 1, label=True)
-        self.lakeshore.set('NO', False)
-        self.v_vacuum_unit = grid_value(self, 2, 0, 'nw', label=True)
-        self.v_vacuum_s1 = grid_value(self, 2, 1, 'ne')
-        self.v_vacuum_status = grid_label(self, 'vsensor', 3)
-        self.v_temp1 = grid_label(self, 'coldhead', 4)
-        self.v_temp2 = grid_label(self, '4K', 5)
-        self.v_temp3 = grid_label(self, '15K', 6)
-        self.v_temp4 = grid_label(self, '90K', 7)
-        self.v_temp5 = grid_label(self, 'load', 8)
+        self.connected = grid_label(self, 'connected', 0, label=True)
+        self.connected.set('NO', False)
+        self.v_number = grid_label(self, 'number', 1)
+        self.v_simulate = grid_label(self, 'simulate', 2)  # TODO sim_text as tooltip
+        self.v_temp1 = grid_label(self, 'coldhead', 3)
+        self.v_temp2 = grid_label(self, '4K', 4)
+        self.v_temp3 = grid_label(self, '15K', 5)
+        self.v_temp4 = grid_label(self, '90K', 6)
+        self.v_temp5 = grid_label(self, 'load', 7)
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(8, weight=1)
+        self.grid_rowconfigure(7, weight=1)
     
-    def vacuum_changed(self, state):
-        #print(state)
-        #print(type(self.v_vacuum_unit))
-        self.vacuum.set("YES")
-        self.vacuum.bg('green')
+    def mon_changed(self, state):
+        self.connected.set("YES")
+        self.connected.bg('green')
+        self.v_number.set('%d'%(state['number']))
+        self.v_simulate.set('0x%x'%(state['simulate']), state['simulate']==0)  # TODO tooltip
+        temp = state['temp']  # list
+        self.v_temp1.set('%.3f'%(temp[0]), 0.0 < temp[0] < 5.0)
+        self.v_temp2.set('%.3f'%(temp[1]), 0.0 < temp[1] < 5.0)
+        self.v_temp3.set('%.3f'%(temp[2]), 0.0 < temp[2] < 25.0)
+        self.v_temp4.set('%.3f'%(temp[3]), 0.0 < temp[3] < 115.0)
+        if len(temp) > 4:
+            self.v_temp5.set('%.3f'%(temp[4]), 0.0 < temp[4] < 374.0)
+    
+    # LakeshoreFrame
+
+
+class VacuumFrame(tk.Frame):
+    def __init__(self, master=None):
+        super().__init__(master)
+        self.master = master
+        self.setup()
+    
+    def setup(self):
+        self.pack(fill='x')
+        self.connected = grid_label(self, 'connected', 0, label=True)
+        self.connected.set('NO', False)
+        self.v_number = grid_label(self, 'number', 1)
+        self.v_simulate = grid_label(self, 'simulate', 2)  # TODO sim_text as tooltip
+        self.v_vacuum_unit = grid_value(self, 3, 0, 'nw', label=True)
+        self.v_vacuum_s1 = grid_value(self, 3, 1, 'ne')
+        self.v_vacuum_status = grid_label(self, 'vsensor', 4)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(4, weight=1)
+    
+    def mon_changed(self, state):
+        self.connected.set("YES")
+        self.connected.bg('green')
+        self.v_number.set('%d'%(state['number']))
+        self.v_simulate.set('0x%x'%(state['simulate']), state['simulate']==0)  # TODO tooltip
         pressure_unit = state['unit']
         if not pressure_unit or pressure_unit == 'none':
             pressure_unit = 'pressure'
@@ -200,18 +232,7 @@ class CryoFrame(tk.Frame):
         except (ValueError, TypeError):
             self.v_vacuum_s1.bg('red')
     
-    def lakeshore_changed(self, state):
-        #print(state)
-        #print(type(self.v_temp1))
-        self.lakeshore.set("YES")
-        self.lakeshore.bg('green')
-        temp = state['temp']  # list
-        self.v_temp1.set('%.3f'%(temp[0]), 0.0 < temp[0] < 5.0)
-        self.v_temp2.set('%.3f'%(temp[1]), 0.0 < temp[1] < 5.0)
-        self.v_temp3.set('%.3f'%(temp[2]), 0.0 < temp[2] < 25.0)
-        self.v_temp4.set('%.3f'%(temp[3]), 0.0 < temp[3] < 115.0)
-        if len(temp) > 4:
-            self.v_temp5.set('%.3f'%(temp[4]), 0.0 < temp[4] < 374.0)
+    # VacuumFrame
 
 
 class LoadFrame(tk.Frame):
@@ -846,9 +867,15 @@ class App(tk.Frame):
         #nam_frame = tk.Frame(task_frame)
         #nam_frame.pack(side='left', fill='y')
         
-        cryo_parent = tk.LabelFrame(c0, text='CRYO')
-        cryo_parent.pack(fill='x')
-        self.cryo_frame = CryoFrame(cryo_parent)
+        vacuum_parent = tk.LabelFrame(c0, text='VACUUM')
+        vacuum_parent.pack(fill='x')
+        self.vacuum_frame = VacuumFrame(vacuum_parent)
+        
+        tk.Label(c0, text=' ').pack()  # spacer
+        
+        lakeshore_parent = tk.LabelFrame(c0, text='LAKESHORE')
+        lakeshore_parent.pack(fill='x')
+        self.lakeshore_frame = LakeshoreFrame(lakeshore_parent)
         
         tk.Label(c0, text=' ').pack()  # spacer
         
@@ -936,10 +963,10 @@ class App(tk.Frame):
                 pass  # for other errors, handle() as usual
         
         if updating and self.retry_vacuum.handle(msg):
-            self.cryo_frame.vacuum_changed(msg.arg)
+            self.vacuum_frame.mon_changed(msg.arg)
         
         if updating and self.retry_lakeshore.handle(msg):
-            self.cryo_frame.lakeshore_changed(msg.arg)
+            self.lakeshore_frame.mon_changed(msg.arg)
         
         if updating and self.retry_load.handle(msg):
             self.load_frame.mon_changed(msg.arg)
@@ -958,11 +985,11 @@ class App(tk.Frame):
             
         # set disconnected indicators on all frames
         if not updating or not self.retry_vacuum.connected:
-            self.cryo_frame.vacuum['text'] = "NO"
-            self.cryo_frame.vacuum['bg'] = 'red'
+            self.vacuum_frame.connected['text'] = "NO"
+            self.vacuum_frame.connected['bg'] = 'red'
         if not updating or not self.retry_lakeshore.connected:
-            self.cryo_frame.lakeshore['text'] = "NO"
-            self.cryo_frame.lakeshore['bg'] = 'red'
+            self.lakeshore_frame.connected['text'] = "NO"
+            self.lakeshore_frame.connected['bg'] = 'red'
         if not updating or not self.retry_load.connected:
             self.load_frame.connected['text'] = "NO"
             self.load_frame.connected['bg'] = 'red'
