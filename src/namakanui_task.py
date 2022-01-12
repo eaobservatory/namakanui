@@ -255,7 +255,7 @@ def UPDATE_BAND(msg):
     '''Update currently-selected band with 5s period.'''
     delay = 1.5
     try:
-        band = instrument.ifswitch.get_band()
+        band = instrument.stsr.state['band']
         if band in instrument.carts:
             cart = instrument.carts[band]
             nfuncs = len(cart.update_functions)
@@ -329,7 +329,7 @@ def set_band_args(band):
     return int(band)
 
 def SET_BAND(msg):
-    '''Set IFSwitch to given band.  If this would change the selection,
+    '''Set STSR to given band.  If this would change the selection,
        sets reference signal to a safe level to avoid high power to mixer.'''
     log.debug('SET_BAND(%s)', msg.arg)
     check_init()

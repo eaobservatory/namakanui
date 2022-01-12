@@ -50,7 +50,7 @@ args = parser.parse_args()
 band = args.band
 
 # no need for lock or load, and we don't care about zeroing other carts
-sim_mask = SIM_LOAD | SIM_IFSW | sim.other_bands(band)
+sim_mask = SIM_LOAD | SIM_STSR | sim.other_bands(band)
 instrument = namakanui.instrument.Instrument(config, simulate=sim_mask)
 instrument.set_safe()
 cart = instrument.carts[band]

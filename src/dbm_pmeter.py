@@ -5,9 +5,9 @@ dbm_pmeter.py   RMB 20200715
 Set synthesizer to a range of values and check power via an N1913A power meter.
 Writes table to stdout; use 'tee' to monitor output progress.
 
-NOTE: This script does not normally set the IF Switch, since it's assumed
+NOTE: This script does not normally set the STSR, since it's assumed
 that we're running in a nonstandard configuration.  If needed,
-use the optional [--ifswitch] argument.
+use the optional [--stsr] argument.
 
 This script runs in three different modes:
 
@@ -77,7 +77,7 @@ parser.add_argument('--pa', nargs='?', default='', help='PA range for tuning')
 parser.add_argument('--pol', nargs='?', type=int, choices=[0,1], help='which polarization (other is set to zero)')
 parser.add_argument('--if_ghz', nargs='?', type=float, default=0.0, help='pmeter frequency')
 parser.add_argument('--lock_side', nargs='?', choices=['below','above'], default='above')
-parser.add_argument('--ifswitch', nargs='?', type=int, default=0, choices=bands, help='set ifswitch to given band')
+parser.add_argument('--stsr', nargs='?', type=int, default=0, choices=bands, help='set stsr to given band')
 parser.add_argument('--note', nargs='?', default='', help='note for file header')
 args = parser.parse_args()
 
@@ -88,18 +88,18 @@ sys.stdout.flush()
 
 pmeter = namakanui.pmeter.PMeter(config, time.sleep, namakanui.nop)
 
-sim_ifsw = sim.SIM_IFSW
-if args.band or args.ifswitch:
-    sim_ifswitch = 0
+sim_stsr = sim.SIM_STSR
+if args.band or args.stsr:
+    sim_stsr = 0
 
-sim_mask = sim.SIM_LOAD | sim_ifsw | sim.other_bands(args.band)
+sim_mask = sim.SIM_LOAD | sim_stsr | sim.other_bands(args.band)
 instrument = namakanui.instrument.Instrument(config, simulate=sim_mask)
 instrument.set_safe()
 reference = instrument.reference
 reference.set_output(1)
 
-if args.ifswitch:
-    instrument.set_band(args.ifswitch)
+if args.stsr:
+    instrument.set_band(args.stsr)
 
 
 if args.band:

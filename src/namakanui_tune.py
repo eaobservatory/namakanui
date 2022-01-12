@@ -151,7 +151,7 @@ def tune(instrument, band, lo_ghz, voltage=0.0,
     pll_range.reverse()
     log.info('pll_if: [%.2f, %.2f]', pll_range[0], pll_range[1])
     
-    # set ifswitch; will raise if band is invalid
+    # set STSR; will raise if band is invalid
     instrument.set_band(band)
     
     cart = instrument.carts[band]

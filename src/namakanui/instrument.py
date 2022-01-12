@@ -28,7 +28,7 @@ import time
 import namakanui.reference
 import namakanui.cart
 import namakanui.femc
-import namakanui.ifswitch
+import namakanui.stsr
 import namakanui.load
 import namakanui.photonics
 import namakanui.util
@@ -47,7 +47,7 @@ class Instrument(object):
             simulate: Mask, bitwise ORed with config settings.
             level: Logging level, passed on to component instances.
                    Can also be a dict with the following keys:
-                        default, instrument, reference, photonics, ifswitch, load, femc, bandX
+                        default, instrument, reference, photonics, stsr, load, femc, bandX
         '''
         self.sleep = sleep
         self.publish = publish
@@ -79,7 +79,7 @@ class Instrument(object):
         self.update_index_hw = -1
         self.update_index_cart = -1
         self.reference = None
-        self.ifswitch = None
+        self.stsr = None
         self.load = None
         self.photonics = None
         self.femc = None
@@ -123,12 +123,12 @@ class Instrument(object):
         default = level['default']
         
         self.reference = namakanui.reference.Reference(inifile, sleep, publish, simulate, level.get('reference', default))
-        self.ifswitch = namakanui.ifswitch.IFSwitch(inifile, sleep, publish, simulate, level.get('ifswitch', default))
+        self.stsr = namakanui.stsr.STSR(inifile, sleep, publish, simulate, level.get('stsr', default))
         self.load = namakanui.load.Load(inifile, sleep, publish, simulate, level.get('load', default))
         self.photonics = namakanui.photonics.Photonics(inifile, sleep, publish, simulate, level.get('photonics', default))
         self.femc = namakanui.femc.FEMC(inifile, sleep, publish, simulate, level.get('femc', default))
         
-        self.hardware = [self.reference, self.ifswitch, self.load, self.photonics, self.femc]
+        self.hardware = [self.reference, self.stsr, self.load, self.photonics, self.femc]
         
         # build up simulate bitmask from individual components
         self.simulate = 0
@@ -170,7 +170,7 @@ class Instrument(object):
     
     def update_one_hw(self):
         '''Call a single hardware update function and advance the index.
-            Updates one of: reference, ifswitch, load, photonics, femc.
+            Updates one of: reference, stsr, load, photonics, femc.
             Recommended 10s cycle, call delay 10.0/len(hardware).
         '''
         self.log.debug('update_one_hw')
@@ -202,13 +202,14 @@ class Instrument(object):
         band = int(band)
         if band not in self.bands:
             raise ValueError('band %d not in %s'%(band, self.bands))
-        if band == self.ifswitch.get_band():
-            self.log.debug('ifswitch already at band %d', band)
+        if band == self.stsr.state['band']:
+            self.log.debug('STSR already at band %d', band)
             return
         self.log.info('switching to band %d', band)
         # reduce reference signal power to minimum levels
+        # and set all STSR switches to (unused, terminated) ch4
         self.set_safe()
-        self.ifswitch.set_band(band)
+        self.stsr.set_band(band)
         # zero bias/amps/magnets on all carts to reduce interference
         for cart in self.carts.values():
             cart.zero()
@@ -222,7 +223,7 @@ class Instrument(object):
             if rp < -3.0:
                 raise RuntimeError(f'PLL ref power {rp:.2f}V (FLOOG 31.5 MHz): too strong, please attenuate.')
             if rp > -0.5:
-                raise RuntimeError(f'PLL ref power {rp:.2f}V (FLOOG 31.5 MHz): too weak, IF switch may have failed to select band {band}')
+                raise RuntimeError(f'PLL ref power {rp:.2f}V (FLOOG 31.5 MHz): too weak, STSR may have failed to select band {band}')
         # Instrument.set_band
     
     
@@ -254,7 +255,9 @@ class Instrument(object):
     
     
     def set_safe(self):
-        '''Set reference power to minimum and attenuation to maximum.'''
+        '''Set reference power to minimum and attenuation to maximum.
+           Also set all STSR switches to (unused, terminated) ch4.
+        '''
         self.log.debug('set_safe')
         # ensure we try to set both, even if one raises an error
         try:
@@ -263,11 +266,12 @@ class Instrument(object):
             self.reference.set_dbm(self.reference.safe_dbm)
             self.reference.set_output(0)
             self.reference.update(publish_only=True)
+            # stsr setting is less critical, so do it last
+            self.stsr.set_band(0)  # sets sw1-3 to ch4
+            self.stsr.set_tone(0)  # sets sw4 to ch4
         # Instrument.set_safe
     
 
 
-# TODO: speed up cart init by saving offsets to config file.
-# if they were being logged somewhere i could verify that the offsets
-# are consistent and/or use an average value.
+
 

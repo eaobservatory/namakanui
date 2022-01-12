@@ -456,15 +456,13 @@ class PhotonicsFrame(tk.Frame):
     # PhotonicsFrame
 
 
-class IFSwitchFrame(tk.Frame):
+class STSRFrame(tk.Frame):
     def __init__(self, master=None):
         super().__init__(master)
         self.master = master
         self.setup()
     
     def setup(self):
-        # number simulate sim_text DO AI
-        # TODO: supply higher-level status so we don't have to guess
         self.pack(fill='x')
         status_frame = tk.Frame(self)
         status_frame.pack(fill='x')
@@ -473,11 +471,31 @@ class IFSwitchFrame(tk.Frame):
         self.connected.grid(row=0, column=1, sticky='ne')
         self.v_number = grid_label(status_frame, 'number', 1)
         self.v_simulate = grid_label(status_frame, 'simulate', 2)  # TODO sim_text as tooltip
-        self.v_do = grid_label(status_frame, 'DO', 3)
-        self.v_ai = grid_label(status_frame, 'AI', 4)
+        self.v_lo1_lock = grid_label(status_frame, 'lo1_lock', 3)
+        self.v_lo2_lock = grid_label(status_frame, 'lo2_lock', 4)
+        self.v_24vdc = grid_label(status_frame, '24vdc', 5)
+        self.v_12vdc = grid_label(status_frame, '12vdc', 6)
+        self.v_p5vdc = grid_label(status_frame, '+5vdc', 7)
+        self.v_n5vdc = grid_label(status_frame, '-5vdc', 8)
+        self.v_fan1 = grid_label(status_frame, 'fan1', 9)
+        self.v_fan2 = grid_label(status_frame, 'fan2', 10)
+        self.v_sw1_degc = grid_label(status_frame, 'sw1_degC', 11)
+        self.v_sw2_degc = grid_label(status_frame, 'sw2_degC', 12)
+        self.v_sw3_degc = grid_label(status_frame, 'sw3_degC', 13)
+        self.v_sw4_degc = grid_label(status_frame, 'sw4_degC', 14)
+        self.v_pa1_degc = grid_label(status_frame, 'pa1_degC', 15)
+        self.v_pa2_degc = grid_label(status_frame, 'pa2_degC', 16)
+        self.v_lo1_degc = grid_label(status_frame, 'lo1_degC', 17)
+        self.v_5056 = grid_label(status_frame, '5056_DO', 18)
+        self.v_sw1_ch = grid_label(status_frame, 'sw1', 19)
+        self.v_sw2_ch = grid_label(status_frame, 'sw2', 20)
+        self.v_sw3_ch = grid_label(status_frame, 'sw3', 21)
+        self.v_sw4_ch = grid_label(status_frame, 'sw4', 22)
+        self.v_sw5_ch = grid_label(status_frame, 'sw5', 23)
+        self.v_band = grid_label(status_frame, 'band', 24)
         status_frame.grid_columnconfigure(0, weight=1)
         status_frame.grid_columnconfigure(1, weight=1)
-        status_frame.grid_rowconfigure(4, weight=1)
+        status_frame.grid_rowconfigure(24, weight=1)
         cmd_frame = tk.Frame(self)
         cmd_frame.pack(side='right')
         tk.Label(cmd_frame, text='Band: ').pack(side='left')
@@ -499,12 +517,33 @@ class IFSwitchFrame(tk.Frame):
         self.connected['bg'] = 'green'
         self.v_number.set('%d'%(state['number']))
         self.v_simulate.set('0x%x'%(state['simulate']), state['simulate']==0)  # TODO tooltip
-        do = ''.join([str(x) for x in state['DO']])
-        okay = do in ('100100', '010010', '001001')
-        self.v_do.set(do, okay)
-        self.v_ai.set('%.3f'%(state['AI'][0]), 4.0 < state['AI'][0] < 6.0)
+        ai = state['5017']
+        self.v_lo1_lock.set('%.3f'%(ai[0]), 4.0 < ai[0] < 6.0)  # 4.8
+        self.v_lo2_lock.set('%.3f'%(ai[1]), 2.4 < ai[1] < 4.0)  # 3.2
+        self.v_24vdc.set('%.3f'%(ai[2]), 9.2 < ai[2] < 10.0)  # 9.6
+        self.v_12vdc.set('%.3f'%(ai[3]), 4.6 < ai[3] < 5.0)   # 4.8
+        self.v_p5vdc.set('%.3f'%(ai[4]), 1.8 < ai[4] < 2.2)    # +2.0
+        self.v_n5vdc.set('%.3f'%(ai[5]), -2.2 < ai[5] < -1.8)  # -2.0
+        self.v_fan1.set('%.3f'%(ai[6]))
+        self.v_fan2.set('%.3f'%(ai[7]))
+        ai = state['5018']
+        self.v_sw1_degc.set('%.1f'%(ai[0]), -10.0 < ai[0] < 40.0)
+        self.v_sw2_degc.set('%.1f'%(ai[1]), -10.0 < ai[1] < 40.0)
+        self.v_sw3_degc.set('%.1f'%(ai[2]), -10.0 < ai[2] < 40.0)
+        self.v_sw4_degc.set('%.1f'%(ai[3]), -10.0 < ai[3] < 40.0)
+        self.v_pa1_degc.set('%.1f'%(ai[4]), -10.0 < ai[4] < 40.0)
+        self.v_pa2_degc.set('%.1f'%(ai[5]), -10.0 < ai[5] < 40.0)
+        self.v_lo1_degc.set('%.1f'%(ai[6]), -10.0 < ai[6] < 40.0)
+        do = ''.join([str(x) for x in state['5056']])
+        self.v_5056.set(do)
+        self.v_sw1_ch.set(state['sw1'])
+        self.v_sw2_ch.set(state['sw2'])
+        self.v_sw3_ch.set(state['sw3'])
+        self.v_sw4_ch.set(state['sw4'])
+        self.v_sw5_ch.set(state['sw5'])
+        self.band.set(str(state['band']), state['band'] in [3,6,7])
     
-    # IFSwitchFrame
+    # STSRFrame
         
 
 class BandFrame(tk.Frame):
@@ -871,7 +910,7 @@ class App(tk.Frame):
         self.retry_load_table = drama.retry.RetryMonitor(namakanui_taskname, 'LOAD_TABLE')
         self.retry_reference = drama.retry.RetryMonitor(namakanui_taskname, 'REFERENCE')
         self.retry_photonics = drama.retry.RetryMonitor(namakanui_taskname, 'PHOTONICS')
-        self.retry_ifswitch = drama.retry.RetryMonitor(namakanui_taskname, 'IFSWITCH')
+        self.retry_stsr = drama.retry.RetryMonitor(namakanui_taskname, 'STSR')
         self.retry_vacuum = drama.retry.RetryMonitor(namakanui_taskname, 'VACUUM')
         self.retry_compressor = drama.retry.RetryMonitor(namakanui_taskname, 'COMPRESSOR')
         self.retry_lakeshore = drama.retry.RetryMonitor(namakanui_taskname, 'LAKESHORE')
@@ -893,9 +932,12 @@ class App(tk.Frame):
         tk.Label(task_frame, text=' ').pack(side='left')  # spacer
         c0 = tk.Frame(task_frame)
         c1 = tk.Frame(task_frame)
+        c2 = tk.Frame(task_frame)
         c0.pack(side='left', fill='y')
         tk.Label(task_frame, text=' ').pack(side='left')  # spacer
         c1.pack(side='left', fill='y')
+        tk.Label(task_frame, text=' ').pack(side='left')  # spacer
+        c2.pack(side='left', fill='y')
         
         # NAMAKANUI task frame
         #nam_frame = tk.Frame(task_frame)
@@ -933,11 +975,11 @@ class App(tk.Frame):
         photonics_parent.pack(fill='x')
         self.photonics_frame = PhotonicsFrame(photonics_parent)
         
-        tk.Label(c1, text=' ').pack()  # spacer
+        #tk.Label(c1, text=' ').pack()  # spacer
         
-        ifswitch_parent = tk.LabelFrame(c1, text='IFSWITCH')
-        ifswitch_parent.pack(fill='x')
-        self.ifswitch_frame = IFSwitchFrame(ifswitch_parent)
+        stsr_parent = tk.LabelFrame(c2, text='STSR')
+        stsr_parent.pack(fill='x')
+        self.stsr_frame = STSRFrame(stsr_parent)
         
         tk.Label(task_frame, text=' ').pack(side='left')  # spacer
         
@@ -1023,8 +1065,8 @@ class App(tk.Frame):
         if updating and self.retry_photonics.handle(msg):
             self.photonics_frame.mon_changed(msg.arg)
         
-        if updating and self.retry_ifswitch.handle(msg):
-            self.ifswitch_frame.mon_changed(msg.arg)
+        if updating and self.retry_stsr.handle(msg):
+            self.stsr_frame.mon_changed(msg.arg)
             
         # set disconnected indicators on all frames
         if not updating or not self.retry_vacuum.connected:
@@ -1045,9 +1087,9 @@ class App(tk.Frame):
         if not updating or not self.retry_photonics.connected:
             self.photonics_frame.connected['text'] = "NO"
             self.photonics_frame.connected['bg'] = 'red'
-        if not updating or not self.retry_ifswitch.connected:
-            self.ifswitch_frame.connected['text'] = "NO"
-            self.ifswitch_frame.connected['bg'] = 'red'
+        if not updating or not self.retry_stsr.connected:
+            self.stsr_frame.connected['text'] = "NO"
+            self.stsr_frame.connected['bg'] = 'red'
         
         drama.reschedule(10.0)
         
@@ -1286,9 +1328,9 @@ class App(tk.Frame):
     def SET_BAND(self, msg):
         args,kwargs = drama.parse_argument(msg.arg)
         band = self.band_args(*args,**kwargs)
-        self.ifswitch_frame.b3_button['state'] = 'disabled'
-        self.ifswitch_frame.b6_button['state'] = 'disabled'
-        self.ifswitch_frame.b7_button['state'] = 'disabled'
+        self.stsr_frame.b3_button['state'] = 'disabled'
+        self.stsr_frame.b6_button['state'] = 'disabled'
+        self.stsr_frame.b7_button['state'] = 'disabled'
         try:
             drama.interested()
             tid = drama.obey(namakanui_taskname, "SET_BAND", band=band)
@@ -1297,9 +1339,9 @@ class App(tk.Frame):
             log.exception('exception in SET_BAND')
             raise
         finally:
-            self.ifswitch_frame.b3_button['state'] = 'normal'
-            self.ifswitch_frame.b6_button['state'] = 'normal'
-            self.ifswitch_frame.b7_button['state'] = 'normal'
+            self.stsr_frame.b3_button['state'] = 'normal'
+            self.stsr_frame.b6_button['state'] = 'normal'
+            self.stsr_frame.b7_button['state'] = 'normal'
         # App.SET_BAND
     
     def MSG_TEST(self, msg):

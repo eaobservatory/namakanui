@@ -44,11 +44,11 @@ parser = argparse.ArgumentParser(
     )
 args = parser.parse_args()
 
-# we don't care about the load or ifswitch here
-simulate = sim.SIM_LOAD | sim.SIM_IFSW
+# we don't care about the load here
+simulate = sim.SIM_LOAD
 instrument = namakanui.instrument.Instrument(simulate=simulate)
 
-logging.info('\nDisabling reference signal')
+logging.info('\nDisabling reference signal and setting STSR switches to ch4')
 try:
     instrument.set_safe()
 except:
@@ -59,4 +59,4 @@ for band in instrument.bands:
     instrument.carts[band].power(0)
 
 logging.info('\nAll cartridges powered down.')
-logging.info('Now safe to turn off FEMC (telnet jpower13).')
+logging.info('Now safe to turn off FEMC.')
