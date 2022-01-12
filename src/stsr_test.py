@@ -43,9 +43,10 @@ parser = argparse.ArgumentParser(
     )
 args = parser.parse_args()
 
-# simulate all carts, we use femc directly
-sim_carts = sim.SIM_B3_FEMC | sim.SIM_B6_FEMC | sim.SIM_B7_FEMC
-instrument = namakanui.instrument.Instrument(simulate=sim_carts, level={'stsr':logging.DEBUG})
+# simulate all carts, we use femc directly.
+# also simulate load (rotation stage), we don't need it here.
+sim_mask = sim.SIM_B3_FEMC | sim.SIM_B6_FEMC | sim.SIM_B7_FEMC | sim.SIM_LOAD
+instrument = namakanui.instrument.Instrument(simulate=sim_mask, level={'stsr':logging.DEBUG})
 
 stsr = instrument.stsr
 femc = instrument.femc
