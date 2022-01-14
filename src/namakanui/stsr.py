@@ -62,7 +62,11 @@ class STSR(object)
         self.state = {'number':0}
         self.log = logging.getLogger(self.name)
         
-        # TODO init other state
+        # adam5000.get_slot_names is unreliable, so get slots from cfg
+        slots = cfg['slots'].split()
+        self.slot_index = {}  # str(module):index
+        for i,s in enumerate(slots):
+            self.slot_index[s] = i
         
         self.adam5000 = adam.adam5000.Adam5000(cfg['ip'], int(cfg['port']),
                                                int(cfg['aa']), int(cfg['tcp']))
@@ -108,13 +112,6 @@ class STSR(object)
             self.log.debug('adam5000 model: %s, slots: %s', model, slotnames)
             if not '5000' in model:
                 raise RuntimeError('STSR unexpected ADAM model %s'%(model))
-            # save slot indices, don't rely on docs for this
-            self.slot_index = {}  # str(module):index
-            for module in ['5017', '5018', '5056']:  # 5024 unused, skip it
-                count = slotnames.count(module)
-                if count != 1:
-                    raise RuntimeError('STSR found %d %s modules'%(count, module))
-                self.slot_index[module] = slotnames.index(module)
         
         self.update()
         # STSR.initialise
