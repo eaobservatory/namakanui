@@ -69,7 +69,8 @@ class STSR(object)
             self.slot_index[s] = i
         
         self.adam5000 = adam.adam5000.Adam5000(cfg['ip'], int(cfg['port']),
-                                               int(cfg['aa']), int(cfg['tcp']))
+                                               int(cfg['aa']), int(cfg['tcp']),
+                                               level=level)
         
         self.log.debug('__init__ %s, sim=%d, 5000=%s:%d, aa=%s, tcp=%d',
                        self.config.inifilename, self.simulate,
