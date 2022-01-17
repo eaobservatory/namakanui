@@ -137,16 +137,14 @@ class STSR(object)
             DO = self.adam5000.get_dio_data(self.slot_index['5056'])
             self.state['5056'] = DO
         
-        # determine state of switches; refer to table on page 11.
-        # 5056 uses open-collector outputs, which I think means 0=H, 1=L.
-        # if I've got this backward, reverse this list.
-        ch = ['ch1', 'ch2', 'ch3', 'ch4']
+        # determine state of switches; refer to table on page 11.  0=L, 1=H.
+        ch = ['ch4', 'ch3', 'ch2', 'ch1']
         for swindex in range(4):
             offset = swindex*2
             chindex = DO[offset+1]*2 + DO[offset]
             self.state['sw%d'%(swindex+1)] = ch[chindex]
         # for sw5, L=230/345, H=86
-        self.state['sw5'] = ['86', '230/345'][DO[8]]
+        self.state['sw5'] = ['230/345', '86'][DO[8]]
         # determine band; for tuning, only sw1/sw2 matter.
         # if inconsistent, set band=0.
         # sw1: Reference to rx
@@ -190,14 +188,14 @@ class STSR(object)
         self.log.debug('set_band(%s)', band)
         band = int(band)
         DO = self.state['5056']
-        if band == 0:  # ch4, N/A, LL = 11
-            DO = [1,1]*3 + DO[6:]
-        elif band == 3:  # ch1, 86, HH = 00
+        if band == 0:  # ch4, N/A, LL = 00
             DO = [0,0]*3 + DO[6:]
-        elif band == 6:  # ch2, 230, LH = 10
-            DO = [1,0]*3 + DO[6:]
-        elif band == 7:  # ch3, 345, HL = 01
+        elif band == 3:  # ch1, 86, HH = 11
+            DO = [1,1]*3 + DO[6:]
+        elif band == 6:  # ch2, 230, LH = 01
             DO = [0,1]*3 + DO[6:]
+        elif band == 7:  # ch3, 345, HL = 10
+            DO = [1,0]*3 + DO[6:]
         else:
             raise ValueError('band %d not one of [0,3,6,7]'%(band))
         
@@ -218,14 +216,14 @@ class STSR(object)
         self.log.debug('set_tone(%s)', band)
         band = int(band)
         DO = self.state['5056']
-        if band == 0:  # ch4, N/A, LL = 11
-            DO = DO[:6] + [1,1] + DO[8:]
-        elif band == 3:  # ch1, 86, HH = 00
-            DO = DO[:6] + [0,0,0] + DO[9:]
-        elif band == 6:  # ch2, 230, LH = 10
-            DO = DO[:6] + [1,0,1] + DO[9:]
-        elif band == 7:  # ch3, 345, HL = 01
-            DO = DO[:6] + [0,1,1] + DO[9:]
+        if band == 0:  # ch4, N/A, LL = 00
+            DO = DO[:6] + [0,0] + DO[8:]
+        elif band == 3:  # ch1, 86, HH = 11
+            DO = DO[:6] + [1,1,1] + DO[9:]
+        elif band == 6:  # ch2, 230, LH = 01
+            DO = DO[:6] + [0,1,0] + DO[9:]
+        elif band == 7:  # ch3, 345, HL = 10
+            DO = DO[:6] + [1,0,0] + DO[9:]
         else:
             raise ValueError('band %d not one of [0,3,6,7]'%(band))
         
