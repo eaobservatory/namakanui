@@ -1,19 +1,30 @@
 '''
-namakanui/stsr.py   RMB 20220105
+namakanui/rfsma.py   RMB 20220113
 
-Controller for the GLT Signal Test Source Reference,
-which switches the FLOOG and Reference signals
-(but not the receiver output IF signals)
-between the different receiver cartridges.
+Controller for RF Switch Matrix Assembly.
+This module holds an array of switches to direct inputs
+to a set of power meters and a spectrum analyzer.
+
+The RFSMA is actually two separate units, labeled A14 and A17
+on the system block diagram.  An instance of this class only
+controls one unit, handling either of:
+
+A14: EHT#1, USB
+A17: EHT#2, LSB
 
 Uses an ADAM-5000 holding the following modules:
 
 5017 (S0):  8ch AI, monitors component voltages
 5018 (S1):  7ch AI (thermocouple), monitors temperatures
-5024 (S2):  4ch AO, unused, originally provided 0-10V to VGA
-5056 (S3): 16ch DO, controls 5 switches, SW1-SW5.
+5056 (S2): 16ch DO, controls  S1-16 (2-position)
+5056 (S3): 16ch DO, controls S17-20 (4-position)
+5056 (S4): 16ch DO, controls S21-24 (4-position)
+5056 (S5): 16ch DO, controls S25-27 (4-position)
 
-Refer to document "GLT CAB-A1 report_20190925.pdf".
+Refer to documents:
+
+GLT-CAB-A14.pdf
+RF switch control logic_2022_update.xlsx
 
 
 Copyright (C) 2022 East Asian Observatory
@@ -39,13 +50,14 @@ import logging
 import adam.adam5000
 
 
-class STSR(object)
+class RFSMA(object)
     '''
-    Signal Test Source Reference control class.
+    RF Switch Matrix Assembly control class.
     '''
-    def __init__(self, inifile, sleep, publish, simulate=0, level=logging.INFO):
+    def __init__(self, inifile, section, sleep, publish, simulate=0, level=logging.INFO):
         '''Arguments:
             inifile: Path to config file or IncludeParser instance.
+            section: Config file [section] name to use, e.g. "rfsma_a14"
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
             simulate: Mask, bitwise ORed with config settings.
@@ -54,7 +66,8 @@ class STSR(object)
         self.config = inifile
         if not hasattr(inifile, 'items'):
             self.config = IncludeParser(inifile)
-        cfg = self.config['stsr']
+        self.section = section
+        cfg = self.config[section]
         self.sleep = sleep
         self.publish = publish
         self.simulate = sim.str_to_bits(cfg['simulate']) | simulate
@@ -80,7 +93,7 @@ class STSR(object)
         self.initialise()
         
         self.log.setLevel(level)  # set log level last to allow DEBUG output during creation
-        # STSR.__init__
+        # RFSMA.__init__
     
     
     def __del__(self):
@@ -112,10 +125,10 @@ class STSR(object)
             slotnames = self.adam5000.get_slot_names()
             self.log.debug('adam5000 model: %s, slots: %s', model, slotnames)
             if not '5000' in model:
-                raise RuntimeError('STSR unexpected ADAM model %s'%(model))
+                raise RuntimeError('RFSMA unexpected ADAM model %s'%(model))
         
         self.update()
-        # STSR.initialise
+        # RFSMA.initialise
     
     
     def update(self):
@@ -126,107 +139,64 @@ class STSR(object)
         self.log.debug('update')
         
         if self.simulate and not '5017' in self.state:
-            self.state['5017'] = [4.8, 3.2, 9.6, 4.8, 2.0, -2.0, 0.0, 0.0]
-            self.state['5018'] = [25.0]*7
-            DO = [0]*16
-            self.state['5056'] = DO
+            self.state['5017'] = [0.0, 0.0, 9.6, 4.8]
+            self.state['5018'] = [25.0]*4
+            for i in range(2,6):
+                DO = [0]*16
+                self.state['5056_s%d'%(i)] = DO
         else:
             # read full lists of channel data directly into state entries
-            self.state['5017'] = self.adam5000.get_ai_data(self.slot_index['5017'])
-            self.state['5018'] = self.adam5000.get_ai_data(self.slot_index['5018'])[:7]
-            DO = self.adam5000.get_dio_data(self.slot_index['5056'])
-            self.state['5056'] = DO
-        
-        # determine state of switches; refer to table on page 11.  0=L, 1=H.
-        ch = ['ch4', 'ch3', 'ch2', 'ch1']
-        for swindex in range(4):
-            offset = swindex*2
-            chindex = DO[offset+1]*2 + DO[offset]
-            self.state['sw%d'%(swindex+1)] = ch[chindex]
-        # for sw5, L=230/345, H=86
-        self.state['sw5'] = ['230/345', '86'][DO[8]]
-        # determine band; for tuning, only sw1/sw2 matter.
-        # if inconsistent, set band=0.
-        # sw1: Reference to rx
-        # sw2: FLOOG to rx
-        # sw3: FLOOG to rx signal test source assy
-        # sw4: Reference+LO2 mixer RF to rx signal test source assy
-        # sw5: LO2 1.5GHz (86) or 0.5GHz (230/345)
-        band = 0
-        if self.state['sw1'] != 'ch4' \
-            and self.state['sw1'] == self.state['sw2']:
-            band = {'ch1':3, 'ch2':6, 'ch3':7}[self.state['sw1']]
-        self.state['band'] = band
+            self.state['5017'] = self.adam5000.get_ai_data(self.slot_index['5017'])[:4]
+            self.state['5018'] = self.adam5000.get_ai_data(self.slot_index['5018'])[:4]
+            for i in range(2,6):
+                slot_name = '5056_s%d'%(i)
+                DO = self.adam5000.get_dio_data(self.slot_index[slot_name])
+                self.state[slot_name] = DO
         
         self.state['number'] += 1
         self.publish(self.name, self.state)
-        # STSR.update
+        # RFSMA.update
     
     
-    def set_5056(self, DO):
-        '''Set 5056 output to given DO list.'''
-        self.log.debug('set_5056(%s)', DO)
+    def set_DO(self, slot_name, DO, index=0):
+        '''
+        Set output of 5056 in slot_name to given DO list, which is copied
+        into the current state starting at the given index (which can limit
+        the change to a single switch in a bank, if desired).  Examples:
+        
+        set_DO('5056_s2', [0]*16)  # set S1-16 to spectrum analyzer outputs
+        set_DO('5056_s2', [1]*16)  # set S1-16 to power meter outputs
+        set_DO('5056_s3', [1,0,0,0]*2)  # set S17-18 to IF 4-9 GHz
+        set_DO('5056_s5', [1,0]*2, 4)  # set S26-27 to send J18 to spectr
+        '''
+        self.log.debug('set_DO(%s, %s, %s)', slot_name, DO, index)
+        
+        sDO = self.state[slot_name].copy()
+        sDO[index:index+len(DO)] = DO
+        DO = sDO[:16]
         
         if self.simulate:
-            self.state['5056'] = DO
+            self.state[slot_name] = DO
         else:
-            self.adam5000.set_do_data(self.slot_index['5056'], DO)
+            self.adam5000.set_do_data(self.slot_index[slot_name], DO)
         
         # double-check digital outputs
         self.update()
-        rDO = self.state['5056']
+        rDO = self.state[slot_name]
         if DO != rDO:
-            raise RuntimeError('failed to set 5056: tried %s, but status is %s'%(DO, rDO))
+            raise RuntimeError('failed to set %s: tried %s, but status is %s'%(slot_name, DO, rDO))
         
-        # STSR.set_5056
+        # RFSMA.set_DO
     
     
-    def set_band(self, band):
-        '''Set 5056 DO so that sw1-sw3 are set to given band in [0,3,6,7].
-           If band==0, set switches to ch4.
+    def set_pmeter_49(self):
         '''
-        self.log.debug('set_band(%s)', band)
-        band = int(band)
-        DO = self.state['5056']
-        if band == 0:  # ch4, N/A, LL = 00
-            DO = [0,0]*3 + DO[6:]
-        elif band == 3:  # ch1, 86, HH = 11
-            DO = [1,1]*3 + DO[6:]
-        elif band == 6:  # ch2, 230, LH = 01
-            DO = [0,1]*3 + DO[6:]
-        elif band == 7:  # ch3, 345, HL = 10
-            DO = [1,0]*3 + DO[6:]
-        else:
-            raise ValueError('band %d not one of [0,3,6,7]'%(band))
-        
-        self.set_5056(DO)
-         
-        # check FLOOG (31.5 MHz, LO1) lock status, expect ~4.8V
-        floog_lock_v = self.state['5017'][0]
-        if floog_lock_v < 4.0:
-            raise RuntimeError('31.5 MHz oscillator unlocked, voltage %g'%(floog_lock_v))
-        
-        # STSR.set_band
-        
-        
-    def set_tone(self, band):
-        '''Set 5056 DO so that sw4 is set to given band in [0,3,6,7]
-           and sw5 matches proper LO2.  If band==0, set sw4 to ch4.
+        Send J1/J5 (P0/P1 IF 4-9 GHz) to power meter #1 ch A/B.
+        Only sets S1, S5, S17, S18, leaving all others unchanged.
         '''
-        self.log.debug('set_tone(%s)', band)
-        band = int(band)
-        DO = self.state['5056']
-        if band == 0:  # ch4, N/A, LL = 00
-            DO = DO[:6] + [0,0] + DO[8:]
-        elif band == 3:  # ch1, 86, HH = 11
-            DO = DO[:6] + [1,1,1] + DO[9:]
-        elif band == 6:  # ch2, 230, LH = 01
-            DO = DO[:6] + [0,1,0] + DO[9:]
-        elif band == 7:  # ch3, 345, HL = 10
-            DO = DO[:6] + [1,0,0] + DO[9:]
-        else:
-            raise ValueError('band %d not one of [0,3,6,7]'%(band))
-        
-        self.set_5056(DO)
-        # STSR.set_tone
+        self.log.debug('set_pmeter_49')
+        self.set_DO('5056_s2', [1], 0)  # S1
+        self.set_DO('5056_s2', [1], 4)  # S5
+        self.set_DO('5056_s3', [1,0,0,0]*2)  # S17-18
+    
     
