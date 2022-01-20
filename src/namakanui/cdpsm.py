@@ -1,30 +1,18 @@
 '''
-namakanui/rfsma.py   RMB 20220113
+namakanui/cdpsm.py   RMB 20220119
 
-Controller for RF Switch Matrix Assembly.
-This module holds an array of switches to direct inputs
-to a set of power meters and a spectrum analyzer.
-
-The RFSMA is actually two separate units, labeled A14 and A17
-on the system block diagram.  An instance of this class only
-controls one unit, handling either of:
-
-A14: EHT#1, USB
-A17: EHT#2, LSB
+Controller for A11, Continuum Detector & Phase Stability Monitor.
 
 Uses an ADAM-5000 holding the following modules:
 
 5017 (S0):  8ch AI, monitors component voltages
 5018 (S1):  7ch AI (thermocouple), monitors temperatures
-5056 (S2): 16ch DO, controls  S1-16 (2-position)
-5056 (S3): 16ch DO, controls S17-20 (4-position)
-5056 (S4): 16ch DO, controls S21-24 (4-position)
-5056 (S5): 16ch DO, controls S25-27 (4-position)
+5024 (S2):  4ch AO, unused
+5056 (S3): 16ch DO, controls switches SW1-6
 
 Refer to documents:
 
-GLT-CAB-A14.pdf
-RF switch control logic_2022_update.xlsx
+GLT_Modbus.xlsx
 
 
 Copyright (C) 2022 East Asian Observatory
@@ -51,14 +39,14 @@ import time
 import adam.adam5000
 
 
-class RFSMA(object)
+class CDPSM(object)
     '''
-    RF Switch Matrix Assembly control class.
+    Continuum Detector & Phase Stability Monitor control class.
     '''
-    def __init__(self, inifile, section, sleep=time.sleep, publish=namakanui.nop, simulate=0, level=logging.INFO):
+    def __init__(self, inifile, section='cdpsm', sleep=time.sleep, publish=namakanui.nop, simulate=0, level=logging.INFO):
         '''Arguments:
             inifile: Path to config file or IncludeParser instance.
-            section: Config file [section] name to use, e.g. "rfsma_a14"
+            section: Config file [section] name to use, default "cdpsm"
             sleep(seconds): Function to sleep for given seconds, e.g. time.sleep, drama.wait.
             publish(name, dict): Function to output dict with given name, e.g. drama.set_param.
             simulate: Mask, bitwise ORed with config settings.
@@ -94,7 +82,7 @@ class RFSMA(object)
         self.initialise()
         
         self.log.setLevel(level)  # set log level last to allow DEBUG output during creation
-        # RFSMA.__init__
+        # CDPSM.__init__
     
     
     def __del__(self):
@@ -126,10 +114,10 @@ class RFSMA(object)
             slotnames = self.adam5000.get_slot_names()
             self.log.debug('adam5000 model: %s, slots: %s', model, slotnames)
             if not '5000' in model:
-                raise RuntimeError('RFSMA unexpected ADAM model %s'%(model))
+                raise RuntimeError('CDPSM unexpected ADAM model %s'%(model))
         
         self.update()
-        # RFSMA.initialise
+        # CDPSM.initialise
     
     
     def update(self):
@@ -140,23 +128,21 @@ class RFSMA(object)
         self.log.debug('update')
         
         if self.simulate and not '5017' in self.state:
-            self.state['5017'] = [0.0, 0.0, 9.6, 4.8]
-            self.state['5018'] = [25.0]*4
-            for i in range(2,6):
-                DO = [0]*16
-                self.state['5056_s%d'%(i)] = DO
+            self.state['5017'] = [-2.2, -2.2, 5.0, 5.9, 4.8, 0.0, 0.0, 0.2]
+            self.state['5018'] = [25.0]*5
+            self.state['5056'] = [0]*16
         else:
             # read full lists of channel data directly into state entries
-            self.state['5017'] = self.adam5000.get_ai_data(self.slot_index['5017'])[:4]
-            self.state['5018'] = self.adam5000.get_ai_data(self.slot_index['5018'])[:4]
-            for i in range(2,6):
-                slot_name = '5056_s%d'%(i)
-                DO = self.adam5000.get_dio_data(self.slot_index[slot_name])
-                self.state[slot_name] = DO
+            self.state['5017'] = self.adam5000.get_ai_data(self.slot_index['5017'])
+            self.state['5018'] = self.adam5000.get_ai_data(self.slot_index['5018'])[:5]
+            DO = self.adam5000.get_dio_data(self.slot_index['5056'])
+            self.state['5056'] = DO
+        
+        # TODO additional state from DO
         
         self.state['number'] += 1
         self.publish(self.name, self.state)
-        # RFSMA.update
+        # CDPSM.update
     
     
     def set_DO(self, slot_name, DO, index=0):
@@ -165,10 +151,7 @@ class RFSMA(object)
         into the current state starting at the given index (which can limit
         the change to a single switch in a bank, if desired).  Examples:
         
-        set_DO('5056_s2', [0]*16)  # set S1-16 to spectrum analyzer outputs
-        set_DO('5056_s2', [1]*16)  # set S1-16 to power meter outputs
-        set_DO('5056_s3', [1,0,0,0]*2)  # set S17-18 to IF 4-9 GHz
-        set_DO('5056_s5', [1,0]*2, 4)  # set S26-27 to send J18 to spectr
+        TODO
         '''
         self.log.debug('set_DO(%s, %s, %s)', slot_name, DO, index)
         
@@ -187,17 +170,97 @@ class RFSMA(object)
         if DO != rDO:
             raise RuntimeError('failed to set %s: tried %s, but status is %s'%(slot_name, DO, rDO))
         
-        # RFSMA.set_DO
+        # CDPSM.set_DO
     
     
-    def set_pmeter_49(self):
+    def set_sw12(self, sw, src):
         '''
-        Send J1/J5 (P0/P1 IF 4-9 GHz) to power meter #1 ch A/B.
-        Only sets S1, S5, S17, S18, leaving all others unchanged.
+        Set SW1 (LHC source) or SW2 (RHC source) to given src:
+         - 0 == "LSB" == "EHT2"
+         - 1 == "USB" == "EHT1"
         '''
-        self.log.debug('set_pmeter_49')
-        self.set_DO('5056_s2', [1], 0)  # S1
-        self.set_DO('5056_s2', [1], 4)  # S5
-        self.set_DO('5056_s3', [1,0,0,0]*2)  # S17-18
+        self.log.debug('set_sw12(%s, %s)', sw, src)
+        
+        if sw not in [1,2]:
+            raise ValueError('sw %s not in range [1,2]'%(sw))
+        
+        if hasattr(src, 'upper'):
+            src = src.upper()
+        else:
+            src = int(src)
+        src = {0:0, '0':0, 'LSB':0, 'EHT2':0,
+               1:1, '1':1, 'USB':1, 'EHT1':1}[src]
+        
+        self.set_DO('5056', [src], sw-1)
+        # CDPSM.set_sw12
     
     
+    def set_sw3(self, pol):
+        '''
+        Set SW3 (polarization selector) to given pol:
+         - 0 == "POL0" == "LHC"
+         - 1 == "POL1" == "RHC"
+        '''
+        self.log.debug('set_sw3(%s)', pol)
+        
+        if hasattr(src, 'upper'):
+            src = src.upper()
+        else:
+            src = int(src)
+        src = {0:0, '0':0, 'POL0':0, 'LHC':0,
+               1:1, '1':1, 'POL1':1, 'RHC':1}[src]
+        
+        self.set_DO('5056', [src], 2)
+        # CDPSM.set_sw3
+    
+    
+    def set_sw456(self, band):
+        '''
+        Set SW4-6 to positions for given band:
+         - 3 == 86
+         - 6 == 7 == 230 == 345
+        '''
+        self.log.debug('set_sw456(%s)', band)
+        
+        band = int(band)
+        band = {3:3, 6:6, 7:6, 86:3, 230:6, 345:6}[band]
+        DO = {3:[1,0,0], 6:[0,1,1]}[band]
+        
+        self.set_DO('5056', DO, 3)
+        # CDPSM.set_sw456
+        
+        
+    ##### alias functions: #####
+    
+    def set_LHC_source(self, src):
+        '''
+        Set SW1 to given src:
+         - 0 == "LSB" == "EHT2"
+         - 1 == "USB" == "EHT1"
+        '''
+        self.set_sw12(1, src)
+        
+    def set_RHC_source(self, src):
+        '''
+        Set SW2 to given src:
+         - 0 == "LSB" == "EHT2"
+         - 1 == "USB" == "EHT1"
+        '''
+        self.set_sw12(2, src)
+    
+    def set_polarization(self, pol):
+        '''
+        Set SW3 to given pol:
+         - 0 == "POL0" == "LHC"
+         - 1 == "POL1" == "RHC"
+        '''
+        self.set_sw3(pol)
+    
+    def set_band(self, band):
+        '''
+        Set SW4-6 to analysis signal positions for given band:
+         - 3 == 86
+         - 6 == 7 == 230 == 345
+        '''
+        self.set_sw456(band)
+
