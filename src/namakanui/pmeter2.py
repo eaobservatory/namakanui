@@ -24,6 +24,7 @@ from namakanui.ini import *
 from namakanui import sim
 import socket
 import logging
+import time
 
 
 class PMeter2(object):
@@ -31,7 +32,7 @@ class PMeter2(object):
     Class to control an N1914A power meter.
     '''
     
-    def __init__(self, inifile, section, sleep, publish, simulate=0, level=logging.INFO):
+    def __init__(self, inifile, section, sleep=time.sleep, publish=namakanui.nop, simulate=0, level=logging.INFO):
         '''Arguments:
             inifile: Path to config file or IncludeParser instance.
             section: Config file [section] name to use, e.g. "rfsma_p1"
