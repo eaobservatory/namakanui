@@ -54,27 +54,38 @@ parser = argparse.ArgumentParser(
 args = parser.parse_args()
 
 cfg = namakanui.util.get_config('femc.ini')['femc']
-lan2can_addr = cfg['lan2can_addr']  # PCAN IP
+pcan_type = cfg['pcan_type'].lower()  # tcp or udp
+lan2can_ip = cfg['lan2can_ip']  # PCAN IP
 lan2can_port = int(cfg['lan2can_port'])
 can2lan_port = int(cfg['can2lan_port'])  # on localhost
 pcand_port = int(cfg['pcand_port'])
 
 # connect to PCAN
-lan2can = socket.socket()
+if pcan_type == 'tcp':
+    lan2can = socket.socket()
+else:
+    lan2can = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 lan2can.settimeout(1)
-lan2can.connect((lan2can_addr, lan2can_port))
+lan2can.connect((lan2can_ip, lan2can_port))
 
-# bind a known port so PCAN can connect to us
-can2lan_listener = socket.socket()
-can2lan_listener.settimeout(5)
+# bind a known port so PCAN can connect to us;
 # set SO_REUSEADDR so pcand can restart even if old socket stuck in TIME_WAIT
-can2lan_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-can2lan_listener.bind(('0.0.0.0', can2lan_port))
-can2lan_listener.listen()
-can2lan = can2lan_listener.accept()
-can2lan.settimeout(1)
-can2lan_listener.shutdown(socket.SHUT_RDWR)
-can2lan_listener.close()
+if pcan_type == 'tcp':
+    can2lan_listener = socket.socket()
+    can2lan_listener.settimeout(5)
+    can2lan_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    can2lan_listener.bind(('0.0.0.0', can2lan_port))
+    can2lan_listener.listen()
+    can2lan = can2lan_listener.accept()
+    can2lan.settimeout(1)
+    can2lan_listener.shutdown(socket.SHUT_RDWR)
+    can2lan_listener.close()
+else:
+    can2lan = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    can2lan.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    can2lan.settimeout(1)
+    can2lan.bind(('0.0.0.0', can2lan_port))
+    
 
 # create server listening socket on pcand_port;
 # set SO_REUSEADDR so pcand can restart even if old socket stuck in TIME_WAIT

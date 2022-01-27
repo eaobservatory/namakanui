@@ -98,7 +98,10 @@ _setup_errors = {
 }
 
 # compiled structs might save a bit of parsing time when packing/unpacking
+# can0: canid, dlc, pad, data
 _IB3x8s = struct.Struct("<IB3x8s")
+# pcan: len, type, tag, timestamp, chan, dlc, flags, canid, candata
+_HH8x8xxBHI8s = struct.Struct(">HH8x8xxBHI8s")
 _b = struct.Struct("b")
 _B = struct.Struct("B")
 _H = struct.Struct(">H")
@@ -281,6 +284,9 @@ class FEMC(object):
         self.node = (self.node_id+1) << 18
         self.timeout = float(cfg['timeout'])
         self.fe_mode = int(cfg['fe_mode'])
+        self.pcand = 'use_pcand' in cfg and int(cfg['use_pcand'])
+        self.pcan = 'use_pcan' in cfg and int(cfg['use_pcan'])
+        self.pcan = self.pcan or self.pcand  # for struct pack/unpack
         
         self.state = {'number':0,
                       'simulate':self.simulate,
@@ -291,7 +297,9 @@ class FEMC(object):
                      }
         
         # create a socket even if simulated so close() is simple
-        self.s = socket.socket(socket.AF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
+        #self.s = socket.socket(socket.AF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
+        self.s_tx = socket.socket()
+        self.s_rx = self.s_tx
         
         self.log.debug('__init__ %s, sim=%d, interface=%s, node=0x%x, timeout=%g',
                        self.config.inifilename, self.simulate,
@@ -303,8 +311,53 @@ class FEMC(object):
             self.update()
             return
         
-        self.s.bind((self.interface,))
-        self.s.settimeout(self.timeout)
+        if self.pcand:  # connect to daemon, always tcp
+            pcand_ip = cfg['pcand_ip']
+            pcand_port = int(cfg['pcand_port'])
+            self.state['interface'] = 'pcand://%s:%d'%(pcand_ip, pcand_port)
+            self.s_tx.settimeout(self.timeout)
+            self.log.debug('connecting to namakanui_pcand.py at %s:%d', pcand_ip, pcand_port)
+            self.s_tx.connect((pcand_ip, pcand_port))
+        
+        elif self.pcan:  # connect directly to PEAK PCAN-Ethernet Gateway
+            pcan_type = cfg['pcan_type'].lower()
+            lan2can_ip = cfg['lan2can_ip']  # PCAN IP
+            lan2can_port = int(cfg['lan2can_port'])
+            can2lan_port = int(cfg['can2lan_port'])  # on localhost
+            iface = '%s://%s:%d:%d'%(pcan_type, lan2can_ip, lan2can_port, can2lan_port)
+            self.state['interface'] = iface
+            if pcan_type == 'tcp':
+                self.s_tx.settimeout(self.timeout)
+                self.log.debug('connecting tcp pcan tx at %s:%d', lan2can_ip, lan2can_port)
+                self.s_tx.connect((lan2can_ip, lan2can_port))
+                can2lan_listener = socket.socket()
+                can2lan_listener.settimeout(5)
+                can2lan_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                self.log.debug('waiting for tcp pcan rx on port %d', can2lan_port)
+                can2lan_listener.bind(('0.0.0.0', can2lan_port))
+                can2lan_listener.listen()
+                self.s_rx = can2lan_listener.accept()
+                self.s_rx.settimeout(self.timeout)
+                can2lan_listener.shutdown(socket.SHUT_RDWR)
+                can2lan_listener.close()
+            else:  # udp
+                self.s_tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                self.s_tx.settimeout(self.timeout)
+                # connect() here avoids having to use sendto() later
+                self.log.debug('connect udp pcan tx at %s:%d', lan2can_ip, lan2can_port)
+                self.s_tx.connect((lan2can_ip, lan2can_port))
+                self.s_rx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                self.s_rx.settimeout(self.timeout)
+                self.log.debug('bind udp pcan rx on port %d', can2lan_port)
+                self.s_rx.bind(('0.0.0.0', can2lan_port))
+        
+        else: # socketcan
+            self.log.debug('bind socketcan interface %s', self.interface)
+            self.s_tx = socket.socket(socket.AF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
+            self.s_tx.bind((self.interface,))
+            self.s_tx.settimeout(self.timeout)
+            self.s_rx = self.s_tx
+        
         setup = self.get_setup_info()
         if setup != 0 and setup != 5:
             estr = _setup_errors.get(setup, "unknown error")
@@ -325,7 +378,8 @@ class FEMC(object):
     
     def close(self):
         self.log.debug('close')
-        self.s.close()
+        self.s_tx.close()
+        self.s_rx.close()
     
     def update(self):
         # TODO include ppcomm and other stats in state
@@ -333,7 +387,7 @@ class FEMC(object):
         self.publish(self.name, self.state)
     
     def clear(self):
-        '''Empty the socket buffer.  Used before sending a command.
+        '''Empty the rx socket buffer.  Used before sending a command.
            RMB 20200228: This function has been raising socket.timeout errors,
                          which seems impossible.  Perhaps there's a mutex involved,
                          and if one process gets rescheduled while holding it,
@@ -341,10 +395,10 @@ class FEMC(object):
                          will just ignore socket.timeout, up to 3 times.
         '''
         tries = 0
-        r,w,x = select.select([self.s], [], [], 0)
+        r,w,x = select.select([self.s_rx], [], [], 0)
         while r:
             try:
-                self.s.recv(65536)  # minimize loops
+                self.s_rx.recv(65536)  # minimize loops
             except socket.timeout:
                 self.log.debug('clear: recv socket.timeout')
                 tries += 1
@@ -353,7 +407,7 @@ class FEMC(object):
                 # if there is a mutex involved, a small sleep might allow
                 # the other process to grab it back.  40ms for context switch.
                 time.sleep(.04)
-            r,w,x = select.select([self.s], [], [], 0)
+            r,w,x = select.select([self.s_rx], [], [], 0)
         
     def make_rca(self, cartridge=0, polarization=0, sideband=0, lna_stage=0,
                  dac=0, pa_channel=0, cartridge_temp=0, pd_module=0, pd_channel=0,
@@ -405,17 +459,22 @@ class FEMC(object):
            The transmit queue is very shallow, so we select() until
            the socket is writable, then try to send until timeout.
            '''
-        packet = _IB3x8s.pack(socket.CAN_EFF_FLAG | self.node | rca, len(data), data)
-        self.log.debug('set_rca send %d bytes: 0x%s', len(packet), packet.hex())
+        if self.pcan:
+            packet = _HH8x8xxBHI8s.pack(36, 0x80, len(data), 0x02,
+                                        socket.CAN_EFF_FLAG | self.node | rca, data)
+        else:
+            packet = _IB3x8s.pack(socket.CAN_EFF_FLAG | self.node | rca, len(data), data)
+        plen = len(packet)
+        self.log.debug('set_rca send %d bytes: 0x%s', plen, packet.hex())
         self.clear()  # empty socket buffer of any nonrelated traffic
         timeout = self.s.gettimeout() or 0
         wall_timeout = time.time() + timeout
         while timeout >= 0:
-            r,w,x = select.select([], [self.s], [], timeout)
+            r,w,x = select.select([], [self.s_tx], [], timeout)
             try:
-                num = self.s.send(packet)
-                if num != 16:
-                    raise FEMC_RuntimeError("only sent %d bytes" % (num))
+                num = self.s_tx.send(packet)
+                if num != plen:
+                    raise FEMC_RuntimeError("only sent %d/%d bytes" % (num, plen))
                 return
             except OSError as e:
                 if e.errno == 105:  # No buffer space available
@@ -437,15 +496,21 @@ class FEMC(object):
         data_len = 0
         timeout = time.time() + (self.s.gettimeout() or 0)
         badreps = []
+        plen = 16
+        if self.pcan:
+            plen = 36
         while (r_can_id is None) or ((r_can_id != s_can_id or not data_len) and time.time() < timeout):
             try:
-                reply = self.s.recv(16)
+                reply = self.s.recv(plen)
             except socket.timeout:
                 break
-            if len(reply) != 16:
-                raise FEMC_RuntimeError("only received %d bytes: 0x%s" % (len(reply), reply.hex()))
+            if len(reply) != plen:
+                raise FEMC_RuntimeError("only received %d/%d bytes: 0x%s" % (len(reply), plen,  reply.hex()))
             self.log.debug('get_rca recv %d bytes: 0x%s', len(reply), reply.hex())
-            r_can_id, data_len, data = _IB3x8s.unpack(reply)
+            if self.pcan:
+                plen, mtype, data_len, flags, r_can_id, data = _HH8x8xxBHI8s.unpack(reply)
+            else:
+                r_can_id, data_len, data = _IB3x8s.unpack(reply)
             r_can_id &= socket.CAN_EFF_MASK
             if r_can_id != s_can_id:
                 badreps.append(reply.hex())
