@@ -336,7 +336,7 @@ class FEMC(object):
                 self.log.debug('waiting for tcp pcan rx on port %d', can2lan_port)
                 can2lan_listener.bind(('0.0.0.0', can2lan_port))
                 can2lan_listener.listen()
-                self.s_rx = can2lan_listener.accept()
+                self.s_rx = can2lan_listener.accept()[0]
                 self.s_rx.settimeout(self.timeout)
                 can2lan_listener.shutdown(socket.SHUT_RDWR)
                 can2lan_listener.close()
@@ -364,6 +364,10 @@ class FEMC(object):
             raise FEMC_RuntimeError("get_setup_info error: %d: %s" % (setup, estr))
         
         self.set_fe_mode(self.fe_mode, do_publish=False)
+
+        # PCAN TCP will send old replies to a new connection,
+        # so try clearing the rx socket at this point.
+        self.clear()
         
         # TODO: other setup/init
         
@@ -467,7 +471,7 @@ class FEMC(object):
         plen = len(packet)
         self.log.debug('set_rca send %d bytes: 0x%s', plen, packet.hex())
         self.clear()  # empty socket buffer of any nonrelated traffic
-        timeout = self.s.gettimeout() or 0
+        timeout = self.s_tx.gettimeout() or 0
         wall_timeout = time.time() + timeout
         while timeout >= 0:
             r,w,x = select.select([], [self.s_tx], [], timeout)
@@ -494,14 +498,14 @@ class FEMC(object):
         self.set_rca(rca, b'')
         r_can_id = None
         data_len = 0
-        timeout = time.time() + (self.s.gettimeout() or 0)
+        timeout = time.time() + (self.s_rx.gettimeout() or 0)
         badreps = []
         plen = 16
         if self.pcan:
             plen = 36
         while (r_can_id is None) or ((r_can_id != s_can_id or not data_len) and time.time() < timeout):
             try:
-                reply = self.s.recv(plen)
+                reply = self.s_rx.recv(plen)
             except socket.timeout:
                 break
             if len(reply) != plen:
