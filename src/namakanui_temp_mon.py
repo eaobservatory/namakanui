@@ -78,15 +78,18 @@ vacuum = namakanui.pfeiffer.Pfeiffer(config, time.sleep, publish)
 
 femc = namakanui.femc.FEMC(config, time.sleep, namakanui.nop)
 
-# power up the cartridges.
-# TODO get bands from config
+# power up the cartridges, using only unsimulated bands in instrument.ini
+bands = []
 if femc.simulate:
     logging.info('femc simulated, skipping cartridge power-up.')
 else:
-    logging.info('enabling (powering up) cartridges...')
-    for ca in [2,5,6]:
+    iconfig = namakanui.util.get_config('instrument.ini')
+    bands = namakanui.util.get_bands(iconfig, simulated=False)
+    logging.info('enabling (powering up) cartridge bands %s...', bands)
+    for band in bands:
+        ca = band - 1
         if not femc.get_pd_enable(ca):
-            logging.info('enabling band %d...'%(ca+1))
+            logging.info('enabling band %d...', band)
             femc.set_pd_enable(ca, 1)
             time.sleep(1)  # still not sure exactly how long we need to sleep here
 
@@ -107,7 +110,8 @@ while True:
     logging.info(d)
     tdict = {}
     for ca in [2,5,6]:
-        if femc.simulate:
+        band = ca + 1
+        if femc.simulate or band not in bands:
             pll = 0.0
         else:
             pll = femc.get_cartridge_lo_pll_assembly_temp(ca)
@@ -124,7 +128,7 @@ while True:
         for i,tname in enumerate(tnames):
             if tname == 'spare':
                 continue
-            if femc.simulate:
+            if femc.simulate or band not in bands:
                 t = 0.0
             else:
                 t = femc.get_cartridge_lo_cartridge_temp(ca, i)
