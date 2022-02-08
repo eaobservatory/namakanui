@@ -72,11 +72,11 @@ def publish(name, value):
     redis_client.publish(redis_prefix + name, score)
     
 # create hardware instances
-compressor = namakanui.compressor.Compressor(config, time.sleep, publish)
-lakeshore = namakanui.lakeshore.Lakeshore(config, time.sleep, publish)
-vacuum = namakanui.pfeiffer.Pfeiffer(config, time.sleep, publish)
+compressor = namakanui.compressor.Compressor(config, time.sleep, publish, level=logging.DEBUG)
+lakeshore = namakanui.lakeshore.Lakeshore(config, time.sleep, publish, level=logging.DEBUG)
+vacuum = namakanui.pfeiffer.Pfeiffer(config, time.sleep, publish, level=logging.DEBUG)
 
-femc = namakanui.femc.FEMC(config, time.sleep, namakanui.nop)
+femc = namakanui.femc.FEMC(config, time.sleep, namakanui.nop, level=logging.DEBUG)
 
 # power up the cartridges, using only unsimulated bands in instrument.ini
 bands = []
