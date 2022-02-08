@@ -32,7 +32,7 @@ log.setLevel(logging.INFO)  # be quiet even if root is DEBUG
 
 def setup_logging(level=logging.INFO):
     '''Perform basic logging setup for scripts.'''
-    f = logging.Formatter('%(levelname)s:%(name)s: %(message)s')
+    f = logging.Formatter('%(asctime)s %(levelname)s:%(name)s: %(message)s')
     s = logging.StreamHandler()
     s.setFormatter(f)
     logging.root.addHandler(s)

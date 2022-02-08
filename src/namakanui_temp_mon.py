@@ -44,7 +44,7 @@ import sys
 
 # if running in a terminal, be verbose
 if sys.stdout.isatty():
-    namakanui.util.setup_logging()
+    namakanui.util.setup_logging(logging.DEBUG)
 
 config = namakanui.util.get_config('temp_mon.ini')
 
