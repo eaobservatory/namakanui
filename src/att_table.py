@@ -55,11 +55,15 @@ parser = argparse.ArgumentParser(
 parser.add_argument('band', type=int, choices=bands)
 parser.add_argument('lo_ghz', help='LO GHz range, first:last:step')
 parser.add_argument('att', help='starting attenuation, counts or ini[+offset]')
-parser.add_argument('--lock_side', nargs='?', default='above', choices=['below','above'], help='lock LO above or below reference, default above')
+parser.add_argument('--lock_side', nargs='?', default='above', choices=['below','above'], help='lock LO above or below reference, default %(default)s')
+parser.add_argument('--pll_if', nargs='?', default='-1.4:-1.6', help='target PLL IF power range (default %(default)s)')
 parser.add_argument('--lock_only', action='store_true', help='skip mixer adjustment')
 args = parser.parse_args()
 
 los = namakanui.util.parse_range(args.lo_ghz, maxlen=100e3)
+if args.pll_if.count(':') > 1:
+    parser.error(f'pll_if {pll_if} range step not allowed')  # calls sys.exit
+args.pll_if = namakanui.util.parse_range(args.pll_if, maxlen=2)
 
 use_ini = False
 try:
@@ -96,7 +100,7 @@ def adjust_att(lo_ghz):
         logging.error('skipping lo_ghz %g, outside range [%.3f, %.3f] for band %d',
                       lo_ghz, lo_min, lo_max, args.band)
         return
-    if tune(instrument, args.band, lo_ghz, pll_if=[-1.4,-1.6],
+    if tune(instrument, args.band, lo_ghz, pll_if=args.pll_if,
             att_ini=use_ini, att_start=args.att, att_min=-photonics.max_att,
             dbm_ini=True, dbm_start=0, dbm_max=0, lock_only=args.lock_only):
         sys.stdout.write('%.3f %d %.3f %.3f %.3f\n' % (lo_ghz, photonics.state['attenuation'], cart.state['pll_if_power'], cart.state['pa_drain_s'][0], cart.state['pa_drain_s'][1]))
