@@ -62,9 +62,6 @@ class Lakeshore(object):
             self.gpib_addr = int(myconfig['gpib_addr'])
             self.gpib_tmo_ms = int(myconfig['gpib_tmo_ms'])
         
-        # create socket here so close() always works
-        self.s = socket.socket()
-        
         self.log.debug('__init__ %s, sim=%d, %s:%d',
                        self.config.inifilename, self.simulate, self.ip, self.port)
         
@@ -73,18 +70,9 @@ class Lakeshore(object):
         self.log.setLevel(level)  # set log level last to allow DEBUG output during creation
         # Lakeshore.__init__
     
-    
     def __del__(self):
         self.log.debug('__del__')
-        self.close()
-    
-    
-    def close(self):
-        '''Close the connection'''
-        self.log.debug('close')
-        self.s.close()
-    
-    
+
     def initialise(self):
         '''Open the connections to the Lakeshore and get/publish state.'''
         self.log.debug('initialise')
@@ -95,34 +83,13 @@ class Lakeshore(object):
         self.state['simulate'] = self.simulate
         self.state['sim_text'] = sim.bits_to_str(self.simulate)
         
-        self.close()
-        if not self.simulate & sim.SIM_LAKESHORE:
-            self.log.debug('connecting Lakeshore, %s:%d', self.ip, self.port)
-            self.s = socket.socket()
-            self.s.settimeout(self.timeout)
-            self.s.connect((self.ip, self.port))
-            
-            if self.gpib:
-                # Set mode as CONTROLLER
-                self.s.sendall(b'++mode 1\n')
-                # Set Lakeshore GPIB address
-                self.s.sendall(b'++addr %d\n'%(self.gpib_addr))
-                # Turn off read-after-write
-                self.s.sendall(b'++auto 0\n')
-                # Set read timeout in milliseconds
-                self.s.sendall(b'++read_tmo_ms %d\n'%(self.gpib_tmo_ms))
-                # Do not append CR or LF to GPIB data
-                self.s.sendall(b'++eos 3\n')
-                # Assert EOI with last byte to indicate end of data
-                self.s.sendall(b'++eoi 1\n')
-            
+        if not self.simulate & sim.SIM_LAKESHORE:    
             self.cmd('*CLS')
             idn = self.cmd('*IDN?')
             self.log.debug('Lakeshore IDN: %s', idn)
         
         self.update()
         # Lakeshore.initialise
-    
     
     def update(self):
         '''Update and publish state.'''
@@ -138,26 +105,45 @@ class Lakeshore(object):
         self.publish(self.name, self.state)
         # Lakeshore.update
     
-    
     def cmd(self, c):
-        '''Clear socket, send cmd c, and recv reply if "?" in c.'''
+        '''Send cmd c. If "?" in c, return reply str.'''
         self.log.debug('cmd(%s)', c)
+
         c = c.strip()
         if hasattr(c, 'encode'):
             c = c.encode()  # convert to bytes
-        # clear socket buffer
-        while select.select([self.s],[],[],0.0)[0]:
-            self.s.recv(4096)
-        self.s.sendall(c + b'\r\n')
-        if b'?' not in c:
-            return
+
+        # reconnect every time since Lakeshore disconnects us too quickly
+        self.log.debug('connecting Lakeshore, %s:%d', self.ip, self.port)
+        s = socket.socket()
+        s.settimeout(self.timeout)
+        s.connect((self.ip, self.port))
         if self.gpib:
-            self.s.sendall(b'++read eoi\n')  # read GPIB reply
+            # Set mode as CONTROLLER
+            s.sendall(b'++mode 1\n')
+            # Set Lakeshore GPIB address
+            s.sendall(b'++addr %d\n'%(self.gpib_addr))
+            # Turn on read-after-write
+            s.sendall(b'++auto 1\n')
+            # Set read timeout in milliseconds (no need if ++auto 1)
+            #s.sendall(b'++read_tmo_ms %d\n'%(self.gpib_tmo_ms))
+            # Do not append CR or LF to GPIB data
+            s.sendall(b'++eos 3\n')
+            # Assert EOI with last byte to indicate end of data
+            s.sendall(b'++eoi 1\n')
+
+        s.sendall(c + b'\r\n')
+
+        # always read reply since we set ++auto 1,
+        # but if this cmd was not a query it will be junk
         r = b''
         while b'\r\n' not in r:
-            r += self.s.recv(4096)
+            r += s.recv(4096)
+
+        self.log.debug('close')
+        s.close()
         self.log.debug('cmd: %s; reply: %s', c, r)
-        return r.strip().decode()  # convert to str
+        if b'?' in c:
+            return r.strip().decode()  # convert to str
         # Lakeshore.cmd
-        
 
