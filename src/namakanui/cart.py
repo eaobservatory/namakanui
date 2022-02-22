@@ -87,6 +87,9 @@ class Cart(object):
         self.update_functions = [self.update_a, self.update_b, self.update_c]
         self.update_index = -1
         
+        # flag to skip sis_v check in update_b() if currently ramping
+        self.ramping_sis_v = False
+        
         self.log.debug('__init__ %s, sim=%d, band=%d',
                        self.config.inifilename, self.simulate, band)
         
@@ -356,7 +359,7 @@ class Cart(object):
         # sis bias voltage set values
         if 'sis_v_s' not in self.state:
             self.state['sis_v_s'] = [0.0]*4
-        elif self.has_sis_mixers() and any(self.bias_error):
+        elif self.has_sis_mixers() and any(self.bias_error) and not self.ramping_sis_v:
             # double-check bias voltage commands and warn
             # TODO: resend bias commands?  throw an error?
             for i in range(4):
@@ -1344,7 +1347,11 @@ class Cart(object):
         self.log.debug('_ramp_sis_bias_voltages get mv: %s', get_mv)
         self.log.debug('_ramp_sis_bias_voltages set mv: %s', set_mv)
         self.log.debug('_ramp_sis_bias_voltages cmd mv: %s', self.state['sis_v'])
-        self._ramp_sis(set_mv, 'sis_v', 0.05, self.femc.set_sis_voltage)
+        try:
+            self.ramping_sis_v = True
+            self._ramp_sis(set_mv, 'sis_v', 0.05, self.femc.set_sis_voltage)
+        finally:
+            self.ramping_sis_v = False
         # double-check and retry
         for i in range(4):  # this loop may be necessary to make cmd errors visible
             self.state['sis_v'][i] = self.femc.get_sis_voltage(self.ca, i//2, i%2)
