@@ -34,3 +34,7 @@ version.py
 # Dummy jac_sw module
 jac_sw.py
 
+# Built documentation
+*.pdf
+*.html
+
