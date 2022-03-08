@@ -113,7 +113,7 @@ class PMeter2(object):
                 # auto trigger delay, auto averaging.
                 self.s.send(b'conf%d DEF,3,(@%d)\n'%(i,i))
                 self.s.send(b'unit%d:power dbm\n'%(i))  # dBm readings
-                self.s.send(b'sens%d:mrate normal\n')  # 20 reads/sec
+                self.s.send(b'sens%d:mrate normal\n'%(i))  # 20 reads/sec
             
             self.s.send(b'syst:err?\n')
             err = self.s.recv(256)
