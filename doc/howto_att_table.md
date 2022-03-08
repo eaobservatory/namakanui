@@ -104,7 +104,7 @@ For instance, at JCMT the band 6 table has a resolution of 0.1 GHz. But above
 an LO of 264.65 GHz the PLL IF power drops off rapidly, and in this region the
 table resolution is 0.01 GHz.
 
-The following example shows just a basic refinement of the 220-265 range.
+The following example shows how the b6 attenuator table is created at JCMT.
 
 > **IMPORTANT:**
 >
@@ -147,6 +147,13 @@ vim photonics.ini
 
 # edit photonics.ini, set "b6_att = b6_att.20220315.1230.txt"
 vim photonics.ini
+
+# refine the highest frequencies where power drops rapidly,
+# appending to current 0.1GHz table
+../src/att_table.py 6 264.65:265:0.01 ini+0 |& tee -a b6_att.20220315.1230.txt
+
+# edit table to remove unrefined (overlapping) 264.7, 264.8, 264.9, 265.0 rows
+vim b6_att.20220315.1230.txt
 
 # install final table and updated photonics.ini file
 make
