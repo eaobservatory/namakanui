@@ -43,6 +43,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
+import namakanui
 from namakanui.ini import *
 from namakanui import sim
 import socket
@@ -51,7 +52,7 @@ import time
 import adam.adam5000
 
 
-class RFSMA(object)
+class RFSMA(object):
     '''
     RF Switch Matrix Assembly control class.
     '''

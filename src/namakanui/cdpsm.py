@@ -31,6 +31,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
+import namakanui
 from namakanui.ini import *
 from namakanui import sim
 import socket
@@ -39,7 +40,7 @@ import time
 import adam.adam5000
 
 
-class CDPSM(object)
+class CDPSM(object):
     '''
     Continuum Detector & Phase Stability Monitor control class.
     '''

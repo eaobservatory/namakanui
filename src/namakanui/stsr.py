@@ -39,7 +39,7 @@ import logging
 import adam.adam5000
 
 
-class STSR(object)
+class STSR(object):
     '''
     Signal Test Source Reference control class.
     '''

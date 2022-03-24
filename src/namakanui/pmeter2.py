@@ -20,6 +20,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
+import namakanui
 from namakanui.ini import *
 from namakanui import sim
 import socket
@@ -170,8 +171,8 @@ class PMeter2(object):
         self.log.debug('read_init(%s)', ch)
         ch = self.get_channel_list(ch)
         for i in ch:
-            self.s.send(b'abort%d\n'%(%i))
-            self.s.send(b'init%d\n'%(%i))
+            self.s.send(b'abort%d\n'%(i))
+            self.s.send(b'init%d\n'%(i))
         # PMeter2.read_init
     
     

@@ -34,6 +34,9 @@ version.py
 # Dummy jac_sw module
 jac_sw.py
 
+# Dummy adam module
+adam
+
 # Built documentation
 *.pdf
 *.html
