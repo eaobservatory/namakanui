@@ -146,21 +146,6 @@ def parse_range(s, maxlen=0, maxstep=0):
     # parse_range
 
 
-def get_dcms(rx):
-    '''Given receiver name rx, return array of DCM numbers from cm_wire_file.txt'''
-    dcms = []
-    for line in open('/jac_sw/hlsroot/acsis_prod/wireDir/acsis/cm_wire_file.txt'):
-        line = line.strip()
-        if not line:
-            continue
-        if line.startswith('#'):
-            continue
-        line = line.split()
-        if rx in line:
-            dcms.append(int(line[0]))
-    return dcms
-
-
 def clip(value, minimum, maximum):
     '''Return value restricted to [minimum, maximum] range'''
     if value < minimum:
@@ -187,7 +172,20 @@ class interval(object):
         return f'{self.start:g}:{self.end:g}'
     def __repr__(self):
         return self.__str__()
-    
+
+
+def get_band_lo_range(band, config=None):
+    '''Get valid LO range for given band, as an interval.'''
+    if config is None:
+        config = get_config()
+    b = str(band)
+    cc = config[config[b]['cold']]
+    wc = config[config[b]['warm']]
+    mult = int(cc['Mult']) * int(wc['Mult'])
+    floyig = float(wc['FLOYIG'])
+    fhiyig = float(wc['FHIYIG'])
+    return interval(floyig*mult, fhiyig*mult)
+
 
 def init_rfmsa_pmeters_49():
     '''

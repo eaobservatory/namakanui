@@ -1,9 +1,11 @@
 #!/local/python3/bin/python3
 '''
-retune_tpd2.py  20200713 RMB
+retune_pmeter.py  20220324 RMB
 
-Test ACSIS TPD2 against small-scale retunings, as might occur
-during a typical doppler-tracking observation.
+Test RFSMA power meter readings against small-scale retunings,
+as might occur during a typical doppler-tracking observation.
+
+Adapted from original JCMT retune_tpd2.py script.
 
 
 Copyright (C) 2020 East Asian Observatory
@@ -40,7 +42,7 @@ taskname = 'RTPD_%d'%(os.getpid())
 namakanui.util.setup_logging()
 
 config = namakanui.util.get_config()
-bands = namakanui.util.get_bands(config, simulated=False, has_sis_mixers=True)
+bands = namakanui.util.get_bands(config, simulated=False)#, has_sis_mixers=True)
 
 parser = argparse.ArgumentParser(
     formatter_class=argparse.RawTextHelpFormatter,
@@ -54,10 +56,13 @@ parser.add_argument('--iters', nargs='?', type=int, default=200)
 parser.add_argument('--level_only', action='store_true')
 args = parser.parse_args()
 
+args.off_ghz = abs(args.off_ghz)
+
 band = args.band
 lo_ghz = args.lo_ghz
-lo_range = {6:[219,266], 7:[281,367]}[band]  # TODO get from config
-if not lo_range[0] <= lo_ghz <= lo_range[1]:
+lo_range = namakanui.util.get_band_lo_range(band, config)
+lo_range = namakanui.util.interval(lo_range.min + args.off_ghz, lo_range.max - args.off_ghz)
+if not lo_ghz not in lo_range:
     logging.error('lo_ghz %g outside %s range for band %d', lo_ghz, lo_range, band)
     sys.exit(1)
 
@@ -72,6 +77,8 @@ cart.set_lock_side(args.lock_side)
 if not tune(instrument, band, lo_ghz):
     logging.error('failed to tune to %.3f ghz', lo_ghz)
     sys.exit(1)
+
+pmeters = namakanui.util.init_rfmsa_pmeters_49()
 
 # write out a header for our output file
 sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
@@ -96,21 +103,13 @@ state_keys.sort()
 state_keys.remove('lo_ghz')
 sys.stdout.write(' '.join(state_keys))
 
-mixers = ['01', '02', '11', '12']
-uw = ['U','W'][args.band-6]
-dcm_0U = namakanui.util.get_dcms('N%s0U'%(uw))
-dcm_0L = namakanui.util.get_dcms('N%s0L'%(uw))
-dcm_1U = namakanui.util.get_dcms('N%s1U'%(uw))
-dcm_1L = namakanui.util.get_dcms('N%s1L'%(uw))
-dcm_0 = dcm_0U + dcm_0L
-dcm_1 = dcm_1U + dcm_1L
-dcms = dcm_0 + dcm_1
-powers = []
-powers += ['N%s0U_dcm%d'%(uw,x) for x in dcm_0U]
-powers += ['N%s0L_dcm%d'%(uw,x) for x in dcm_0L]
-powers += ['N%s1U_dcm%d'%(uw,x) for x in dcm_1U]
-powers += ['N%s1L_dcm%d'%(uw,x) for x in dcm_1L]
-sys.stdout.write(' ' + ' '.join('hot_p_'+p for p in powers))
+pheader = []
+pheader += ['B%d_U0'%(band)]
+pheader += ['B%d_U1'%(band)]
+pheader += ['B%d_L0'%(band)]
+pheader += ['B%d_L1'%(band)]
+
+sys.stdout.write(' ' + ' '.join('hot_p_'+p for p in pheader))
 sys.stdout.write('\n')
 sys.stdout.flush()
 
@@ -132,15 +131,13 @@ def main_loop():
         if not tune(instrument, band, lo_ghz, lock_only=lock_only):
             logging.error('failed to tune to %.6f ghz', lo_ghz)
             return
-        transid = drama.obey("IFTASK@if-micro", "WRITE_TP2", FILE="NONE", ITIME=0.1)
+        for m in pmeters:
+            m.read_init()
         cart.update_all()
-        msg = transid.wait(5)
-        if msg.reason != drama.REA_COMPLETE or msg.status != 0:
-            logging.error('bad reply from IFTASK.WRITE_TP2: %s', msg)
-            return
         if cart.state['pll_unlock']:
             logging.error('lost lock at %.6f GHz', lo_ghz)
             return
+        powers = [p for m in pmeters for p in m.read_fetch()]
         sys.stdout.write('%.6f %d'%(lo_ghz, lock_only))
         for key in state_keys:
             if key not in cart.state:
@@ -149,42 +146,18 @@ def main_loop():
                 sys.stdout.write(' %s'%(cart.state[key][index]))
             else:
                 sys.stdout.write(' %s'%(cart.state[key]))
-        for dcm in dcms:
-            sys.stdout.write(' %.5f'%(msg.arg['POWER%d'%(dcm)]))
+        for p in powers:
+            sys.stdout.write(' %.5f'%(p))
         sys.stdout.write('\n')
         sys.stdout.flush()
 
 
-# the rest of this needs to be DRAMA to be able to talk to IFTASK.
-def MAIN(msg):
-    # TODO obey/kick check
-    try:
-        if_arg = [1,2][int(args.level_only)]
-        namakanui.util.iftask_setup(if_arg, dcms=dcms)
-        main_loop()
-        
-    finally:
-        # final timestamp
-        sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
-        sys.stdout.flush()
-        instrument.set_safe()
-        drama.Exit('MAIN done')
-    # MAIN
-        
-
 try:
-    logging.info('drama.init...')
-    drama.init(taskname, actions=[MAIN])
-    drama.blind_obey(taskname, "MAIN")
-    logging.info('drama.run...')
-    drama.run()
+    main_loop()
 finally:
-    logging.info('drama.stop...')
-    drama.stop()
-    logging.info('done.')
-    
-
-
-
+    sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
+    sys.stdout.flush()
+    instrument.set_safe()
+    logging.info('done')
 
 
