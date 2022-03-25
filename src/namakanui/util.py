@@ -194,6 +194,8 @@ def init_rfmsa_pmeters_49():
     rfsma_p1: A14, EHT#1 (USB), chA=POL0, chB=POL1
     rfsma_p3: A17, EHT#2 (LSB), chA=POL0, chB=POL1
     '''
+    import namakanui.rfsma
+    import namakanui.pmeter2
     config = get_config('rfsma.ini')  # holds pmeter config also
     rfsma_a14 = namakanui.rfsma.RFSMA(config, 'rfsma_a14', level=logging.DEBUG)
     rfsma_a17 = namakanui.rfsma.RFSMA(config, 'rfsma_a17', level=logging.DEBUG)

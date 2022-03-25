@@ -109,7 +109,7 @@ pheader += ['B%d_U1'%(band)]
 pheader += ['B%d_L0'%(band)]
 pheader += ['B%d_L1'%(band)]
 
-sys.stdout.write(' ' + ' '.join('hot_p_'+p for p in pheader))
+sys.stdout.write(' ' + ' '.join('hot_dbm_'+p for p in pheader))
 sys.stdout.write('\n')
 sys.stdout.flush()
 
