@@ -1,0 +1,38 @@
+The following are notes for updating the FEMC firmware
+from version 2.8.6 to version 2.8.7.
+See femc_fw_update_procedure.pdf for original instructions.
+The update was done by RMB on uluhe in Hilo on 20220211,
+since uluhe has a serial port.
+
+------------------
+
+$ sudo yum install uucp  # for cu command
+$ sudo yum install lrzsz  # for sz command
+
+$ sudo chmod 666 /dev/ttyS0
+$ stty -F /dev/ttyS0 sane
+$ stty -F /dev/ttyS0 115200
+
+$ cu -l /dev/ttyS0
+
+<power up FEMC>
+<enter> to print firmware help
+<i> to print firmware version
+<q> to quit firmware and return to DOS prompt
+
+C:\ALMA>verify on
+C:\ALMA>copy fe_mc.exe femc286.exe
+C:\ALMA>rz
+
+<~.> (tilde + dot + enter) to disconnect "cu" and return to linux prompt
+
+$ cp 2-8-7.exe femc287.exe
+$ sz femc287.exe > /dev/ttyS0 < /dev/ttyS0
+$ cu -l /dev/ttyS0
+
+C:\ALMA>del fe_mc.exe
+C:\ALMA>copy femc287.exe fe_mc.exe
+C:\ALMA>verify off
+
+<power cycle FEMC, observe boot output>
+<~.>
