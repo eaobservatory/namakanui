@@ -56,6 +56,7 @@ args = parser.parse_args()
 
 if args.verbose:
     logging.root.setLevel(logging.DEBUG)
+    logging.root.handlers[0].setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s'))
     log.setLevel(logging.DEBUG)
 
 cfg = namakanui.util.get_config('femc.ini')['femc']
@@ -115,11 +116,14 @@ while True:
         r -= {listener}
         client = listener.accept()[0]
         log.debug('accepted new client %s', client)
-        client.setblocking(False)
+        #client.setblocking(False)  # causes delays?
+        client.settimeout(1)
+        client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         clients |= {client}
     if can2lan in r:
         r -= {can2lan}
         packet = can2lan.recv(36)
+        log.debug('can2lan recv:    %s', packet.hex())
         if not packet:
             log.error('lost PCAN connection')
             break
@@ -127,16 +131,24 @@ while True:
             try:
                 client.send(packet)
             except:
+                log.exception('send exception for client %s', client)
                 # ignore all errors forwarding packets to clients
                 pass
+        log.debug('sent to all:     %s', packet.hex())
     for client in r:
-        packet = client.recv(36)
+        try:
+            packet = client.recv(36)
+            log.debug('recv %d bytes:   %s from client %s', len(packet), packet.hex(), client)
+        except:
+            packet = b''
+            log.exception('recv exception for client %s', client)
         if len(packet) < 36:  # bad/lost/closed connection
             log.debug('dropping client %s', client)
             client.close()
             clients -= {client}
         else:
             lan2can.send(packet)
+            log.debug('sent to lan2can: %s', packet.hex())
 
 # only get here if lost PCAN connection, so clean up and exit with error
 log.debug('done, closing sockets.')

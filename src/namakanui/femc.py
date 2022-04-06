@@ -318,6 +318,7 @@ class FEMC(object):
             self.s_tx.settimeout(self.timeout)
             self.log.debug('connecting to namakanui_pcand.py at %s:%d', pcand_ip, pcand_port)
             self.s_tx.connect((pcand_ip, pcand_port))
+            self.s_tx.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         
         elif self.pcan:  # connect directly to PEAK PCAN-Ethernet Gateway
             pcan_type = cfg['pcan_type'].lower()
