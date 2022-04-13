@@ -40,7 +40,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw
-import drama
 import sys
 import os
 import time
@@ -67,7 +66,6 @@ parser.add_argument('lo_ghz', type=float)
 parser.add_argument('--mv')
 parser.add_argument('--pa')
 parser.add_argument('lock_side', nargs='?', choices=['below','above'], default='above')
-parser.add_argument('--level_only', action='store_true')
 parser.add_argument('--note', nargs='?', default='', help='note for output file')
 args = parser.parse_args()
 
@@ -104,29 +102,23 @@ nom_v = cart.state['sis_v']
 
 load = instrument.load  # shorten name
 
+pmeters = namakanui.util.init_rfsma_pmeters_49()
+
 # write out a header for our output file
 sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
 sys.stdout.write('# %s\n'%(sys.argv))
 sys.stdout.write('#\n')
 sys.stdout.write('#mv')
 mixers = ['01', '02', '11', '12']
-uw = ['U','W'][args.band-6]
-dcm_0U = namakanui.util.get_dcms('N%s0U'%(uw))
-dcm_0L = namakanui.util.get_dcms('N%s0L'%(uw))
-dcm_1U = namakanui.util.get_dcms('N%s1U'%(uw))
-dcm_1L = namakanui.util.get_dcms('N%s1L'%(uw))
-dcm_0 = dcm_0U + dcm_0L
-dcm_1 = dcm_1U + dcm_1L
-dcms = dcm_0 + dcm_1
 powers = []
-powers += ['0U_dcm%d'%(x) for x in dcm_0U]
-powers += ['0L_dcm%d'%(x) for x in dcm_0L]
-powers += ['1U_dcm%d'%(x) for x in dcm_1U]
-powers += ['1L_dcm%d'%(x) for x in dcm_1L]
+powers += ['B%d_U0'%(band)]
+powers += ['B%d_U1'%(band)]
+powers += ['B%d_L0'%(band)]
+powers += ['B%d_L1'%(band)]
 sys.stdout.write(' ' + ' '.join('ua_avg_'+m for m in mixers))
 sys.stdout.write(' ' + ' '.join('ua_dev_'+m for m in mixers))
-sys.stdout.write(' ' + ' '.join('hot_p_'+p for p in powers))
-sys.stdout.write(' ' + ' '.join('sky_p_'+p for p in powers))
+sys.stdout.write(' ' + ' '.join('hot_mw_'+p for p in powers))
+sys.stdout.write(' ' + ' '.join('sky_mw_'+p for p in powers))
 sys.stdout.write(' ' + ' '.join('yf_'+p for p in powers))
 sys.stdout.write('\n')
 sys.stdout.flush()
@@ -156,7 +148,6 @@ def iv(target, rows):
         cart.tune(lo_ghz, 0.0, skip_servo_pa=True)
         cart._set_pa([pas[0],pas[1]])
         cart.update_all()
-        namakanui.util.iftask_setup(2, dcms=dcms)  # level only
     
     sys.stderr.write('%s: '%(target))
     sys.stderr.flush()
@@ -174,8 +165,9 @@ def iv(target, rows):
             cart.femc.set_sis_voltage(cart.ca, po, 0, mult*mv)
             cart.femc.set_sis_voltage(cart.ca, po, 1, mv)
         rows[i][mv_index] = mv
-        # start IFTASK action while we average the mixer current readings
-        transid = drama.obey("IFTASK@if-micro", "WRITE_TP2", FILE="NONE", ITIME=0.1)
+        # start pmeter reads
+        for m in pmeters:
+            m.read_init()
         # TODO: separate hot/cold mixer currents, or only calc hot
         for j in range(ua_n):
             for po in range(2):
@@ -183,13 +175,10 @@ def iv(target, rows):
                     ua = cart.femc.get_sis_current(cart.ca,po,sb)*1e3
                     rows[i][ua_avg_index + po*2 + sb] += abs(ua)  # for band 6
                     rows[i][ua_dev_index + po*2 + sb] += ua*ua
-        # get IFTASK reply
-        msg = transid.wait(5)
-        if msg.reason != drama.REA_COMPLETE or msg.status != 0:
-            logging.error('bad reply from IFTASK.WRITE_TP2: %s', msg)
-            return 1
-        for j,dcm in enumerate(dcms):
-            rows[i][p_index + j] = msg.arg['POWER%d'%(dcm)]
+        # fetch pmeter results and convert to mW
+        dbm = [p for m in pmeters for p in m.read_fetch()]
+        mw = [10.0**(0.1*p) for p in dbm]
+        rows[i][p_index:p_index+len(mw)] = mw
     
     sys.stderr.write('\n')
     sys.stderr.flush()
@@ -197,66 +186,43 @@ def iv(target, rows):
     # iv
 
 
-
-# the rest of this needs to be DRAMA to be able to talk to IFTASK.
-# TODO: could actually publish parameters.  also we need a task name.
-def MAIN(msg):
-    # TODO obey/kick check
-    try:
-        if_arg = [1,2][int(args.level_only)]
-        namakanui.util.iftask_setup(if_arg, dcms=dcms)
-            
-        # need to save output rows since they have both hot and sky data.
-        rows = [None]*len(mvs)
-        for i in range(len(rows)):
-            rows[i] = [0.0]*(yf_index+len(powers))
-        
-        if iv('hot', rows):
-            return
-        if iv('sky', rows):
-            return
-        
-        n = ua_n*2
-        for r in rows:
-            for j in range(4):
-                # calculate mixer current avg/dev.
-                # iv just saves sum(x) and sum(x^2);
-                # remember stddev is sqrt(E(x^2) - E(x)^2)
-                avg = r[ua_avg_index + j] / n
-                dev = (r[ua_dev_index + j]/n - avg**2)**.5
-                r[ua_avg_index + j] = avg
-                r[ua_dev_index + j] = dev
-            
-            for j in range(len(powers)):
-                # calculate y-factors
-                r[yf_index + j] = r[hot_p_index + j] / r[sky_p_index + j]
-                
-            # write out the data
-            sys.stdout.write(' '.join('%g'%x for x in r) + '\n')
-            sys.stdout.flush()
-    finally:
-        # final timestamp
-        sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
-        sys.stdout.flush()
-        
-        # retune the receiver to get settings back to nominal
-        cart.tune(lo_ghz, 0.0)
-        drama.Exit('MAIN done')
-    # MAIN
-        
-
 try:
-    logging.info('drama.init...')
-    drama.init(taskname, actions=[MAIN])
-    drama.blind_obey(taskname, "MAIN")
-    logging.info('drama.run...')
-    drama.run()
-finally:
-    logging.info('drama.stop...')
-    drama.stop()
-    logging.info('done.')
+    # need to save output rows since they have both hot and sky data.
+    rows = [None]*len(mvs)
+    for i in range(len(rows)):
+        rows[i] = [0.0]*(yf_index+len(powers))
     
-
+    if iv('hot', rows):
+        return
+    if iv('sky', rows):
+        return
+    
+    n = ua_n*2
+    for r in rows:
+        for j in range(4):
+            # calculate mixer current avg/dev.
+            # iv just saves sum(x) and sum(x^2);
+            # remember stddev is sqrt(E(x^2) - E(x)^2)
+            avg = r[ua_avg_index + j] / n
+            dev = (r[ua_dev_index + j]/n - avg**2)**.5
+            r[ua_avg_index + j] = avg
+            r[ua_dev_index + j] = dev
+        
+        for j in range(len(powers)):
+            # calculate y-factors
+            r[yf_index + j] = r[hot_p_index + j] / r[sky_p_index + j]
+            
+        # write out the data
+        sys.stdout.write(' '.join('%g'%x for x in r) + '\n')
+        sys.stdout.flush()
+finally:
+    # final timestamp
+    sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
+    sys.stdout.flush()
+    
+    # retune the receiver to get settings back to nominal
+    cart.tune(lo_ghz, 0.0)
+    logging.info('done')
 
 
 

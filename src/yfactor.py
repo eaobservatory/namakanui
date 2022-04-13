@@ -50,7 +50,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw
-import drama
 import sys
 import os
 import time
@@ -77,7 +76,6 @@ parser.add_argument('lo_ghz', type=float)
 parser.add_argument('--mv')
 parser.add_argument('--pa')
 parser.add_argument('lock_side', nargs='?', choices=['below','above'], default='above')
-parser.add_argument('--level_only', action='store_true')
 parser.add_argument('--zero', action='store_true', help='zero bias voltage of unused mixer instead of leaving at nominal value')
 args = parser.parse_args()
 
@@ -107,29 +105,33 @@ nom_v = cart.state['sis_v']
 
 load = instrument.load  # shorten name
 
+pmeters = namakanui.util.init_rfsma_pmeters_49()
+
 # write out a header for our output file
 sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
 sys.stdout.write('# %s\n'%(sys.argv))
 sys.stdout.write('#\n')
 sys.stdout.write('#pa mv')
 mixers = ['01', '02', '11', '12']
-uw = ['U','W'][args.band-6]
-dcm_0U = namakanui.util.get_dcms('N%s0U'%(uw))
-dcm_0L = namakanui.util.get_dcms('N%s0L'%(uw))
-dcm_1U = namakanui.util.get_dcms('N%s1U'%(uw))
-dcm_1L = namakanui.util.get_dcms('N%s1L'%(uw))
-dcm_0 = dcm_0U + dcm_0L
-dcm_1 = dcm_1U + dcm_1L
-dcms = dcm_0 + dcm_1
 powers = []
-powers += ['01_dcm%d'%(x) for x in dcm_0]
-powers += ['02_dcm%d'%(x) for x in dcm_0]
-powers += ['11_dcm%d'%(x) for x in dcm_1]
-powers += ['12_dcm%d'%(x) for x in dcm_1]
+#powers += ['B%d_U0'%(band)]
+#powers += ['B%d_U1'%(band)]
+#powers += ['B%d_L0'%(band)]
+#powers += ['B%d_L1'%(band)]
+# put powers in order by mixer instead of normal usb/lsb order;
+# these are doubled since we read out each mixer in a block individually.
+powers += ['01_B%d_U0'%(band)]
+powers += ['01_B%d_L0'%(band)]
+powers += ['02_B%d_U0'%(band)]
+powers += ['02_B%d_L0'%(band)]
+powers += ['11_B%d_U1'%(band)]
+powers += ['11_B%d_L1'%(band)]
+powers += ['12_B%d_U1'%(band)]
+powers += ['12_B%d_L1'%(band)]
 sys.stdout.write(' ' + ' '.join('ua_avg_'+m for m in mixers))
 sys.stdout.write(' ' + ' '.join('ua_dev_'+m for m in mixers))
-sys.stdout.write(' ' + ' '.join('hot_p_'+p for p in powers))
-sys.stdout.write(' ' + ' '.join('sky_p_'+p for p in powers))
+sys.stdout.write(' ' + ' '.join('hot_mw_'+p for p in powers))
+sys.stdout.write(' ' + ' '.join('sky_mw_'+p for p in powers))
 sys.stdout.write(' ' + ' '.join('yf_'+p for p in powers))
 sys.stdout.write('\n')
 sys.stdout.flush()
@@ -170,13 +172,9 @@ def iv(target, rows, pa):
     # relative power levels, but we mostly only do 2 PAs these days and care
     # more about Y-factor values anyway.
     if target == 'hot':
-        cart.tune(lo_ghz, 0.0)
-        # do this here because of the retuning
+        cart.tune(lo_ghz, 0.0, skip_servo_pa=True)
         cart._set_pa([pa,pa])
         cart.update_all()
-        # dbm should already be set from namakanui.util.tune
-        namakanui.util.iftask_setup(2, dcms=dcms)  # level only
-    
     
     sys.stderr.write('%s: '%(target))
     sys.stderr.flush()
@@ -193,7 +191,7 @@ def iv(target, rows, pa):
     # to optimize their combined outputs.  This will require a 2D scan of
     # mixer bias voltage for each PA setting.
     
-    # sis1
+    # sis1, mixers 01, 11
     sb = 0
     mult = 1.0
     if band == 6:
@@ -210,25 +208,23 @@ def iv(target, rows, pa):
         for po in range(2):
             cart.femc.set_sis_voltage(cart.ca, po, sb, mult*mv)
         rows[i][mv_index] = mv
-        # start IFTASK action while we average the mixer current readings
-        transid = drama.obey("IFTASK@if-micro", "WRITE_TP2", FILE="NONE", ITIME=0.1)
+        # start pmeter reads
+        for m in pmeters:
+            m.read_init()
         for j in range(ua_n):
             for po in range(2):
                 ua = cart.femc.get_sis_current(cart.ca,po,sb)*1e3
                 rows[i][ua_avg_index + po*2 + sb] += abs(ua)  # for band 6
                 rows[i][ua_dev_index + po*2 + sb] += ua*ua
-        # get IFTASK reply
-        msg = transid.wait(5)
-        if msg.reason != drama.REA_COMPLETE or msg.status != 0:
-            logging.error('bad reply from IFTASK.WRITE_TP2: %s', msg)
-            return 1
-        
-        for j,dcm in enumerate(dcm_0):
-            rows[i][p_index + j + 0] = msg.arg['POWER%d'%(dcm)]
-        for j,dcm in enumerate(dcm_1):
-            rows[i][p_index + j + 16] = msg.arg['POWER%d'%(dcm)]
+        # fetch pmeter results and convert to mW
+        dbm = [p for m in pmeters for p in m.read_fetch()]
+        mw = [10.0**(0.1*p) for p in dbm]
+        rows[i][p_index+0] = mw[0]  # 01, P0U
+        rows[i][p_index+1] = mw[2]  # 01, P0L
+        rows[i][p_index+4] = mw[1]  # 11, P1U
+        rows[i][p_index+5] = mw[3]  # 11, P1L
     
-    # sis2
+    # sis2, mixers 02, 12
     sb = 1
     if args.zero:
         cart._ramp_sis_bias_voltages([0.0, mvs[0], 0.0, mvs[0]])
@@ -242,23 +238,21 @@ def iv(target, rows, pa):
         for po in range(2):
             cart.femc.set_sis_voltage(cart.ca, po, sb, mv)
         rows[i][mv_index] = mv
-        # start IFTASK action while we average the mixer current readings
-        transid = drama.obey("IFTASK@if-micro", "WRITE_TP2", FILE="NONE", ITIME=0.1)
+        # start pmeter reads
+        for m in pmeters:
+            m.read_init()
         for j in range(ua_n):
             for po in range(2):
                 ua = cart.femc.get_sis_current(cart.ca,po,sb)*1e3
                 rows[i][ua_avg_index + po*2 + sb] += ua
                 rows[i][ua_dev_index + po*2 + sb] += ua*ua
-        # get IFTASK reply
-        msg = transid.wait(5)
-        if msg.reason != drama.REA_COMPLETE or msg.status != 0:
-            logging.error('bad reply from IFTASK.WRITE_TP2: %s', msg)
-            return 1
-        
-        for j,dcm in enumerate(dcm_0):
-            rows[i][p_index + j + 8] = msg.arg['POWER%d'%(dcm)]
-        for j,dcm in enumerate(dcm_1):
-            rows[i][p_index + j + 24] = msg.arg['POWER%d'%(dcm)]
+        # fetch pmeter results and convert to mW
+        dbm = [p for m in pmeters for p in m.read_fetch()]
+        mw = [10.0**(0.1*p) for p in dbm]
+        rows[i][p_index+2] = mw[0]  # 02, P0U
+        rows[i][p_index+3] = mw[2]  # 02, P0L
+        rows[i][p_index+6] = mw[1]  # 12, P1U
+        rows[i][p_index+7] = mw[3]  # 12, P1L
     
     sys.stderr.write('\n')
     sys.stderr.flush()
@@ -267,70 +261,47 @@ def iv(target, rows, pa):
 
 
 
-# the rest of this needs to be DRAMA to be able to talk to IFTASK.
-# TODO: could actually publish parameters.  also we need a task name.
-def MAIN(msg):
-    # TODO obey/kick check
-    try:
-        if_arg = [1,2][int(args.level_only)]
-        namakanui.util.iftask_setup(if_arg, dcms=dcms)
-        
-        for k,pa in enumerate(pas):
-            logging.info('========= PA: %g (%.2f%%) =========', pa, 100*k/len(pas))
-            #cart._set_pa([pa,pa])  since iv retunes we do this there
-            
-            # need to save output rows since they have both hot and sky data.
-            rows = [None]*len(mvs)
-            for i in range(len(rows)):
-                rows[i] = [0.0]*(yf_index+len(powers))
-                rows[i][pa_index] = pa
-            
-            if iv('hot', rows, pa):
-                break
-            if iv('sky', rows, pa):
-                break
-            
-            n = ua_n*2
-            for r in rows:
-                for j in range(4):
-                    # calculate mixer current avg/dev.
-                    # iv just saves sum(x) and sum(x^2);
-                    # remember stddev is sqrt(E(x^2) - E(x)^2)
-                    avg = r[ua_avg_index + j] / n
-                    dev = (r[ua_dev_index + j]/n - avg**2)**.5
-                    r[ua_avg_index + j] = avg
-                    r[ua_dev_index + j] = dev
-                
-                for j in range(len(powers)):
-                    # calculate y-factors
-                    r[yf_index + j] = r[hot_p_index + j] / r[sky_p_index + j]
-                    
-                # write out the data
-                sys.stdout.write(' '.join('%g'%x for x in r) + '\n')
-                sys.stdout.flush()
-    finally:
-        # final timestamp
-        sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
-        sys.stdout.flush()
-        
-        # retune the receiver to get settings back to nominal
-        cart.tune(lo_ghz, 0.0)
-        drama.Exit('MAIN done')
-    # MAIN
-        
-
 try:
-    logging.info('drama.init...')
-    drama.init(taskname, actions=[MAIN])
-    drama.blind_obey(taskname, "MAIN")
-    logging.info('drama.run...')
-    drama.run()
-finally:
-    logging.info('drama.stop...')
-    drama.stop()
-    logging.info('done.')
     
-
-
-
+    for k,pa in enumerate(pas):
+        logging.info('========= PA: %g (%.2f%%) =========', pa, 100*k/len(pas))
+        #cart._set_pa([pa,pa])  since iv retunes we do this there
+        
+        # need to save output rows since they have both hot and sky data.
+        rows = [None]*len(mvs)
+        for i in range(len(rows)):
+            rows[i] = [0.0]*(yf_index+len(powers))
+            rows[i][pa_index] = pa
+        
+        if iv('hot', rows, pa):
+            break
+        if iv('sky', rows, pa):
+            break
+        
+        n = ua_n*2
+        for r in rows:
+            for j in range(4):
+                # calculate mixer current avg/dev.
+                # iv just saves sum(x) and sum(x^2);
+                # remember stddev is sqrt(E(x^2) - E(x)^2)
+                avg = r[ua_avg_index + j] / n
+                dev = (r[ua_dev_index + j]/n - avg**2)**.5
+                r[ua_avg_index + j] = avg
+                r[ua_dev_index + j] = dev
+            
+            for j in range(len(powers)):
+                # calculate y-factors
+                r[yf_index + j] = r[hot_p_index + j] / r[sky_p_index + j]
+                
+            # write out the data
+            sys.stdout.write(' '.join('%g'%x for x in r) + '\n')
+            sys.stdout.flush()
+finally:
+    # final timestamp
+    sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
+    sys.stdout.flush()
+    
+    # retune the receiver to get settings back to nominal
+    cart.tune(lo_ghz, 0.0)
+    logging.info('done')
 

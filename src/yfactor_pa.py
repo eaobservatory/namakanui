@@ -11,12 +11,6 @@ The motivation here is that it's hard to be confident in the relative
 y-factors for each PA level when taking IV curves, since the weather
 might change significantly between different PAs.
 
-Update 20200221:
-With the replacement of mixers 01/02, we're seeing saturated power values
-when we level the IF at the nominal bias settings.  So unfortunately
-we need to do an initial level, then hunt around for the PA setting
-with the highest power value.  Level again, and repeat the process
-a few times to be sure that we won't saturate during the PA Y-factor sweep.
 
 
 Copyright (C) 2020 East Asian Observatory
@@ -36,7 +30,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw
-import drama
 import sys
 import os
 import time
@@ -91,6 +84,8 @@ nom_v = cart.state['sis_v']
 
 load = instrument.load  # shorten name
 
+pmeters = namakanui.util.init_rfsma_pmeters_49()
+
 # write out a header for our output file
 sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
 sys.stdout.write('# %s\n'%(sys.argv))
@@ -98,21 +93,20 @@ sys.stdout.write('# nom_v: %s\n'%(nom_v))
 sys.stdout.write('#\n')
 sys.stdout.write('#pa ')
 mixers = ['01', '02', '11', '12']
-uw = ['U','W'][args.band-6]
-dcm_0U = namakanui.util.get_dcms('N%s0U'%(uw))
-dcm_0L = namakanui.util.get_dcms('N%s0L'%(uw))
-dcm_1U = namakanui.util.get_dcms('N%s1U'%(uw))
-dcm_1L = namakanui.util.get_dcms('N%s1L'%(uw))
-dcm_0 = dcm_0U + dcm_0L
-dcm_1 = dcm_1U + dcm_1L
-dcms = dcm_0 + dcm1
 powers = []
-powers += ['0_dcm%d'%(x) for x in dcm_0]
-powers += ['1_dcm%d'%(x) for x in dcm_1]
+#powers += ['B%d_U0'%(band)]
+#powers += ['B%d_U1'%(band)]
+#powers += ['B%d_L0'%(band)]
+#powers += ['B%d_L1'%(band)]
+# note these are reordered by polarization
+powers += ['B%d_U0'%(band)]
+powers += ['B%d_L0'%(band)]
+powers += ['B%d_U1'%(band)]
+powers += ['B%d_L1'%(band)]
 sys.stdout.write(' ' + ' '.join('ua_avg_'+m for m in mixers))
 sys.stdout.write(' ' + ' '.join('ua_dev_'+m for m in mixers))
-sys.stdout.write(' ' + ' '.join('hot_p_'+p for p in powers))
-sys.stdout.write(' ' + ' '.join('sky_p_'+p for p in powers))
+sys.stdout.write(' ' + ' '.join('hot_mw_'+p for p in powers))
+sys.stdout.write(' ' + ' '.join('sky_mw_'+p for p in powers))
 sys.stdout.write(' ' + ' '.join('yf_'+p for p in powers))
 sys.stdout.write('\n')
 sys.stdout.flush()
@@ -149,23 +143,23 @@ def ip(target, rows, pas):
 
         cart._set_pa([pa,pa])
         rows[i][pa_index] = pa
-
-        # start IFTASK action while we average the mixer current readings
-        transid = drama.obey("IFTASK@if-micro", "WRITE_TP2", FILE="NONE", ITIME=0.1)
+        
+        # start pmeter reads
+        for m in pmeters:
+            m.read_init()
+        
         for j in range(ua_n):
             for po in range(2):
                 for sb in range(2):
                     ua = cart.femc.get_sis_current(cart.ca,po,sb)*1e3
                     rows[i][ua_avg_index + po*2 + sb] += abs(ua)  # for band 6
                     rows[i][ua_dev_index + po*2 + sb] += ua*ua
-        # get IFTASK reply
-        msg = transid.wait(5)
-        if msg.reason != drama.REA_COMPLETE or msg.status != 0:
-            logging.error('bad reply from IFTASK.WRITE_TP2: %s', msg)
-            return 1
         
-        for j,dcm in enumerate(dcm_0+dcm_1):
-            rows[i][p_index + j] = msg.arg['POWER%d'%(dcm)]
+        # fetch pmeter results, convert to mW, and reorder by polarization
+        dbm = [p for m in pmeters for p in m.read_fetch()]
+        mw = [10.0**(0.1*p) for p in dbm]
+        mw = [mw[0], mw[2], mw[1], mw[3]]
+        rows[i][p_index:p_index+len(mw)] = mw
     
     sys.stderr.write('\n')
     sys.stderr.flush()
@@ -173,126 +167,46 @@ def ip(target, rows, pas):
     # ip
 
 
-    
-
-def adjust_levels(dup_pas):
-    '''look for max power levels across dup_pas for each mixer.
-       level at median max PA for 01/02 and 11/12.
-       return the 2 max power PAs for further iterations.'''
-    # remove dups
-    dup_pas = list(set(dup_pas))
-    dup_pas.sort()
-    rows = [None]*len(dup_pas)
-    for i in range(len(rows)):
-        rows[i] = [0.0]*(yf_index+len(powers))
-    if ip('hot', rows, dup_pas):
-        return 0,0  # fail
-    max_pa = [0]*16
-    max_pow = [-1e300]*16
-    for i in range(len(dup_pas)):
-        for j in range(16):
-            if rows[i][hot_p_index+j] > max_pow[j]:
-                max_pow[j] = rows[i][hot_p_index+j]
-                max_pa[j] = dup_pas[i]
-    logging.info('max power PAs: %s', max_pa)
-    p0_pas = max_pa[:8]
-    p1_pas = max_pa[8:]
-    p0_pas.sort()
-    p1_pas.sort()
-    cart._set_pa([p0_pas[4],p1_pas[4]])
-    if if_setup(2):  # level only
-        return 0,0  # fail
-    return p0_pas[4],p1_pas[4]
-
-def iter_adjust_levels():
-    #coarse_pas = [.1*i*2.5 for i in range(1,11)]
-    coarse_pas = [.1*i for i in range(1,26)]
-    if len(pas) < len(coarse_pas):
-        coarse_pas = pas
-    p0,p1 = adjust_levels(coarse_pas)
-    if p0==0 and p1==0:
-        return 1  # fail
-    logging.info('leveled at pa %.2f, %.2f', p0, p1)
-    fine_pas_p0 = [p0-.08, p0-.04, p0, p0+.04, p0+.08]
-    fine_pas_p1 = [p1-.08, p1-.04, p1, p1+.04, p1+.08]
-    p0,p1 = adjust_levels(fine_pas_p0+fine_pas_p1)
-    if p0==0 and p1==0:
-        return 1
-    logging.info('leveled at pa %.2f, %.2f', p0, p1)
-    finer_pas_p0 = [p0-.03, p0-.02, p0-.01, p0, p0+.01, p0+.02, p0+.03]
-    finer_pas_p1 = [p1-.03, p1-.02, p1-.01, p1, p1+.01, p1+.02, p1+.03]
-    p0,p1 = adjust_levels(finer_pas_p0+finer_pas_p1)
-    if p0==0 and p1==0:
-        return 1
-    logging.info('leveled at pa %.2f, %.2f', p0, p1)
-    return 0
-
-
-# the rest of this needs to be DRAMA to be able to talk to IFTASK.
-# TODO: could actually publish parameters.  also we need a task name.
-def MAIN(msg):
-    # TODO obey/kick check
-    try:
-        if_arg = [1,2][int(args.level_only)]
-        namakanui.util.iftask_setup(if_arg, dcms=dcms)
-        
-        # we want to level close to the max power for each pair of mixers.
-        # use a coarse, full 0-2.5 PA sweep, find max power for each DCM.
-        # we'll get a set of 4 PAs; do a finer sweep around these.
-        # repeat again, then avg PA for 01/02 and 11/12 and do final level.
-        if iter_adjust_levels():
-            return
-            
-        # need to save output rows since they have both hot and sky data.
-        rows = [None]*len(pas)
-        for i in range(len(rows)):
-            rows[i] = [0.0]*(yf_index+len(powers))
-        
-        if ip('hot', rows, pas):
-            return
-        if ip('sky', rows, pas):
-            return
-            
-        n = ua_n*2
-        for r in rows:
-            for j in range(4):
-                # calculate mixer current avg/dev.
-                # iv just saves sum(x) and sum(x^2);
-                # remember stddev is sqrt(E(x^2) - E(x)^2)
-                avg = r[ua_avg_index + j] / n
-                dev = (r[ua_dev_index + j]/n - avg**2)**.5
-                r[ua_avg_index + j] = avg
-                r[ua_dev_index + j] = dev
-            
-            for j in range(len(powers)):
-                # calculate y-factors
-                r[yf_index + j] = r[hot_p_index + j] / r[sky_p_index + j]
-                
-            # write out the data
-            sys.stdout.write(' '.join('%g'%x for x in r) + '\n')
-            sys.stdout.flush()
-    finally:
-        # final timestamp
-        sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
-        sys.stdout.flush()
-        
-        # retune the receiver to get settings back to nominal
-        cart.tune(lo_ghz, 0.0)
-        drama.Exit('MAIN done')
-    # MAIN
-        
 
 try:
-    logging.info('drama.init...')
-    drama.init(taskname, actions=[MAIN])
-    drama.blind_obey(taskname, "MAIN")
-    logging.info('drama.run...')
-    drama.run()
-finally:
-    logging.info('drama.stop...')
-    drama.stop()
-    logging.info('done.')
+        
+    # need to save output rows since they have both hot and sky data.
+    rows = [None]*len(pas)
+    for i in range(len(rows)):
+        rows[i] = [0.0]*(yf_index+len(powers))
     
+    if ip('hot', rows, pas):
+        return
+    if ip('sky', rows, pas):
+        return
+        
+    n = ua_n*2
+    for r in rows:
+        for j in range(4):
+            # calculate mixer current avg/dev.
+            # iv just saves sum(x) and sum(x^2);
+            # remember stddev is sqrt(E(x^2) - E(x)^2)
+            avg = r[ua_avg_index + j] / n
+            dev = (r[ua_dev_index + j]/n - avg**2)**.5
+            r[ua_avg_index + j] = avg
+            r[ua_dev_index + j] = dev
+        
+        for j in range(len(powers)):
+            # calculate y-factors
+            r[yf_index + j] = r[hot_p_index + j] / r[sky_p_index + j]
+            
+        # write out the data
+        sys.stdout.write(' '.join('%g'%x for x in r) + '\n')
+        sys.stdout.flush()
+finally:
+    # final timestamp
+    sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))
+    sys.stdout.flush()
+    
+    # retune the receiver to get settings back to nominal
+    cart.tune(lo_ghz, 0.0)
+    logging.info('done.')
+
 
 
 
