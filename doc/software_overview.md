@@ -59,8 +59,18 @@ For the frame descriptions below, please refer to the following screenshot:
 
 ![Namakanui GUI Screenshot](gui.png)
 
-### CRYO
-Displays status from the Edwards pressure gauge and Lakeshore temperature controller.  Pressure is given in millibar, and the temperatures from the coldhead and separate thermal stages are given in kelvin.  Note that this frame lacks the “number” and “simulate” fields since the data is passed unmodified from the EPICS database.  Future versions of the software will also include a field for the ambient load temperature.
+
+### LAKESHORE
+
+Displays the status from the Lakeshore temperature monitor, in kelvin.
+
+### VACUUM
+
+Displays the status from the Pfeiffer pressure gauge.
+
+### COMPRESSOR
+
+Displays the status from the Sumitomo coldhead compressor.
 
 ### LOAD
 Displays status of the calibration load controller, and provides buttons to control the load position.  (This system consists of a rotary stage holding an ambient-temperature load, which can be moved in and out of the beam for each receiver insert.)
@@ -76,8 +86,8 @@ Actions:
 - HOME:  home the stage, only needed if the controller loses power
 - KICK:  interrupt any MOVE or HOME action in progress and stop the stage
 
-### AGILENT
-Displays status of the Agilent N5173B or Keysight E8257D reference signal generator, and provides buttons to set signal frequency and output power.  Future versions of the software may give this frame a more generic name, such as “REFERENCE.”
+### REFERENCE
+Displays status of the Agilent N5173B or Keysight E8257D reference signal generator, and provides buttons to set signal frequency and output power.
 
 Fields:
 - dbm:  output power in dBm
@@ -100,15 +110,20 @@ Fields:
 Actions:
 - ATT:  set attenuator to counts given in text box
 
-### IFSWITCH
-Displays status of the IF switch assembly, and provides buttons to control the selected band.  Future versions of the software will display the current band and 31.5 MHz signal status in a more user-friendly manner.
+### STSR
+Displays status of the Signal Test Source Reference switch assembly, and provides buttons to control the selected band.
 
 Fields:
-- DO:  bitfield showing the state of the ADAM module’s digital outputs, normally 100100, 010010, or 001001 for selected band 3, 6, or 7.
-- AI:  voltage of 31.5 MHz (FLOOG) signal lock status, red if less than 3.5
+- lo*_lock:  lock status
+- *vdc:  power supply voltages
+- fan*:  fan status
+- *degc:  system temperatures
+- 5056_DO:  ADAM digital output bits
+- sw*:  switch states
+- band:  selected band
 
 Actions:
-- Band 3/6/7:  set IF switch to desired receiver band
+- Band 3/6/7:  set STSR switches to desired receiver band
 
 ## Receiver Tabs: B3 ALAIHI, B6_UU, B7_AWEOWEO
 Each tab displays status for a single receiver insert, in the following frames:
@@ -186,103 +201,117 @@ Informational messages, warnings, and errors from the connected DRAMA tasks will
 
 The main DRAMA tasks may not run all the time; they may only be started for nightly observations and then terminated afterward.  However, we wish to monitor and log the state of the cryogenic system continuously.  For this purpose we have a special script called namakanui_temp_mon.py that runs as a systemd service.
 
-The namakanui_temp_mon.py script reads the cartridge temperatures once per minute using direct commands to the FEMC, rather than the higher-level cartridge control class, in order to minimize interaction with the rest of the system.  The temperatures are appended to a log file on the JCMT network using a simple space-separated ASCII format.  Additionally, the script sends the cartridge temperatures to the Redis database.
+The namakanui_temp_mon.py script reads the cartridge temperatures once per minute using direct commands to the FEMC, rather than the higher-level cartridge control class, in order to minimize interaction with the rest of the system.  The temperatures are appended to a log file using a simple space-separated ASCII format.  Additionally, the script sends the cartridge temperatures to the Redis database.
 
 The script also monitors the state of the Sumitomo coldhead compressor, Lakeshore temperature controller, and Pfeiffer vacuum gauge, and sends these values to the Redis database as well.
 
 
 ## Namakanui Python Module
 
-The software defines a “namakanui” Python package which can be imported into other scripts.  Each module in this package defines a class which is used to interface with a particular hardware system.
+The software defines a `namakanui` Python package which can be imported into other scripts.  Each module in this package defines a class which is used to interface with a particular hardware system.
 
-Generally, each class instance is constructed using a configuration file, “sleep” and “publish” functions, and simulation settings.  The “sleep” and “publish” functions are used to make the class instance compatible with the DRAMA framework when used within a task script.  For non-DRAMA scripts, these are usually just time.sleep and nop (or print) functions.
+Generally, each class instance is constructed using a configuration file, `sleep` and `publish` functions, and simulation settings.  The `sleep` and `publish` functions are used to make the class instance compatible with the DRAMA framework when used within a task script.  For non-DRAMA scripts, these are usually just `time.sleep` and `nop` (or `print`) functions.
 
-The classes commonly provide an “initialise” function to (re)connect to the hardware, as well as an “update” function (meant to be called in a loop) which queries the hardware and publishes the current state.
+The classes commonly provide an `initialise` function to (re)connect to the hardware, as well as an `update` function (meant to be called in a loop) which queries the hardware and publishes the current state.
 
 
-### cart.py
+### `cart.py`
 The Cart class controls a single cartridge band using a shared instance of the FEMC class.  Its main function is to tune the receiver and set the proper mixer parameters.
 
-### compressor.py
+### `cdpsm.py`
+The CDPSM class uses an ADAM-5000 to control the Continuum Detector and Phase Stability Monitor.
+
+### `compressor.py`
 The Compressor class uses an ADAM-6060 to monitor the status of the Sumitomo CNA-61D coldhead compressor.
 
-### femc.py
-The FEMC class uses SocketCAN to access a MicroChip USB CANBus device, and thereby communicate with the FEMC hardware.  Provides low-level cartridge monitoring and control functions.
+### `femc.py`
+The FEMC class communicates with the Front End Monitor and Control module using CANbus, either via a MicroChip USB CANbus Analyzer (SocketCAN) or a PEAK PCAN Ethernet Gateway (TCP/UDP).  Provides low-level cartridge monitoring and control functions.
 
-### ifswitch.py 
-TODO REMOVE
-
-### ini.py
+### `ini.py`
 This file provides a class for parsing .ini configuration files, as well as functions to read and interpolate table data.
 
-### instrument.py
-The Instrument class acts as a supervisor, and holds instances of the other hardware classes in the system.  
+### `instrument.py`
+The Instrument class acts as a supervisor, and holds instances of the other hardware classes in the system.
 
-### lakeshore.py
+### `lakeshore.py`
 The Lakeshore class monitors a model 218 or 336 temperature controller, which has probes for each of the cryogenic stages in the dewar.
 
-### load.py
+### `load.py`
 The Load class connects to the GIP-101 rotary stage controller via a serial switch on the local network.  It provides functions to home the stage and move it to specified positions, in order to insert or remove the ambient calibration load from a receiver’s beam.
 
-### pfeiffer.py
+### `pfeiffer.py`
 The Pfeiffer class monitors a 252A vacuum gauge.
 
-### photonics.py 
+### `photonics.py`
 The Photonics class connects to an ADAM 6050 in the reference signal optical receiver.  Digital outputs from the ADAM control a programmable attenuator, which is used to adjust the power of the reference signal.  The digital input is used to monitor the state of the 10 MHz lock.
 
-### pmeter.py
-The PMeter class connects to an N1913A or N1914A power meter.
+### `pmeter.py`
+The PMeter class connects to an N1913A or N1914A power meter, single-channel only.
 
-### reference.py
+### `pmeter2.py`
+The PMeter2 class connects to an N1914A power meter in dual-channel mode.
+
+### `reference.py`
 The Reference class connects to the reference signal generator, either an Agilent N5173B or Keysight E8257D.  It provides functions to set the frequency and output power, and stores the output power tables from the configuration file.
 
-### sim.py 
-This file defines the “simulate” bitmask values used by the other classes, and provides functions to convert them to and from strings.
+### `rfsma.py`
+The RFSMA class uses an ADAM-5000 to control the RF Switch Matrix Assembly.
 
-### util.py 
-This file provides miscellaneous functions used by other scripts, including a high-level “tune” function which locks the receiver and automatically adjusts reference signal power.  It also provides a few functions for interacting with the ACSIS IFTASK via DRAMA, which are used by engineering scripts to get the IF power levels.
+### `sim.py`
+This file defines the `simulate` bitmask values used by the other classes, and provides functions to convert them to and from strings.
 
-### version.py 
+### `stsr.py`
+The STSR class uses an ADAM-5000 to control the Signal Test Source Reference module, which switches the FLOOG and Reference signals to select a particular receiver cartridge (similar to the IFSwitch class used at JCMT).
+
+### `util.py`
+This file provides miscellaneous functions used by other scripts, as well as a few functions for interacting with the RFSMA power meters, which are used by engineering scripts to get the IF power levels.
+
+### `version.py`
 This file is created by the build system with info from Git.
 
 
 ## Engineering Scripts
 
-The DRAMA tasks used during observing provide only basic monitoring and control; a separate set of command-line scripts provides more advanced functionality.  These scripts are generally not DRAMA tasks themselves, except where required to query IF power levels from ACSIS.  Normally these scripts should not be run at the same time as the observing tasks, to avoid confusing the system (run a “drama_nuke” first).
+The DRAMA tasks used during observing provide only basic monitoring and control; a separate set of command-line scripts provides more advanced functionality.  These scripts are generally not DRAMA tasks themselves, and normally these scripts should not be run at the same time as the observing tasks, to avoid confusing the system (run a `drama_nuke` first).
 
-There are quite a number of these scripts, and only a few are covered below.  For other scripts in the src/ directory, please consult the docstring (header comment) and the “--help” output.
+There are quite a number of these scripts, and only a few are covered below.  For other scripts in the `src/` directory, please consult the docstring (header comment) and the `--help` output.
 
-### att_table.py
-Tune across a range of frequencies to build an attenuation table for the photonics system.
+Currently, only scripts starting with "namakanui" are installed when the project is built, to avoid $PATH confusion.  Thus most of these must be run out of the `src/` directory.
 
-### dbm_photo.py
+### `att_table.py`
+Tune across a range of frequencies to build an attenuation table for the photonics system.  See `howto_att_table.md` for more details.
+
+### `dbm_photo.py`
 Create an output power table for the signal generator to achieve constant input power to the photonics transmitter.  Requires an N1913A power meter.
 
-### dbm_table.py
+### `dbm_table.py`
 Tune across a range of frequencies to build an output power table for the reference signal generator.  Only used if the signal generator is connected directly to the receiver, with no photonics attenuator.
 
-### deflux.py
-Demagnetize and deflux the mixers using the internal heaters.  Testing has shown that the internal heaters are ineffective, so if defluxing is necessary it must be accomplished via a mini-warmup (by temporarily shutting off the coldhead compressor).
-
-### mixer_iv.py
+### `mixer_iv.py`
 Sweeps the mixer bias voltages to generate IV curves, then disables the PA and sweeps again for the unpumped LO curves.  Plots with matplotlib.  This script uses only low-level FEMC commands and does not tune first, so use it after calling tune.py.
 
-### pa_table.py
-Create a PA drain/gate voltage table to speed up mixer current optimization during future tune calls.
+### `namakanui_deflux.py`
+Demagnetize and deflux the mixers using the internal heaters.  Testing has shown that the internal heaters are ineffective, so if defluxing is necessary it must be accomplished via a mini-warmup (by temporarily shutting off the coldhead compressor).
 
-### power_down.py
-Prepares receivers for shutdown so that turning off the FEMC will not cause trapped flux.  Sets reference signal to minimum levels and ramps bias voltages and magnet currents to zero.
-
-### set_load.py
+### `namakanui_load.py`
 Control the ambient load rotational stage from the command line.
 
-### trx_sweep.py
-Calculate noise temperature across a range of frequencies, using IF power levels measured by ACSIS.  Requires a cold load (liquid nitrogen bucket) to be placed in the beam.
+### `namakanui_pcand.py`
+When using the PEAK PCAN ethernet CANbus converter, this daemon must run in the background and `femc.ini` should set `use_pcand=1`.  All other scripts will then use this daemon to talk to the PCAN, which avoids having to configure multiple can2lan routes to the host on the PCAN device.
 
-### tune.py
+### `namakanui_power_down.py`
+Prepares receivers for shutdown so that turning off the FEMC will not cause trapped flux.  Sets reference signal to minimum levels and ramps bias voltages and magnet currents to zero.
+
+### `namakanui_tune.py`
 Tune a receiver band.  Sets the IF switch, adjusts reference signal power, locks the LO PLL, and optimizes mixer parameters.
 
-### yfactor_same.py
+### `pa_table.py`
+Create a PA drain/gate voltage table to speed up mixer current optimization during future tune calls.
+
+### `trx_sweep.py`
+Calculate noise temperature across a range of frequencies, using IF power levels measured by RFSMA power meters.  Requires a cold load (liquid nitrogen bucket) to be placed in the beam.
+
+### `yfactor*.py`
 Calculates Y-factor (either on-sky or with a cold load in the beam) while varying receiver parameters.  These scripts can be used to adjust target mixer currents and bias voltages for optimum gain.
 
 
