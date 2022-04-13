@@ -25,7 +25,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
 import jac_sw
-import drama
 import sys
 import os
 import time
@@ -78,7 +77,7 @@ if not tune(instrument, band, lo_ghz):
     logging.error('failed to tune to %.3f ghz', lo_ghz)
     sys.exit(1)
 
-pmeters = namakanui.util.init_rfmsa_pmeters_49()
+pmeters = namakanui.util.init_rfsma_pmeters_49()
 
 # write out a header for our output file
 sys.stdout.write(time.strftime('# %Y%m%d %H:%M:%S HST\n', time.localtime()))

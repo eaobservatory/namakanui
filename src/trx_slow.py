@@ -76,7 +76,7 @@ if not tune(instrument, band, lo_ghz):
 
 load = instrument.load  # shorten name
 
-pmeters = namakanui.util.init_rfmsa_pmeters_49()
+pmeters = namakanui.util.init_rfsma_pmeters_49()
 
 rconfig = namakanui.util.get_config('redis.ini')['redis']
 redis_prefix = rconfig['prefix']
@@ -144,8 +144,9 @@ def main_loop():
         # get hot load temperature from last redis LAKESHORE entry
         s = redis_client.zrange(redis_prefix + 'LAKESHORE', -1, -1)[0]
         hotk = json.loads(s)['temp'][4]
-        # fetch pmeter results
+        # fetch pmeter results and convert dBm to mW
         hotp = [p for m in pmeters for p in m.read_fetch()]
+        hotp = [10.0**(0.1*p) for p in hotp]
         
         # COLD
         load.move('b%d_sky'%(band))
@@ -159,8 +160,9 @@ def main_loop():
                     ua = cart.femc.get_sis_current(cart.ca,po,sb)*1e3
                     ua_avg[po*2 + sb] += abs(ua)  # for band 6
                     ua_dev[po*2 + sb] += ua*ua
-        # fetch pmeter results
+        # fetch pmeter results and convert dBm to mW
         coldp = [p for m in pmeters for p in m.read_fetch()]
+        coldp = [10.0**(0.1*p) for p in coldp]
         
         # collect values into a row
         pa_drain_s = cart.state['pa_drain_s']

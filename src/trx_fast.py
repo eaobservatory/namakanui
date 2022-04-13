@@ -129,7 +129,7 @@ if not tune(instrument, band, lo_ghz):
 
 load = instrument.load  # shorten name
 
-pmeters = namakanui.util.init_rfmsa_pmeters_49()
+pmeters = namakanui.util.init_rfsma_pmeters_49()
 
 # a guess for LN2 brightness temp.  TODO might be frequency-dependent.
 coldk = 80.0

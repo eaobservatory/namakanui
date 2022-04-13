@@ -187,7 +187,7 @@ def get_band_lo_range(band, config=None):
     return interval(floyig*mult, fhiyig*mult)
 
 
-def init_rfmsa_pmeters_49():
+def init_rfsma_pmeters_49():
     '''
     Set both RFSMAs to send 4-9 GHz IFs to their first power meters.
     Return PMeter2 instances (rfsma_p1, rfsma_p3), set to 6.5 GHz.
@@ -211,7 +211,7 @@ def init_rfmsa_pmeters_49():
 def read_rfsma_pmeters(pmeters):
     '''
     Return readings for both channels of all pmeters as a flat list.
-    If pmeters = [rfsma_p1, rfsma_p3] (from init_rfmsa_pmeters_49),
+    If pmeters = [rfsma_p1, rfsma_p3] (from init_rfsma_pmeters_49),
     then return = [usb_p0, usb_p1, lsb_p0, lsb_p1].
     '''
     # for multiple meters, separate read_init should be faster than read_power
