@@ -885,6 +885,7 @@ class Cart(object):
         higher value to avoid aliasing.
 
         20191004 HACK: Mixer 01 died, so servo the PA using sb2 instead.
+        20220429: Go back to sb1 for the GLT
         '''
         self.log.info('_servo_pa')
         
@@ -903,7 +904,7 @@ class Cart(object):
         nom_pa = interp_table(self.pa_table, lo_ghz)[1:]
         nom_mixer = interp_table(self.mixer_table, lo_ghz)
         #nom_curr = [nom_mixer[5]*.001, nom_mixer[7]*.001]  # table in uA, but readout in mA.
-        sb = 1
+        sb = 0
         nom_curr = [nom_mixer[5+sb]*.001, nom_mixer[7+sb]*.001]  # table in uA, but readout in mA.
         self.log.debug('_servo_pa nom_pa=%s, nom_curr=%s', nom_pa, nom_curr)
         for po in range(2):
