@@ -1279,12 +1279,12 @@ class Cart(object):
         TODO: Ramp in parallel, it's probably safe.
         '''
         i = 0
+        j = 0  # sleep counter
         for po in range(2):
             for sb in range(2):
                 val = self.state[key][i]
                 end = values[i]
                 inc = step * sign(end-val)
-                j = 0
                 while abs(end-val) > step:
                     val += inc
                     f(self.ca, po, sb, val)
@@ -1294,7 +1294,7 @@ class Cart(object):
                 f(self.ca, po, sb, end)
                 self.state[key][i] = end  # in case _ramp called again before next update
                 i += 1
-                self.sleep(0.01)  # these ramps might take 300ms each!
+                #self.sleep(0.01)  # these ramps might take 300ms each!
         # Cart._ramp_sis
     
     
